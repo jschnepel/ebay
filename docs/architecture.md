@@ -9,7 +9,7 @@ A distributed ascending-price auction platform:
 - **PostgreSQL** is the single source of truth. A bid (with any automatic proxy counter-bids), the auction update, the idempotency record, notifications and an outbox event commit in one transaction, under a row lock on the auction.
 - **An outbox relay** in the API publishes those events, in commit order, as change hints through **SignalR**. Clients treat these as hints and re-fetch authoritative state, so a lost message never leaves a browser wrong for long.
 - **Redis** does shared, non-authoritative work: a read cache, the "ending soon" index, presence and counters, rate limits, the session-validity cache, and the SignalR backplane for a second API instance. Bidding never depends on it.
-- **A headless CLI simulator** drives realistic multi-user activity through the same public API. Afterwards, a separate verifier tool (the oracle) reads the database through a read-only role and checks every invariant. The simulator itself has no SQL access.
+- **A headless CLI simulator** drives realistic multi-user activity through the same public API. Afterwards, a separate verifier tool (the oracle) reads the database through a read-only role and checks every invariant. The simulator's traffic never touches SQL; its closing check calls the verifier, which reads only as the read-only `verifier` role.
 
 ## Scope in context
 
@@ -155,7 +155,7 @@ src/
   Auction.Api/         minimal APIs in feature folders, auth + sessions, SignalR hub, outbox relay, Redis jobs; serves the WASM app
   Auction.Web/         Blazor WebAssembly + MudBlazor: Buy, Sell and Admin areas
   Auction.Migrator/    EF Core schema model and migrations (with triggers and grants), one-shot runner, demo seed; later reset-demo
-  Auction.Simulator/   CLI virtual users over the public API
+  Auction.Simulator/   CLI virtual users over the public API (smoke, realistic, hot-burst), then the verifier
   Auction.Verifier/    read-only invariant checker using the reference model
 tests/
   Auction.ReferenceModel/   naive auction rules shared by the verifier and property tests (no engine code)
@@ -166,7 +166,7 @@ tests/
                             AUCTION_BASE_URL is set
 ```
 
-Projects are added as each build step needs them; today `Auction.Domain`, `Auction.Migrator`, `Auction.Contracts`, `Auction.Engine` (gRPC service and close worker), `Auction.Api`, `Auction.Web`, the unit and integration tests and the reference model exist. The browser tests live in the integration test project so they share its database and engine fixtures.
+Projects are added as each build step needs them; today `Auction.Domain`, `Auction.Migrator`, `Auction.Contracts`, `Auction.Engine` (gRPC service and close worker), `Auction.Api`, `Auction.Web`, `Auction.Simulator`, `Auction.Verifier`, the unit and integration tests and the reference model exist. The browser tests live in the integration test project so they share its database and engine fixtures.
 
 ## Data model
 
@@ -195,7 +195,7 @@ These hold across every component and are checked by tests.
 - **A bid, the auction update, the command result and the outbox event commit in one transaction.**
 - **Actor identity always comes from the authenticated principal,** never from a request body.
 - **SQL guarantees are proven against real PostgreSQL.** No in-memory database providers.
-- **The simulator uses only the public API** (sign-in, REST, SignalR), with no SQL access or privileged path.
+- **The simulator's traffic uses only the public API** (password sign-in, REST), with no privileged path. Its closing check runs the verifier, whose only database access is the read-only `verifier` role.
 - **The verifier never references production rule code.** It and the property tests share a deliberately naive reference model.
 - **Time:** stored and sent in UTC (`timestamptz`, ISO 8601), shown in local time only in the UI. Services take "now" from an injected `TimeProvider`; the domain takes the decision time as a parameter, and bid and close decisions use the database's `clock_timestamp()`.
 - **Errors and logging:** structured JSON logs with a correlation ID on every line, each error logged once where it's handled, never secrets or email addresses. API errors are RFC 9457 Problem Details with no internals.

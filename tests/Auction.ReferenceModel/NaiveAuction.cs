@@ -24,6 +24,9 @@ public sealed record RefBid(Guid BidderId, long AmountCents);
 /// <summary>What the naive model concludes after replaying a history.</summary>
 public sealed record RefResult(IReadOnlyList<bool> Accepted, Guid? Leader, long? PriceCents, string Outcome);
 
+/// <summary>The standing the naive model derives from bids already known to be accepted.</summary>
+public sealed record RefStanding(Guid? Leader, long? PriceCents, string Outcome);
+
 /// <summary>
 /// A deliberately naive statement of the auction rules. It keeps no
 /// incremental state: before every bid it recomputes the leader and price from scratch by scanning the
@@ -51,6 +54,20 @@ public static class NaiveAuction
 
         var (leader, price) = Standing(terms, accepted);
         return new RefResult(flags, leader, price, Outcome(terms, accepted, price));
+    }
+
+    /// <summary>
+    /// The leader, price and closing outcome for bids already accepted, in acceptance order (for proxy
+    /// bidding, each bidder's maximum in the order it was reached). The verifier uses this on the database's
+    /// own records.
+    /// </summary>
+    public static RefStanding Judge(RefTerms terms, IReadOnlyList<RefBid> accepted)
+    {
+        ArgumentNullException.ThrowIfNull(terms);
+        ArgumentNullException.ThrowIfNull(accepted);
+        var bids = accepted.ToList();
+        var (leader, price) = Standing(terms, bids);
+        return new RefStanding(leader, price, Outcome(terms, bids, price));
     }
 
     private static bool IsAcceptable(RefTerms terms, List<RefBid> accepted, RefBid bid)

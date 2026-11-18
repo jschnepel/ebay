@@ -361,7 +361,7 @@ Status comes from evidence only.
 |---|---|---|---|---|---|
 | INT-01 | Core | `run.sh`, `deploy/compose.yaml`, `src/Auction.Web`, `src/Auction.Api` | `JourneyTests`, `AuctionApiTests` | S, B | S passed (the HTTP journey); B passed: in a real browser a seller lists and publishes, a buyer bids, and both see the new price after a reload, in process and against the one-command stack |
 | INT-02 | Core | `src/Auction.Api/Live`, `src/Auction.Web/Client/LiveUpdates.cs`, `VersionGate.cs` | `LiveBrowserTests` | B | passed for buyers and seller: two buyers, the seller and a directory browser each show every new price within 2 s without a reload; the Admin activity view and the running simulator join at steps 10 and 11 |
-| INT-03 | Core | | | S | not started |
+| INT-03 | Core | `src/Auction.Simulator`, README "How the auctions work" | `SimulatorTests` | S | passed: the realistic profile bids concurrently on all five of its auctions and the verifier finds nothing; the README summarizes §5 |
 | INT-04 | Core | `run.sh`, `deploy/.env.example`, `src/Auction.Migrator/DemoSeed.cs`, `.github/workflows/ci.yml` | CI: one command on the fresh clone, the full suite, the browser journey against that stack; `DemoSeedTests` | R | passed: the one command creates `.env` with generated secrets, seeds, and starts every service healthy; the full suite passes in the same job |
 | FND-01 | Engineering | `global.json`, `Directory.*.props`, lock files, `.github/workflows/ci.yml` | CI workflow gates | R | implemented; CI green |
 | FND-02 | Stack | `src/Auction.Contracts`, `src/Auction.Engine/Hosting`, `engine` service in `deploy/compose.yaml` | `EngineServiceTests`, `GrpcBidRaceTests` | S | engine over gRPC in its container, with correlated logs: passed; the API half pending (step 7) |
@@ -394,12 +394,12 @@ Status comes from evidence only.
 | OUT-01 | Engineering | `src/Auction.Api/Live/OutboxRelay.cs`, `src/Auction.Migrator/Schema/OutboxSchemaSql.cs` | `LiveHintTests` | D, S | passed: an event whose transaction commits last holds back later ones (they stay unpublished) and is then published first, nothing skipped; an event left unpublished is published again; one relay across instances (advisory lock), woken by NOTIFY with a 1 s poll |
 | REL-01 | Engineering | lock timeout and retries in `src/Auction.Engine/AuctionEngine.cs`; pool size and call cancellation in the engine host | `LockingTests`, `EngineServiceTests` | D, S | lock wait: D passed; pool limit and deadlines on engine calls: in place; the API's request deadlines pending (step 7) |
 | REL-02 | Engineering | Redis backplane in `src/Auction.Api/Hosting/ApiHosting.cs` | `RedisOutageTests` | S | backplane part passed: with Redis stopped a bid is accepted, the auction loads from PostgreSQL, and views reconcile; admin health, caches, the ending-soon index and shared rate limits: pending (steps 11, 14) |
-| SIM-01 | Engineering | | | S | not started |
-| SIM-02 | Core / Engineering | | | S | not started |
-| SIM-03 | Engineering | `tests/Auction.ReferenceModel` (reference model only) | `BiddingPropertyTests` | S | reference model built; verifier pending |
-| SIM-04 | Engineering | | | B | not started |
-| SIM-05 | Engineering | | | S | not started |
-| SIM-16 | Engineering | | | S | not started |
+| SIM-01 | Engineering | `src/Auction.Simulator/VirtualUser.cs` | `SimulatorTests` | S | passed: each virtual user has its own cookie jar and must see its seeded simulator account at `/account/me` before load; a wrong password stops the run at setup |
+| SIM-02 | Core / Engineering | `src/Auction.Simulator/Profiles.cs`, `SimulationReport.cs` | `SimulatorTests` | S | passed: smoke, realistic and hot-burst profiles, seeded; the report shows intended against actual load, refusals by reason, latency and each auction's result; simulated bidders are labelled "(simulated)" |
+| SIM-03 | Engineering | `src/Auction.Verifier`, `tests/Auction.ReferenceModel` | `BiddingPropertyTests`, `SimulatorTests` | S | passed: after a 50-bidder, 30-second hot burst the verifier (read-only role, no production rule code) finds zero violations; a tampered price is reported and the CLI exits 1 |
+| SIM-04 | Engineering | the simulator is a separate, on-demand tool | `JourneyTests` | B | passed: the browser journey runs with no simulator |
+| SIM-05 | Engineering | `src/Auction.Simulator`, simulator accounts in `src/Auction.Migrator/DemoSeed.cs` | `SimulatorTests` | S | passed: 51 reserved simulator accounts with their own password; the ordinary password sign-in with same-origin JSON and an `Origin` header; one run at a time (a lock file) |
+| SIM-16 | Engineering | `src/Auction.Simulator/Program.cs` | `SimulatorTests` | S | passed: `simulator run smoke` exits 0 and writes its report; the verifier CLI exits 1 on a violation |
 | TST-01 | Engineering | Testcontainers PostgreSQL 18 | `PostgresEnvironmentTests` (2) | R | partial: PostgreSQL done, Redis not yet |
 | OPS-01 | Engineering | `src/Auction.Migrator`, `migrator` service in `deploy/compose.yaml` | `MigrationTests` | S | re-run keeps data passed at D; S pending (step 8) |
 | DEL-01 | Core / Engineering | | | R | not started |

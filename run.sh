@@ -22,7 +22,7 @@ secret() {
 if [ ! -f "$env_file" ]; then
     work="$env_file.tmp"
     cp deploy/.env.example "$work"
-    for name in POSTGRES_PASSWORD MIGRATOR_DB_PASSWORD ENGINE_DB_PASSWORD API_DB_PASSWORD VERIFIER_DB_PASSWORD ADMIN_PASSWORD DEMO_PASSWORD; do
+    for name in POSTGRES_PASSWORD MIGRATOR_DB_PASSWORD ENGINE_DB_PASSWORD API_DB_PASSWORD VERIFIER_DB_PASSWORD ADMIN_PASSWORD DEMO_PASSWORD SIMULATOR_PASSWORD; do
         value=$(secret)
         # Fills only an empty value, keeping the line's comment.
         sed "s|^$name=[[:space:]]*#|$name=$value  #|; s|^$name=[[:space:]]*\$|$name=$value|" "$work" > "$work.next"

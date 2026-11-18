@@ -3,12 +3,21 @@ using Npgsql;
 
 namespace Auction.Migrator;
 
-/// <summary>The seeded accounts' passwords, from the environment; never stored anywhere else.</summary>
-public sealed record DemoSeedOptions(string AdminPassword, string DemoPassword)
+/// <summary>
+/// The seeded accounts' passwords, from the environment; never stored anywhere else. Without a simulator
+/// password no simulator accounts are added.
+/// </summary>
+public sealed record DemoSeedOptions(string AdminPassword, string DemoPassword, string? SimulatorPassword = null)
 {
     public const string AdminEmail = "admin@auction.test";
     public const string SellerEmail = "seller@auction.test";
     public const string BuyerEmail = "buyer@auction.test";
+
+    /// <summary>The simulator's seller and its 50 bidders, reserved for it (SIM-05).</summary>
+    public const int SimulatorBidders = 50;
+    public const string SimulatorSellerEmail = "sim-seller@auction.test";
+
+    public static string SimulatorBidderEmail(int index) => string.Create(System.Globalization.CultureInfo.InvariantCulture, $"sim-{index:000}@auction.test");
 }
 
 /// <summary>What one seed run added; zero everywhere when the data was already there.</summary>
@@ -55,16 +64,21 @@ public static class DemoSeed
         await connection.OpenAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
+        // Two seeds at once (two migrators, or parallel tests) take turns, so the auctions are added once.
+        await ExecuteAsync(connection, "SELECT pg_advisory_xact_lock(7316891420551003)", cancellationToken);
+
+        // One hash per distinct password: hashing is deliberately slow, and the 51 simulator accounts share theirs.
+        var hashes = new Dictionary<string, string>(StringComparer.Ordinal);
         var accounts = 0;
-        foreach (var (email, name, kind, password) in new[]
+        foreach (var (email, name, kind, password) in Accounts(options))
         {
-            (DemoSeedOptions.AdminEmail, "Admin", "admin", options.AdminPassword),
-            (DemoSeedOptions.SellerEmail, "Demo seller", "seeded", options.DemoPassword),
-            (DemoSeedOptions.BuyerEmail, "Demo buyer", "seeded", options.DemoPassword),
-        })
-        {
-            accounts += await ExecuteAsync(
-                connection, InsertUserSql, cancellationToken, Guid.CreateVersion7(), email, name, kind, hasher.HashPassword(new object(), password));
+            if (!hashes.TryGetValue(password, out var hash))
+            {
+                hash = hasher.HashPassword(new object(), password);
+                hashes[password] = hash;
+            }
+
+            accounts += await ExecuteAsync(connection, InsertUserSql, cancellationToken, Guid.CreateVersion7(), email, name, kind, hash);
         }
 
         var sellerId = (Guid)(await ScalarAsync(connection, "SELECT id FROM auction.users WHERE normalized_email = upper($1)", cancellationToken, DemoSeedOptions.SellerEmail))!;
@@ -82,6 +96,23 @@ public static class DemoSeed
 
         await transaction.CommitAsync(cancellationToken);
         return new DemoSeedResult(accounts, auctions);
+    }
+
+    private static IEnumerable<(string Email, string Name, string Kind, string Password)> Accounts(DemoSeedOptions options)
+    {
+        yield return (DemoSeedOptions.AdminEmail, "Admin", "admin", options.AdminPassword);
+        yield return (DemoSeedOptions.SellerEmail, "Demo seller", "seeded", options.DemoPassword);
+        yield return (DemoSeedOptions.BuyerEmail, "Demo buyer", "seeded", options.DemoPassword);
+        if (options.SimulatorPassword is not { Length: > 0 } simulator)
+        {
+            yield break;
+        }
+
+        yield return (DemoSeedOptions.SimulatorSellerEmail, "Simulated seller", "simulator", simulator);
+        for (var i = 1; i <= DemoSeedOptions.SimulatorBidders; i++)
+        {
+            yield return (DemoSeedOptions.SimulatorBidderEmail(i), string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Simulated bidder {i:00}"), "simulator", simulator);
+        }
     }
 
     private static async Task<int> ExecuteAsync(NpgsqlConnection connection, string sql, CancellationToken cancellationToken, params object?[] args)

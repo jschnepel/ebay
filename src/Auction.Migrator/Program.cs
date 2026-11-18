@@ -40,7 +40,9 @@ try
     MigratorLog.UpToDate(logger);
     if (seed)
     {
-        var result = await DemoSeed.RunAsync(connectionString, new DemoSeedOptions(adminPassword!, demoPassword!), cancellation.Token);
+        var simulatorPassword = Environment.GetEnvironmentVariable("SIMULATOR_PASSWORD");
+        var result = await DemoSeed.RunAsync(
+            connectionString, new DemoSeedOptions(adminPassword!, demoPassword!, simulatorPassword), cancellation.Token);
         MigratorLog.Seeded(logger, result.AccountsAdded, result.AuctionsAdded);
     }
 

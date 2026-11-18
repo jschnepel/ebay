@@ -43,6 +43,7 @@ services:
       SEED_DEMO: ${SEED_DEMO:-true}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
       DEMO_PASSWORD: ${DEMO_PASSWORD:-}
+      SIMULATOR_PASSWORD: ${SIMULATOR_PASSWORD:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -110,6 +111,23 @@ services:
         limits:
           cpus: "1.0"
           memory: 512m
+
+  # The load simulator, on demand only (the "tools" profile keeps it out of `up`):
+  #   docker compose -f deploy/compose.yaml run --rm simulator run realistic
+  # It uses the public API like a browser and then checks every invariant as the read-only verifier role.
+  simulator:
+    profiles: ["tools"]
+    build:
+      context: ..
+      dockerfile: src/Auction.Simulator/Dockerfile
+    environment:
+      BASE_URL: http://api:8080
+      SIMULATOR_PASSWORD: ${SIMULATOR_PASSWORD:?set SIMULATOR_PASSWORD in deploy/.env}
+      VERIFIER_CONNECTION_STRING: Host=postgres;Database=${POSTGRES_DB:-auction};Username=verifier;Password=${VERIFIER_DB_PASSWORD};GSS Encryption Mode=Disable
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: "no"
 
   redis:
     image: redis:8@sha256:1f88291b4c57bdf249f02eb085a8669889b2d2954e91d4de5118a5da6b78dd53

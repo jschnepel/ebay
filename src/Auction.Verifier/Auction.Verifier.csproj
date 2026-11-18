@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The independent invariant checker (SIM-03). It reads the database as the read-only verifier role and
+    recomputes every auction from its history with the deliberately naive reference model. It must never
+    reference Auction.Domain or engine code, so agreement is evidence rather than an echo.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\tests\Auction.ReferenceModel\Auction.ReferenceModel.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Npgsql" />
+  </ItemGroup>
+
+</Project>

@@ -962,6 +962,19 @@
       "auction.referencemodel": {
         "type": "Project"
       },
+      "auction.simulator": {
+        "type": "Project",
+        "dependencies": {
+          "Auction.Verifier": "[1.0.0, )"
+        }
+      },
+      "auction.verifier": {
+        "type": "Project",
+        "dependencies": {
+          "Auction.ReferenceModel": "[1.0.0, )",
+          "Npgsql": "[10.0.3, )"
+        }
+      },
       "auction.web": {
         "type": "Project",
         "dependencies": {

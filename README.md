@@ -18,7 +18,8 @@ Built bottom-up, one tested layer at a time ([build plan](docs/build-plan.md)).
 | Web client: Blazor WebAssembly and MudBlazor pages for sign-in, the directory, an auction with its bid box and history, selling (drafts, publish, cancel) and my bids, served by the API from the same origin | Built and tested in a real browser (Playwright) against the whole stack; plain styling until build step 15 |
 | One-command run with generated secrets and demo seed data | Built; CI runs it on every push from a fresh clone |
 | Live updates: outbox relay in commit order, SignalR hints through a Redis backplane, version-gated views that reconcile every 10 s | Built and tested: four browsers converge within 2 s; with Redis stopped, bids still work and views heal |
-| Simulator, admin | Not started |
+| Simulator and verifier: virtual users over the public API (smoke, realistic and hot-burst profiles) and a read-only checker that recomputes every auction with a naive reference model | Built and tested: 50 bidders on one auction for 30 seconds with zero invariant violations |
+| Admin | Not started |
 
 ## Run it
 
@@ -28,9 +29,32 @@ Prerequisites: Docker with Compose v2 (on Windows, use Git Bash or WSL).
 ./run.sh
 ```
 
-Then open <http://localhost:8080>. The first run creates `deploy/.env` with a generated value for every secret, prints the admin password once and keeps the seeded accounts' passwords in `deploy/.demo-credentials` (both git-ignored). It builds the images, applies the migrations, adds the demo accounts and six active auctions, and waits until every service is healthy. Create your own account on the sign-in page with a display name and an email; sign in from a second browser as another user to bid against yourself.
+Then open <http://localhost:8080>. The first run creates `deploy/.env` with a generated value for every secret, prints the admin password once and keeps the seeded accounts' passwords in `deploy/.demo-credentials` (both git-ignored). It builds the images, applies the migrations, adds the demo accounts and six active auctions, and waits until every service is healthy. Create your own account on the sign-in page with a display name and an email; sign in from a second browser as another user to bid against yourself. To see live bidding, run the simulator (below).
 
 To use other host ports, set them in the shell or in `deploy/.env` (`PORT=9080 ./run.sh`). Stop with `docker compose -f deploy/compose.yaml down`, adding `-v` to delete the data. [`Auction.Api.http`](src/Auction.Api/Auction.Api.http) walks the same journey over plain HTTP.
+
+## Run the simulator
+
+With the stack running:
+
+```bash
+docker compose -f deploy/compose.yaml run --rm simulator run realistic
+```
+
+Profiles: `smoke` (one auction, three bidders, 15 s), `realistic` (five auctions, twenty bidders at a human pace, 60 s) and `hot-burst` (fifty bidders on one auction as fast as they can, 30 s). The simulated seller lists the auctions, the bidders sign in to reserved simulator accounts with the ordinary password sign-in, and every bid goes through the public JSON API like a browser's. When the auctions close, the verifier, connecting as the read-only `verifier` role, recomputes each one from its history with the reference model. The JSON report shows intended against actual load, refusals by reason, bid latency p50 and p95, each auction's result and the verifier's findings. The exit code is non-zero on any violation. Simulated bidders show as "Bidder n (simulated)" in bid histories. Options: `--seed N`, `--duration SECONDS`, `--report FILE`.
+
+The verifier also runs on its own over the whole database: `VERIFIER_CONNECTION_STRING=... dotnet run --project src/Auction.Verifier [-- --since 2026-11-18T00:00:00Z]`.
+
+## How the auctions work
+
+The full rules, with their reasons and legal basis, are in the [requirements](docs/requirements.md) §5 and [compliance notes](docs/compliance.md). In short:
+
+- **Timed, ascending-price, one item, US dollars.** Amounts are whole cents end to end.
+- **The seller picks two settings per auction:** a price floor (a hidden reserve, a published minimum bid, or no reserve) and a bidding mode (proxy, where bidders set a private maximum and the system bids for them, or fixed steps of one increment).
+- **Proxy price:** the highest maximum leads at the second-highest maximum plus one increment, capped at the leader's maximum; equal maxima go to the earlier one. Under a reserve, the price jumps to the reserve when a maximum first reaches it.
+- **Deadlines use the database clock**, read after the auction's lock is taken, so a bid that waited past the end is refused. The close worker ends each auction as Sold, Reserve not met or No bids.
+- **Terms freeze at publish.** A seller can't bid on their own auction, and can cancel only before the first accepted bid. Drafts are private to their seller.
+- **Bidders are anonymous** in public histories ("Bidder 1", "You"); maxima and reserves are never shown.
 
 ## Architecture
 
@@ -68,7 +92,7 @@ To run the browser tests against a stack that is already running, set `AUCTION_B
 
 - **Unit tests** for every auction rule. Each rejection is paired with a control case that must succeed.
 - **Property tests** (CsCheck): each run generates 2,000 random auctions with random terms and bid sequences, and checks the rules against a separate naive reference model.
-- **Planted-bug checks:** deliberate bugs planted during development were each caught by the suite: seven in the rules, three in the database triggers and grants, and five in the engine (no row lock, the clock read before the lock wait, a private amount written to the history, a close worker that skips the lock, and one that closes early), two in the gRPC mapping, and six more for idempotency, draft privacy, event payloads and grants (an idempotency key that ignores a clash on another auction, other users' drafts made visible, a bidder id in an event, a sweep that deletes fresh keys, a worker that never sweeps, and over-granted roles), and ten in the API (a foreign origin or a form post accepted, the reserve shown to everyone, drafts readable by anyone, email-only sign-in for password accounts, ownership revealed with 403, an uncapped page size, an extra query per page, a `SameSite=Lax` cookie, and an admin allowed to sell), and eight for the web client and seed (another seller's auctions in "my auctions", every bid shown as leading, a minimum bid without the increment, a page that may be framed, the app's page served for an unknown API path, a seed that resets passwords, the opening price shown after a bid, and a repeated sign-up not offered the existing account), and seven for live updates (a relay that ignores the snapshot horizon or waits only for NOTIFY, a hub whose WebSocket handshake skips the Origin check, an auction page or directory that ignores hints, no periodic reconcile, and an older answer replacing a newer one).
+- **Planted-bug checks:** deliberate bugs planted during development were each caught by the suite: seven in the rules, three in the database triggers and grants, and five in the engine (no row lock, the clock read before the lock wait, a private amount written to the history, a close worker that skips the lock, and one that closes early), two in the gRPC mapping, and six more for idempotency, draft privacy, event payloads and grants (an idempotency key that ignores a clash on another auction, other users' drafts made visible, a bidder id in an event, a sweep that deletes fresh keys, a worker that never sweeps, and over-granted roles), and ten in the API (a foreign origin or a form post accepted, the reserve shown to everyone, drafts readable by anyone, email-only sign-in for password accounts, ownership revealed with 403, an uncapped page size, an extra query per page, a `SameSite=Lax` cookie, and an admin allowed to sell), and eight for the web client and seed (another seller's auctions in "my auctions", every bid shown as leading, a minimum bid without the increment, a page that may be framed, the app's page served for an unknown API path, a seed that resets passwords, the opening price shown after a bid, and a repeated sign-up not offered the existing account), and seven for live updates (a relay that ignores the snapshot horizon or waits only for NOTIFY, a hub whose WebSocket handshake skips the Origin check, an auction page or directory that ignores hints, no periodic reconcile, and an older answer replacing a newer one). Four more for the simulator and verifier: an engine with the auction row lock removed (the 50-bidder hot burst exposes it), a verifier that skips the standing or the visible-price check, and a run that passes without a clean verifier report.
 - **Real infrastructure:** database tests run against PostgreSQL 18, never an in-memory provider.
 - **Browser tests** (Playwright, headless Chromium): a seller lists and publishes, a buyer bids, and both see the new price after a reload, in the in-process site and again against the one-command Compose stack.
 - **CI** runs a locked restore, a format check, a zero-warning Release build, the one command on the fresh clone, the full suite and the browser journey against that stack, and lints the gRPC contract (with a breaking-change check on pull requests). It fails on any floating-point type in money code.
@@ -77,7 +101,7 @@ To run the browser tests against a stack that is already running, set `AUCTION_B
 ## Repository layout
 
 ```
-src/        application code (today: Auction.Domain, Auction.Migrator, Auction.Contracts, Auction.Engine, Auction.Api, Auction.Web)
+src/        application code (Auction.Domain, Auction.Migrator, Auction.Contracts, Auction.Engine, Auction.Api, Auction.Web, Auction.Simulator, Auction.Verifier)
 tests/      unit, property, integration and browser tests, and the reference model
 run.sh      the one command
 docs/       requirements, architecture, build plan, decision records
