@@ -28,6 +28,8 @@ public sealed class MoneyTests
     [InlineData("10000000.01", MoneyError.AboveCap)]
     [InlineData("99999999999999999999", MoneyError.Overflow)]
     [InlineData("92233720368547758.08", MoneyError.Overflow)]
+    [InlineData("9223372036854775808", MoneyError.Overflow)]   // whole part alone exceeds a long
+    [InlineData("18446744073709551621", MoneyError.Overflow)]  // 2^64 + 5: wraps to 5 if unchecked
     [InlineData("0", MoneyError.NotPositive)]
     [InlineData("-5", MoneyError.NotPositive)]
     [InlineData("", MoneyError.Malformed)]

@@ -99,15 +99,18 @@ public sealed class ProxyBiddingTests
     }
 
     [Fact]
-    public void An_immediately_outbid_bid_records_the_bidders_amount_and_the_proxy_answer()
+    public void An_immediately_outbid_bidders_maximum_never_appears_in_public_history()
     {
+        // The price ($50, capped by A's maximum) doesn't reveal B's $49.50, so showing B's amount
+        // would leak a private maximum.
         var state = WithBids(Active(Terms(opening: 10m)), (A, 50m));
 
-        var decision = Bidding.Place(state, B, Usd(30m), During, AuctionLimits.Default);
+        var decision = Bidding.Place(state, B, Usd(49.50m), During, AuctionLimits.Default);
 
-        Assert.Equal(
-            [new BidStep(B, Usd(30m), BidSource.Bidder), new BidStep(A, Usd(31m), BidSource.Proxy)],
-            decision.Steps);
+        Assert.True(decision.Accepted);
+        Assert.DoesNotContain(decision.Steps, s => s.Amount == Usd(49.50m));
+        Assert.Contains(new BidStep(A, Usd(50m), BidSource.Proxy), decision.Steps); // the visible price
+        Assert.Contains(decision.Steps, s => s.BidderId == B && s.Source == BidSource.Bidder); // B's bid is shown
     }
 
     [Fact]

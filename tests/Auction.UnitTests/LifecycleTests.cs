@@ -94,6 +94,95 @@ public sealed class LifecycleTests
         Assert.Empty(ListingValidator.ValidateForPublish(Terms(), Start.AddMinutes(-1), AuctionLimits.Default)); // control
     }
 
+    [Theory]
+    [InlineData(AuctionStatus.Draft)]
+    [InlineData(AuctionStatus.Active)]
+    [InlineData(AuctionStatus.Suspended)]
+    [InlineData(AuctionStatus.Closed)]
+    [InlineData(AuctionStatus.Cancelled)]
+    public void Activation_only_moves_a_scheduled_auction(AuctionStatus status)
+    {
+        var state = Draft(Terms()) with { Status = status };
+
+        var result = Lifecycle.Activate(state, During);
+
+        Assert.Equal(LifecycleError.InvalidState, result.Error);
+        Assert.Same(state, result.State);
+    }
+
+    [Theory]
+    [InlineData(AuctionStatus.Scheduled)]
+    [InlineData(AuctionStatus.Active)]
+    [InlineData(AuctionStatus.Suspended)]
+    [InlineData(AuctionStatus.Closed)]
+    [InlineData(AuctionStatus.Cancelled)]
+    public void Only_a_draft_can_be_published(AuctionStatus status)
+    {
+        var state = Draft(Terms()) with { Status = status };
+
+        var result = Lifecycle.Publish(state, Seller, During, AuctionLimits.Default);
+
+        Assert.Equal(LifecycleError.InvalidState, result.Error);
+        Assert.Same(state, result.State);
+    }
+
+    [Theory]
+    [InlineData(AuctionStatus.Draft)]
+    [InlineData(AuctionStatus.Closed)]
+    [InlineData(AuctionStatus.Cancelled)]
+    public void Closing_refuses_drafts_and_terminal_states(AuctionStatus status)
+    {
+        var state = Draft(Terms()) with { Status = status };
+
+        var result = Lifecycle.Close(state, End.AddHours(1));
+
+        Assert.Equal(LifecycleError.InvalidState, result.Error);
+        Assert.Same(state, result.State);
+    }
+
+    [Fact]
+    public void Activating_a_scheduled_auction_already_past_its_end_closes_it()
+    {
+        var scheduled = Draft(Terms()) with { Status = AuctionStatus.Scheduled };
+
+        var result = Lifecycle.Activate(scheduled, End);
+
+        Assert.Equal(AuctionStatus.Closed, result.State.Status);
+        Assert.Equal(CloseOutcome.NoBids, result.State.Outcome);
+    }
+
+    [Fact]
+    public void Each_listing_field_out_of_range_is_named()
+    {
+        var bad = Terms(floor: FloorType.Reserve, reserve: 20_000_000m) with
+        {
+            Title = new string('x', 121),
+            Description = new string('x', 4_001),
+            OpeningPrice = new Money(0),
+            Increment = new Money(0),
+            ImageCount = 5,
+        };
+
+        var errors = ListingValidator.ValidateForPublish(bad, Start.AddMinutes(-1), AuctionLimits.Default);
+
+        Assert.Contains(new FieldError("title", "too_long"), errors);
+        Assert.Contains(new FieldError("description", "too_long"), errors);
+        Assert.Contains(new FieldError("openingPrice", "out_of_range"), errors);
+        Assert.Contains(new FieldError("increment", "out_of_range"), errors);
+        Assert.Contains(new FieldError("reserve", "out_of_range"), errors);
+        Assert.Contains(new FieldError("images", "count_out_of_range"), errors);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(14 * 24 * 60)]
+    public void Durations_of_exactly_one_minute_and_fourteen_days_are_accepted(double minutes)
+    {
+        var terms = Terms() with { EndsAt = Start.AddMinutes(minutes) };
+
+        Assert.Empty(ListingValidator.ValidateForPublish(terms, Start.AddMinutes(-1), AuctionLimits.Default));
+    }
+
     [Fact]
     public void Scheduled_becomes_active_at_its_start_and_not_before()
     {
