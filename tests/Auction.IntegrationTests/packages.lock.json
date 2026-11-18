@@ -427,6 +427,16 @@
           "xunit.v3.runner.common": "[4.0.3]"
         }
       },
+      "auction.domain": {
+        "type": "Project"
+      },
+      "auction.engine": {
+        "type": "Project",
+        "dependencies": {
+          "Auction.Domain": "[1.0.0, )",
+          "Npgsql": "[10.0.3, )"
+        }
+      },
       "auction.migrator": {
         "type": "Project",
         "dependencies": {
@@ -434,6 +444,9 @@
           "Microsoft.Extensions.Logging.Console": "[10.0.15, )",
           "Npgsql.EntityFrameworkCore.PostgreSQL": "[10.0.3, )"
         }
+      },
+      "auction.referencemodel": {
+        "type": "Project"
       },
       "Microsoft.EntityFrameworkCore.Relational": {
         "type": "CentralTransitive",

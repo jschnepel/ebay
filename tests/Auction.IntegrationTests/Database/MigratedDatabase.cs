@@ -1,3 +1,4 @@
+using Auction.Engine;
 using Auction.Migrator;
 using DotNet.Testcontainers.Builders;
 using Npgsql;
@@ -33,13 +34,35 @@ public sealed class MigratedDatabase : IAsyncLifetime
             FilePath.Of("/docker-entrypoint-initdb.d/10-init-roles.sh"))
         .Build();
 
+    private NpgsqlDataSource? _engineDataSource;
+
+    /// <summary>The engine's connection pool, kept below the server's connection limit for the race tests.</summary>
+    public NpgsqlDataSource EngineDataSource =>
+        _engineDataSource ?? throw new InvalidOperationException("The database is not initialised yet.");
+
     public async ValueTask InitializeAsync()
     {
         await _postgres.StartAsync();
         await DatabaseMigrator.MigrateAsync(ConnectionStringFor(Migrator), null, CancellationToken.None);
+        _engineDataSource = NpgsqlDataSource.Create(
+            new NpgsqlConnectionStringBuilder(ConnectionStringFor(Engine)) { MaxPoolSize = 30 }.ConnectionString);
     }
 
-    public async ValueTask DisposeAsync() => await _postgres.DisposeAsync();
+    public async ValueTask DisposeAsync()
+    {
+        if (_engineDataSource is not null)
+        {
+            await _engineDataSource.DisposeAsync();
+        }
+
+        await _postgres.DisposeAsync();
+    }
+
+    public AuctionEngine CreateEngine(EngineOptions? options = null) => new(EngineDataSource, options ?? new EngineOptions());
+
+    /// <summary>The database clock, which decides every deadline.</summary>
+    public async Task<DateTimeOffset> NowAsync() =>
+        new(await ScalarAsync<DateTime>(Migrator, "SELECT clock_timestamp()"));
 
     public string ConnectionStringFor(string role) =>
         new NpgsqlConnectionStringBuilder(_postgres.GetConnectionString())

@@ -16,6 +16,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Auction.Migrator\Auction.Migrator.csproj" />
+    <ProjectReference Include="..\..\src\Auction.Engine\Auction.Engine.csproj" />
+    <ProjectReference Include="..\Auction.ReferenceModel\Auction.ReferenceModel.csproj" />
   </ItemGroup>
 
   <ItemGroup>
