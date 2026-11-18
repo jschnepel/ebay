@@ -28,7 +28,7 @@ public readonly record struct Money(long Cents)
     public static Money Max(Money a, Money b) => a.Cents >= b.Cents ? a : b;
 
     public override string ToString() =>
-        (Cents / 100m).ToString("0.00", CultureInfo.InvariantCulture);
+        (Cents / 100m).ToString("0.00", CultureInfo.InvariantCulture); // display-only: formatting, never arithmetic
 
     /// <summary>
     /// Parses decimal dollars exactly ("12", "12.5", "12.50"), never through floating point.

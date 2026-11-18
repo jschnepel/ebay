@@ -23,6 +23,17 @@ jobs:
         with:
           global-json-file: global.json
 
+      - name: No floating-point money
+        shell: bash
+        run: |
+          # Money is long cents: no float/double in src, and decimal only on lines marked display-only.
+          code() { grep -rnE "$1" --include='*.cs' src/ | grep -vE '^[^:]+:[0-9]+:[[:space:]]*//' || true; }
+          hits=$(code '\b(float|double)\b')
+          if [ -n "$hits" ]; then echo "$hits"; echo "::error::float/double found in src/"; exit 1; fi
+          hits=$(code '\bdecimal\b|\b[0-9]+m\b' | grep -v 'display-only' || true)
+          if [ -n "$hits" ]; then echo "$hits"; echo "::error::decimal outside a display-only line in src/"; exit 1; fi
+          echo "No floating-point money in src/"
+
       - name: Restore (locked)
         run: dotnet restore --locked-mode
 
@@ -33,7 +44,7 @@ jobs:
         run: dotnet build --no-restore -c Release
 
       - name: Test (Microsoft.Testing.Platform; Testcontainers uses the runner's Docker)
-        run: dotnet test --no-build -c Release --report-trx --results-directory "$GITHUB_WORKSPACE/TestResults"
+        run: dotnet test --no-build -c Release --report-trx --results-directory "$GITHUB_WORKSPACE/TestResults" --coverage --coverage-output-format cobertura
 
       - name: Fail on zero discovered tests
         shell: bash
@@ -41,6 +52,18 @@ jobs:
           total=$(grep -ho 'total="[0-9]*"' TestResults/*.trx | grep -o '[0-9]*' | awk '{s+=$1} END {print s+0}')
           echo "Discovered tests: $total"
           if [ "$total" -eq 0 ]; then echo "::error::Zero tests discovered"; exit 1; fi
+
+      - name: Domain line coverage of at least 80%
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import glob, xml.etree.ElementTree as ET
+          rates = [float(p.get("line-rate")) for f in glob.glob("TestResults/*.cobertura.xml")
+                   for p in ET.parse(f).getroot().iter("package") if p.get("name") == "Auction.Domain"]
+          best = max(rates, default=0.0)
+          print(f"Auction.Domain line coverage: {best:.1%}")
+          raise SystemExit(0 if best >= 0.80 else 1)
+          PY
 
       - name: Upload test results
         if: always()
