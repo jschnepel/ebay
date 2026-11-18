@@ -20,8 +20,11 @@ public enum BidSource
     Proxy,
 }
 
-/// <summary>One public bid-history step. Amounts here are visible prices, never a leader's hidden maximum.</summary>
-public sealed record BidStep(Guid BidderId, Money Amount, BidSource Source);
+/// <summary>
+/// One public bid-history step. <see cref="Amount"/> is always a visible price, never a private maximum.
+/// It's null for a bidder who was outbid at once: their bid is shown, its amount isn't.
+/// </summary>
+public sealed record BidStep(Guid BidderId, Money? Amount, BidSource Source);
 
 /// <summary>The result of one bid: the new state and its history steps, or the reason it was refused.</summary>
 public sealed record BidDecision(BidRejection Rejection, AuctionState State, IReadOnlyList<BidStep> Steps)
@@ -133,17 +136,18 @@ public static class Bidding
             CurrentPrice = price,
             AcceptedBidCount = sequence,
         };
-        return new BidDecision(BidRejection.None, next, ProxySteps(state, next, bidderId, maximum));
+        return new BidDecision(BidRejection.None, next, ProxySteps(state, next, bidderId));
     }
 
-    // Public history shows prices, never a leader's hidden maximum. An immediately outbid bidder's amount is
-    // shown, because the resulting price already reveals it (price = their maximum + increment, or a tie).
-    private static List<BidStep> ProxySteps(AuctionState before, AuctionState after, Guid bidderId, Money maximum)
+    // Public history shows visible prices only; maxima are private. A bidder outbid at once
+    // gets a step without an amount, followed by the leader's automatic answer at the new price. The price can
+    // be capped by the leader's maximum, so it doesn't always reveal the outbid amount.
+    private static List<BidStep> ProxySteps(AuctionState before, AuctionState after, Guid bidderId)
     {
         var price = after.CurrentPrice!.Value;
         if (after.LeaderId != bidderId)
         {
-            return [new BidStep(bidderId, maximum, BidSource.Bidder), new BidStep(after.LeaderId!.Value, price, BidSource.Proxy)];
+            return [new BidStep(bidderId, null, BidSource.Bidder), new BidStep(after.LeaderId!.Value, price, BidSource.Proxy)];
         }
 
         var unchanged = before.LeaderId == bidderId && before.CurrentPrice == price;
