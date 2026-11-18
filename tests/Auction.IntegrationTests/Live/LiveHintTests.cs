@@ -31,8 +31,8 @@ public sealed class LiveHintTests(MigratedDatabase db)
         }
 
         var version = (await api.Anonymous().GetJsonAsync($"/api/v1/auctions/{id}")).GetProperty("version").GetInt64();
-        Assert.Equal(version, (await auctionWatcher.NextForAsync(id, Bound)).Version);
-        Assert.Equal(version, (await directoryWatcher.NextForAsync(id, Bound)).Version);
+        Assert.Equal(version, (await auctionWatcher.NextForAsync(id, Bound, minimumVersion: version)).Version);
+        Assert.Equal(version, (await directoryWatcher.NextForAsync(id, Bound, minimumVersion: version)).Version);
     }
 
     [Fact]

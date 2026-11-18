@@ -19,8 +19,8 @@ public sealed record OutboxEvent(long Id, Guid AuctionId, long Version, string T
 /// A hint that fails to send (Redis down) stays unpublished and is retried.
 /// </summary>
 internal sealed partial class OutboxRelay(
-    NpgsqlDataSource dataSource, IHubContext<AuctionHub> hub, Notifications.NotificationStore notifications, ApiOptions options, Admin.AdminKpis kpis,
-    ILogger<OutboxRelay> logger) : BackgroundService
+    NpgsqlDataSource dataSource, IHubContext<AuctionHub> hub, Notifications.NotificationStore notifications, Caching.AuctionCache cache,
+    ApiOptions options, Admin.AdminKpis kpis, ILogger<OutboxRelay> logger) : BackgroundService
 {
     public const string Channel = "auction_outbox";
     public const int BatchSize = 100;
@@ -60,6 +60,8 @@ internal sealed partial class OutboxRelay(
         var read = TimeProvider.System.GetTimestamp();
         foreach (var change in events)
         {
+            // The cache learns of the new version before any client hears of it, so a re-fetch can't get an older one.
+            await cache.AnnounceAsync(change.AuctionId, change.Version);
             var hint = new AuctionChanged(change.AuctionId, change.Version);
             await hub.Clients.Groups(AuctionHub.GroupFor(change.AuctionId), AuctionHub.DirectoryGroup)
                 .SendAsync(AuctionHub.ChangedMethod, hint, cancellationToken);

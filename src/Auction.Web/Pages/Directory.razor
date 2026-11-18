@@ -7,6 +7,17 @@
 <PageTitle>Auctions</PageTitle>
 <MudText Typo="Typo.h4" HtmlTag="h1" Class="mb-4">Auctions</MudText>
 
+<MudStack Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.End" Class="mb-4" role="search">
+    <MudTextField @bind-Value="_query" Label="Search titles" Immediate="true" OnKeyDown="SearchOnEnterAsync" />
+    <MudSelect T="string" @bind-Value="_status" Label="Show">
+        <MudSelectItem T="string" Value="@("")">All</MudSelectItem>
+        <MudSelectItem T="string" Value="@("active")">Active</MudSelectItem>
+        <MudSelectItem T="string" Value="@("ending_soon")">Ending within the hour</MudSelectItem>
+        <MudSelectItem T="string" Value="@("closed")">Closed</MudSelectItem>
+    </MudSelect>
+    <MudButton Variant="Variant.Outlined" OnClick="SearchAsync">Search</MudButton>
+</MudStack>
+
 @if (_list.Error is not null && _list.Items is null)
 {
     <MudAlert Severity="Severity.Error">@_list.Error</MudAlert>
@@ -52,15 +63,32 @@ else
 
 @code {
     private LiveList<AuctionSummary> _list = null!;
+    private string _query = "";
+    private string _status = "";
 
     protected override async Task OnInitializedAsync()
     {
-        _list = new LiveList<AuctionSummary>(Api.ListAsync);
+        _list = NewList();
         Live.Changed += OnChangedAsync;
         await _list.MoreAsync();
         await Live.WatchDirectoryAsync();
         await Refresher.StartAsync(RefreshAsync);
     }
+
+    // Each search starts a fresh list; the filter it was made with stays with its pages.
+    private LiveList<AuctionSummary> NewList()
+    {
+        var (query, status) = (_query, _status);
+        return new LiveList<AuctionSummary>(cursor => Api.SearchAsync(query, status, cursor));
+    }
+
+    private async Task SearchAsync()
+    {
+        _list = NewList();
+        await _list.MoreAsync();
+    }
+
+    private Task SearchOnEnterAsync(KeyboardEventArgs key) => key.Key == "Enter" ? SearchAsync() : Task.CompletedTask;
 
     private Task OnChangedAsync(AuctionChanged hint) =>
         _list.Items?.Find(item => item.Id == hint.AuctionId) is { } shown && hint.Version > shown.Version ? RefreshAsync() : Task.CompletedTask;

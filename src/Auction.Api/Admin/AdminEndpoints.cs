@@ -5,6 +5,7 @@ using Auction.Api.Live;
 using Auction.Contracts.V1;
 using Grpc.Health.V1;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.AspNetCore.SignalR;
 using Npgsql;
 
 namespace Auction.Api.Admin;
@@ -31,7 +32,7 @@ internal static class AdminEndpoints
 
     public static RouteGroupBuilder MapAdmin(this RouteGroupBuilder api)
     {
-        var admin = api.MapGroup("/admin").WithTags("Admin").AddEndpointFilter(AdminOnlyAsync).RequireRateLimiting(RateLimits.Write)
+        var admin = api.MapGroup("/admin").WithTags("Admin").AddEndpointFilter(AdminOnlyAsync).Limited(RateLimits.Policy.Write)
             .ProducesProblem(StatusCodes.Status404NotFound);
         admin.MapGet("/activity", ActivityAsync).Produces<Activity>();
         admin.MapGet("/health", HealthAsync).Produces<AdminHealth>();
@@ -44,10 +45,8 @@ internal static class AdminEndpoints
         admin.MapPost("/auctions/{id:guid}/cancel", (Guid id, ReasonRequest body, HttpContext http, EngineGateway engine) =>
             ModerateAsync(id, body, http, engine, Moderation.Cancel));
         admin.MapGet("/users", UsersAsync).Produces<Page<UserSummary>>().ProducesProblem(StatusCodes.Status400BadRequest);
-        admin.MapPost("/users/{id:guid}/disable", (Guid id, ReasonRequest body, HttpContext http, AccountStore accounts) =>
-            SetDisabledAsync(id, body, http, accounts, disabled: true));
-        admin.MapPost("/users/{id:guid}/enable", (Guid id, ReasonRequest body, HttpContext http, AccountStore accounts) =>
-            SetDisabledAsync(id, body, http, accounts, disabled: false));
+        admin.MapPost("/users/{id:guid}/disable", (Guid id, ReasonRequest body, HttpContext http) => SetDisabledAsync(id, body, http, disabled: true));
+        admin.MapPost("/users/{id:guid}/enable", (Guid id, ReasonRequest body, HttpContext http) => SetDisabledAsync(id, body, http, disabled: false));
         return api;
     }
 
@@ -55,7 +54,7 @@ internal static class AdminEndpoints
         context.HttpContext.User.IsAdmin() ? await next(context) : Problems.Of(StatusCodes.Status404NotFound, "not_found", "Not found.");
 
     private static async Task<Ok<Activity>> ActivityAsync(AdminReader reader, Presence presence, CancellationToken cancellationToken) =>
-        TypedResults.Ok(await reader.ActivityAsync(presence.OnlineUsers, cancellationToken));
+        TypedResults.Ok(await reader.ActivityAsync(await presence.OnlineUsersAsync(), cancellationToken));
 
     private static async Task<Ok<AdminHealth>> HealthAsync(
         AdminReader reader, Health.HealthClient engine, RedisHealth redis, CancellationToken cancellationToken)
@@ -117,8 +116,10 @@ internal static class AdminEndpoints
             TypedResults.Ok(EngineGateway.Response(result, actor)));
     }
 
-    private static async Task<IResult> SetDisabledAsync(Guid id, ReasonRequest body, HttpContext http, AccountStore accounts, bool disabled)
+    // Disabling also ends the account's sessions at once, and tells its open pages.
+    private static async Task<IResult> SetDisabledAsync(Guid id, ReasonRequest body, HttpContext http, bool disabled)
     {
+        var accounts = http.RequestServices.GetRequiredService<AccountStore>();
         if (ReasonOf(body) is not { } reason)
         {
             return ReasonRequired();
@@ -130,9 +131,18 @@ internal static class AdminEndpoints
             return Problems.Of(StatusCodes.Status409Conflict, "own_account", "An admin can't disable or enable their own account.");
         }
 
-        return await accounts.SetDisabledAsync(id, disabled, admin, reason, http.RequestAborted)
-            ? TypedResults.NoContent()
-            : Problems.Of(StatusCodes.Status404NotFound, "not_found", "No such user.");
+        if (!await accounts.SetDisabledAsync(id, disabled, admin, reason, http.RequestAborted))
+        {
+            return Problems.Of(StatusCodes.Status404NotFound, "not_found", "No such user.");
+        }
+
+        if (disabled)
+        {
+            var ended = await http.RequestServices.GetRequiredService<SessionStore>().RevokeAllAsync(new Auction.Domain.UserId(id), http.RequestAborted);
+            await SignOuts.TellAsync(http.RequestServices, ended, http.RequestAborted);
+        }
+
+        return TypedResults.NoContent();
     }
 
     private static string? ReasonOf(ReasonRequest body) =>

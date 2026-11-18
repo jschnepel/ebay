@@ -31,6 +31,9 @@ public sealed class ApiOptions
 
     public RateLimitOptions RateLimits { get; init; } = new();
 
+    /// <summary>How close to its end an active auction counts as "ending soon" in the directory (UI-03).</summary>
+    public TimeSpan EndingSoonWindow { get; init; } = TimeSpan.FromHours(1);
+
     public bool IsValid() =>
         EngineAddress is { IsAbsoluteUri: true }
         && EngineDeadline > TimeSpan.Zero
@@ -38,5 +41,6 @@ public sealed class ApiOptions
         && MaxPageSize >= DefaultPageSize
         && RelayPollInterval > TimeSpan.Zero
         && RelayRetryDelay > TimeSpan.Zero
-        && RateLimits.IsValid();
+        && RateLimits.IsValid()
+        && EndingSoonWindow > TimeSpan.Zero;
 }

@@ -27,7 +27,7 @@ internal static class ImageEndpoints
     public static RouteGroupBuilder MapImages(this RouteGroupBuilder api)
     {
         var images = api.MapGroup("/images").WithTags("Images");
-        images.MapPost("", UploadAsync).RequireAuthorization().RequireRateLimiting(RateLimits.Write)
+        images.MapPost("", UploadAsync).RequireAuthorization().Limited(RateLimits.Policy.Write)
             .Accepts<UploadRequest>("application/json")
             .Produces<UploadedImage>(StatusCodes.Status201Created)
             .Produces<UploadedImage>()
@@ -37,7 +37,7 @@ internal static class ImageEndpoints
             .ProducesProblem(StatusCodes.Status507InsufficientStorage);
         images.MapGet("/{id:guid}", ServeAsync).Produces<byte[]>(StatusCodes.Status200OK, ImageFormat.Jpeg, ImageFormat.Png, ImageFormat.WebP).ProducesProblem(StatusCodes.Status404NotFound);
 
-        var links = api.MapGroup("/auctions/{auctionId:guid}/images").WithTags("Images").RequireAuthorization().RequireRateLimiting(RateLimits.Write)
+        var links = api.MapGroup("/auctions/{auctionId:guid}/images").WithTags("Images").RequireAuthorization().Limited(RateLimits.Policy.Write)
             .ProducesProblem(StatusCodes.Status404NotFound).ProducesProblem(StatusCodes.Status409Conflict);
         links.MapPost("", (Guid auctionId, ImageRequest body, HttpContext http, EngineGateway engine) =>
             SendAsync(http, engine, body.ImageId, async (client, key, actor, call) => (await client.AttachImageAsync(

@@ -23,8 +23,25 @@ public sealed class AuctionApi(HttpClient http)
 
     public Task<ApiResult<object>> SignOutAsync() => SendAsync<object>(HttpMethod.Post, "account/sign-out");
 
-    public Task<ApiResult<Page<AuctionSummary>>> ListAsync(string? cursor) =>
-        SendAsync<Page<AuctionSummary>>(HttpMethod.Get, WithCursor("auctions", cursor));
+    public Task<ApiResult<Page<AuctionSummary>>> ListAsync(string? cursor) => SearchAsync(null, null, cursor);
+
+    /// <summary>The directory with an optional title keyword and status (active, ending_soon, closed).</summary>
+    public Task<ApiResult<Page<AuctionSummary>>> SearchAsync(string? query, string? status, string? cursor)
+    {
+        var filters = new List<string>();
+        if (!string.IsNullOrWhiteSpace(query))
+        {
+            filters.Add($"q={Uri.EscapeDataString(query.Trim())}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(status))
+        {
+            filters.Add($"status={Uri.EscapeDataString(status)}");
+        }
+
+        var path = filters.Count == 0 ? "auctions" : $"auctions?{string.Join('&', filters)}";
+        return SendAsync<Page<AuctionSummary>>(HttpMethod.Get, WithCursor(path, cursor));
+    }
 
     public Task<ApiResult<AuctionDetail>> DetailAsync(Guid id) => SendAsync<AuctionDetail>(HttpMethod.Get, $"auctions/{id}");
 

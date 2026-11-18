@@ -11,7 +11,8 @@ namespace Auction.Api.Auctions;
 /// the engine's recorded outcome instead of running the command twice.
 /// </summary>
 internal sealed partial class EngineGateway(
-    AuctionCommandService.AuctionCommandServiceClient client, ApiOptions options, Admin.AdminKpis kpis, ILogger<EngineGateway> logger)
+    AuctionCommandService.AuctionCommandServiceClient client, ApiOptions options, Admin.AdminKpis kpis, Caching.AuctionCache cache,
+    ILogger<EngineGateway> logger)
 {
     public const string KeyHeader = "Idempotency-Key";
 
@@ -55,7 +56,18 @@ internal sealed partial class EngineGateway(
             kpis.RecordEngine(TimeProvider.System.GetElapsedTime(started));
         }
 
-        return result.Succeeded ? accepted(result) : Refused(http, result);
+        if (!result.Succeeded)
+        {
+            return Refused(http, result);
+        }
+
+        // Read-your-writes through the cache: any read after this response sees at least this version.
+        if (result.HasVersion && Guid.TryParse(result.AuctionId, out var auction))
+        {
+            await cache.AnnounceAsync(auction, result.Version);
+        }
+
+        return accepted(result);
     }
 
     /// <summary>The response body for an accepted command; <c>youLead</c> only for a bid.</summary>

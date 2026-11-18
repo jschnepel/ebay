@@ -20,7 +20,7 @@ internal static class AuctionEndpoints
         auctions.MapGet("/{id:guid}", DetailAsync).Produces<AuctionDetail>().ProducesProblem(StatusCodes.Status404NotFound);
         auctions.MapGet("/{id:guid}/bids", BidsAsync).Produces<Page<BidView>>().ProducesProblem(StatusCodes.Status404NotFound);
 
-        var commands = auctions.MapGroup("").RequireAuthorization().RequireRateLimiting(RateLimits.Write)
+        var commands = auctions.MapGroup("").RequireAuthorization().Limited(RateLimits.Policy.Write)
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict)
@@ -41,10 +41,24 @@ internal static class AuctionEndpoints
     }
 
     private static async Task<IResult> ListAsync(
-        int? pageSize, string? cursor, AuctionReader reader, ApiOptions options, CancellationToken cancellationToken) =>
-        TryPaging(pageSize, cursor, options, out var size, out var after) is { } problem
-            ? problem
-            : TypedResults.Ok(await reader.ListAsync(after, size, cancellationToken));
+        [AsParameters] DirectoryQuery query, AuctionReader reader, ApiOptions options, CancellationToken cancellationToken)
+    {
+        if (TryPaging(query.PageSize, query.Cursor, options, out var size, out var after) is { } problem)
+        {
+            return problem;
+        }
+
+        var status = string.IsNullOrWhiteSpace(query.Status) ? null : query.Status.Trim();
+        if (status is not null && !DirectoryFilter.Statuses.Contains(status))
+        {
+            return Problems.BadRequest("invalid_status", "status must be active, ending_soon or closed.");
+        }
+
+        var filter = new DirectoryFilter(string.IsNullOrWhiteSpace(query.Q) ? null : query.Q.Trim(), status, options.EndingSoonWindow);
+        return TypedResults.Ok(filter.IsEmpty
+            ? await reader.ListAsync(after, size, cancellationToken)
+            : await reader.SearchAsync(filter, after, size, cancellationToken));
+    }
 
     private static async Task<IResult> MineAsync(
         int? pageSize, string? cursor, HttpContext http, AuctionReader reader, ApiOptions options) =>

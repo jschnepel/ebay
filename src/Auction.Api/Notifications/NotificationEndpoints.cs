@@ -11,7 +11,7 @@ internal static class NotificationEndpoints
     {
         var notifications = api.MapGroup("/me/notifications").WithTags("Me").RequireAuthorization();
         notifications.MapGet("", ListAsync).Produces<NotificationPage>().ProducesProblem(StatusCodes.Status400BadRequest);
-        notifications.MapPost("/{id:long}/read", MarkReadAsync).RequireRateLimiting(RateLimits.Write)
+        notifications.MapPost("/{id:long}/read", MarkReadAsync).Limited(RateLimits.Policy.Write)
             .Produces(StatusCodes.Status204NoContent).ProducesProblem(StatusCodes.Status404NotFound);
         return api;
     }

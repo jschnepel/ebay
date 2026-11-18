@@ -28,11 +28,11 @@ internal static class AccountEndpoints
     public static RouteGroupBuilder MapAccounts(this RouteGroupBuilder api)
     {
         var account = api.MapGroup("/account").WithTags("Account");
-        account.MapPost("/sign-up", SignUpAsync).RequireRateLimiting(RateLimits.SignUp)
+        account.MapPost("/sign-up", SignUpAsync).Limited(RateLimits.Policy.SignUp)
             .Produces<AccountResponse>(StatusCodes.Status201Created)
             .ProducesProblem(StatusCodes.Status409Conflict)
             .ProducesValidationProblem(StatusCodes.Status422UnprocessableEntity);
-        account.MapPost("/sign-in", SignInAsync).RequireRateLimiting(RateLimits.SignIn)
+        account.MapPost("/sign-in", SignInAsync).Limited(RateLimits.Policy.SignIn)
             .Produces<AccountResponse>()
             .ProducesProblem(StatusCodes.Status401Unauthorized)
             .ProducesProblem(StatusCodes.Status429TooManyRequests);
@@ -85,7 +85,7 @@ internal static class AccountEndpoints
     {
         var key = AccountStore.Normalize(body.Email ?? "");
         var guard = http.RequestServices.GetRequiredService<SignInGuard>();
-        if (!guard.TryAttempt(key))
+        if (!await guard.TryAttemptAsync(key))
         {
             http.Response.Headers.RetryAfter = "60";
             return Problems.Of(StatusCodes.Status429TooManyRequests, "too_many_attempts", "Too many sign-in attempts for this account; try again later.");
@@ -96,14 +96,14 @@ internal static class AccountEndpoints
         {
             if (!string.IsNullOrEmpty(body.Password))
             {
-                guard.Failed(key);
+                await guard.FailedAsync(key);
             }
 
             // The same answer whether the email is unknown or the password is wrong.
             return Problems.Of(StatusCodes.Status401Unauthorized, "sign_in_failed", "The email or password is incorrect.");
         }
 
-        guard.Succeeded(key);
+        await guard.SucceededAsync(key);
         await IssueCookieAsync(http, account);
         return TypedResults.Ok(ToResponse(account));
     }
@@ -134,11 +134,7 @@ internal static class AccountEndpoints
         var (session, ended) = await http.RequestServices.GetRequiredService<SessionStore>().StartAsync(account.Id, http.RequestAborted);
         await http.SignInAsync(
             CookieAuthenticationDefaults.AuthenticationScheme, Principal.For(account, session), new AuthenticationProperties { IsPersistent = true });
-        if (ended.Count > 0)
-        {
-            var hub = http.RequestServices.GetRequiredService<Microsoft.AspNetCore.SignalR.IHubContext<Live.AuctionHub>>();
-            await hub.Clients.Groups([.. ended.Select(Live.AuctionHub.SessionGroup)]).SendAsync(Live.AuctionHub.SignedOutMethod, http.RequestAborted);
-        }
+        await Live.SignOuts.TellAsync(http.RequestServices, ended, http.RequestAborted);
     }
 
     private static bool IsEmail(string email) =>

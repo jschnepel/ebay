@@ -6,7 +6,7 @@ namespace Auction.Api.Auctions;
 /// An auction as anyone may see it. Never carries the reserve amount, a bidder's maximum or any user's
 /// identity: the leader shows only as <see cref="AuctionDetail.YouLead"/> to the leader themselves.
 /// </summary>
-public class AuctionSummary
+public record AuctionSummary
 {
     public required Guid Id { get; init; }
 
@@ -40,7 +40,7 @@ public class AuctionSummary
 }
 
 /// <summary>One auction in full, as the viewer may see it.</summary>
-public sealed class AuctionDetail : AuctionSummary
+public sealed record AuctionDetail : AuctionSummary
 {
     public required string Description { get; init; }
 
@@ -68,8 +68,14 @@ public sealed class AuctionDetail : AuctionSummary
     public DateTimeOffset? ClosedAt { get; init; }
 }
 
+/// <summary>
+/// One auction as stored, before it is shaped for a viewer: the public view plus the seller, the leader and
+/// the reserve, which only the API sees. This is what the read cache holds.
+/// </summary>
+public sealed record DetailRow(AuctionDetail Public, Guid SellerId, Guid? LeaderId, long? ReserveCents);
+
 /// <summary>An auction the viewer has bid on, and whether they lead it now.</summary>
-public sealed class BiddingSummary : AuctionSummary
+public sealed record BiddingSummary : AuctionSummary
 {
     public required bool YouLead { get; init; }
 
@@ -108,6 +114,17 @@ public sealed class BidView
 
     public required DateTimeOffset AcceptedAt { get; init; }
 }
+
+/// <summary>The directory's search (UI-03): a title keyword, a status, and how soon "ending soon" is.</summary>
+public sealed record DirectoryFilter(string? Query, string? Status, TimeSpan EndingSoonWindow)
+{
+    public static readonly IReadOnlySet<string> Statuses = new HashSet<string>(StringComparer.Ordinal) { "active", "ending_soon", "closed" };
+
+    public bool IsEmpty => Query is null && Status is null;
+}
+
+/// <summary>The directory's query string: a page, an optional title keyword and an optional status.</summary>
+public sealed record DirectoryQuery(int? PageSize, string? Cursor, string? Q, string? Status);
 
 /// <summary>One page of a list, in a fixed order; <see cref="NextCursor"/> is null on the last page.</summary>
 public sealed record Page<T>(IReadOnlyList<T> Items, string? NextCursor);

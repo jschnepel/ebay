@@ -8,7 +8,7 @@ namespace Auction.Api.Auctions;
 /// private maxima. Each read is a fixed number of queries whatever the page size. A draft is visible
 /// only to its seller; to anyone else it doesn't exist.
 /// </summary>
-internal sealed class AuctionReader(NpgsqlDataSource dataSource)
+internal sealed class AuctionReader(NpgsqlDataSource dataSource, Caching.AuctionCache cache)
 {
     private const string SummaryColumns =
         "id, title, status, opening_price_cents, current_price_cents, accepted_bid_count, floor_type, bid_entry, " +
@@ -19,6 +19,22 @@ internal sealed class AuctionReader(NpgsqlDataSource dataSource)
         SELECT {SummaryColumns}
         FROM auction.auctions a
         WHERE status <> 'draft' AND ($1::timestamptz IS NULL OR (ends_at, id) > ($1::timestamptz, $2::uuid))
+        ORDER BY ends_at, id
+        LIMIT $3
+        """;
+
+    // UI-03: a title keyword (wildcards in it are taken literally) and a status: active, ending soon (active
+    // and ending within the window), or closed. Same order and keyset as the directory.
+    private const string SearchSql = $"""
+        SELECT {SummaryColumns}
+        FROM auction.auctions a
+        WHERE status <> 'draft'
+          AND ($4::text IS NULL OR title ILIKE '%' || $4 || '%' ESCAPE '\')
+          AND ($5::text IS NULL
+               OR ($5 = 'active' AND status = 'active')
+               OR ($5 = 'ending_soon' AND status = 'active' AND ends_at <= clock_timestamp() + $6::interval)
+               OR ($5 = 'closed' AND status = 'closed'))
+          AND ($1::timestamptz IS NULL OR (ends_at, id) > ($1::timestamptz, $2::uuid))
         ORDER BY ends_at, id
         LIMIT $3
         """;
@@ -65,9 +81,57 @@ internal sealed class AuctionReader(NpgsqlDataSource dataSource)
         LIMIT $3
         """;
 
-    /// <summary>Published auctions by end time, then id; <paramref name="after"/> is the last one already seen.</summary>
-    public Task<Page<AuctionSummary>> ListAsync((DateTimeOffset EndsAt, Guid Id)? after, int pageSize, CancellationToken cancellationToken) =>
-        PageAsync(ListSql, owner: null, after, pageSize, ReadSummary, cancellationToken);
+    /// <summary>
+    /// Published auctions by end time, then id; <paramref name="after"/> is the last one already seen. The
+    /// first page comes from the cache while no change has been announced since it was read.
+    /// </summary>
+    public async Task<Page<AuctionSummary>> ListAsync((DateTimeOffset EndsAt, Guid Id)? after, int pageSize, CancellationToken cancellationToken)
+    {
+        if (after is not null)
+        {
+            return await PageAsync(ListSql, owner: null, after, pageSize, ReadSummary, cancellationToken);
+        }
+
+        if (await cache.GetDirectoryAsync<Page<AuctionSummary>>(pageSize) is { } cached)
+        {
+            return cached;
+        }
+
+        var generation = await cache.DirectoryGenerationAsync();
+        var page = await PageAsync(ListSql, owner: null, after, pageSize, ReadSummary, cancellationToken);
+        if (generation is { } current)
+        {
+            await cache.FillDirectoryAsync(current, pageSize, page);
+        }
+
+        return page;
+    }
+
+    /// <summary>The directory filtered by a title keyword and a status (UI-03), never from the cache.</summary>
+    public async Task<Page<AuctionSummary>> SearchAsync(
+        DirectoryFilter filter, (DateTimeOffset EndsAt, Guid Id)? after, int pageSize, CancellationToken cancellationToken)
+    {
+        await using var command = dataSource.CreateCommand(SearchSql);
+        command.Parameters.Add(Param(after?.EndsAt));
+        command.Parameters.Add(Param(after?.Id));
+        command.Parameters.Add(Param(pageSize + 1));
+        command.Parameters.Add(new NpgsqlParameter { Value = (object?)EscapeLike(filter.Query) ?? DBNull.Value, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Text });
+        command.Parameters.Add(new NpgsqlParameter { Value = (object?)filter.Status ?? DBNull.Value, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Text });
+        command.Parameters.Add(Param(filter.EndingSoonWindow));
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var items = new List<AuctionSummary>();
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            items.Add(ReadSummary(reader));
+        }
+
+        return items.Count > pageSize
+            ? new Page<AuctionSummary>(items[..pageSize], Cursors.Encode(items[pageSize - 1].EndsAt, items[pageSize - 1].Id))
+            : new Page<AuctionSummary>(items, null);
+    }
+
+    private static string? EscapeLike(string? text) =>
+        text?.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("%", "\\%", StringComparison.Ordinal).Replace("_", "\\_", StringComparison.Ordinal);
 
     /// <summary>The seller's own auctions, drafts included, in the same order as the directory.</summary>
     public Task<Page<AuctionSummary>> MineAsync(UserId seller, (DateTimeOffset EndsAt, Guid Id)? after, int pageSize, CancellationToken cancellationToken) =>
@@ -83,7 +147,28 @@ internal sealed class AuctionReader(NpgsqlDataSource dataSource)
             reader => BiddingSummary.From(ReadSummary(reader), Nullable<Guid>(reader, 13) == bidder.Value),
             cancellationToken);
 
+    /// <summary>
+    /// One auction as the viewer may see it. Published auctions come from the read cache when it holds the
+    /// newest announced version; drafts are always read from PostgreSQL and never cached.
+    /// </summary>
     public async Task<AuctionDetail?> DetailAsync(Guid id, UserId? viewer, CancellationToken cancellationToken)
+    {
+        var row = await cache.GetAsync<DetailRow>(id) ?? await LoadAsync(id, viewer, cancellationToken);
+        if (row is null)
+        {
+            return null;
+        }
+
+        var isSeller = viewer is { } v && row.SellerId == v.Value;
+        return row.Public with
+        {
+            YouAreSeller = isSeller,
+            YouLead = viewer is { } leader && row.LeaderId == leader.Value,
+            ReserveCents = isSeller ? row.ReserveCents : null,
+        };
+    }
+
+    private async Task<DetailRow?> LoadAsync(Guid id, UserId? viewer, CancellationToken cancellationToken)
     {
         await using var command = dataSource.CreateCommand(DetailSql);
         command.Parameters.Add(Param(id));
@@ -94,10 +179,20 @@ internal sealed class AuctionReader(NpgsqlDataSource dataSource)
             return null;
         }
 
-        var summary = ReadSummary(reader);
         var images = await reader.GetFieldValueAsync<Guid[]>(20, cancellationToken);
-        var isSeller = viewer is { } v && reader.GetGuid(16) == v.Value;
-        return new AuctionDetail
+        var row = ReadDetail(reader, images);
+        if (row.Public.Status != "draft")
+        {
+            await cache.FillAsync(id, row.Public.Version, row);
+        }
+
+        return row;
+    }
+
+    private static DetailRow ReadDetail(NpgsqlDataReader reader, Guid[] images)
+    {
+        var summary = ReadSummary(reader);
+        var detail = new AuctionDetail
         {
             Id = summary.Id,
             Title = summary.Title,
@@ -114,15 +209,15 @@ internal sealed class AuctionReader(NpgsqlDataSource dataSource)
             Description = reader.GetString(13),
             IncrementCents = reader.GetInt64(14),
             MinimumNextBidCents = summary.CurrentPriceCents is { } price ? price + reader.GetInt64(14) : summary.OpeningPriceCents,
-            ReserveCents = isSeller ? Nullable<long>(reader, 8) : null,
             Outcome = Text(reader, 15),
-            YouAreSeller = isSeller,
-            YouLead = viewer is { } leader && Nullable<Guid>(reader, 17) == leader.Value,
+            YouAreSeller = false,
+            YouLead = false,
             PublishedAt = Nullable<DateTimeOffset>(reader, 18),
             ClosedAt = Nullable<DateTimeOffset>(reader, 19),
             CoverImageId = summary.CoverImageId,
             ImageIds = images,
         };
+        return new DetailRow(detail, reader.GetGuid(16), Nullable<Guid>(reader, 17), Nullable<long>(reader, 8));
     }
 
     private async Task<Page<T>> PageAsync<T>(

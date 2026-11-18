@@ -1,8 +1,6 @@
-using System.Collections.Concurrent;
 using System.Globalization;
-using System.Threading.RateLimiting;
 using Auction.Api.Accounts;
-using Microsoft.AspNetCore.RateLimiting;
+using Auction.Api.Caching;
 
 namespace Auction.Api.Hosting;
 
@@ -28,105 +26,75 @@ public sealed class RateLimitOptions
 }
 
 /// <summary>
-/// Request limits, answered with 429 and a Retry-After. Sign-up and sign-in are limited per client address
-/// (the proxy's forwarded address once HOST-01 trusts it); every write is limited per signed-in user. These
-/// counters are per instance.
+/// Request limits, answered with 429 and Retry-After, counted in Redis so they hold across API instances
+/// (per instance while Redis is down). Sign-up and sign-in are limited per client address (the proxy's
+/// forwarded address once it is trusted); every write is limited per signed-in user.
 /// </summary>
 internal static class RateLimits
 {
-    public const string SignUp = "sign-up";
-    public const string SignIn = "sign-in";
-    public const string Write = "write";
-
-    public static IServiceCollection AddApiRateLimits(this IServiceCollection services)
+    public enum Policy
     {
-        services.AddSingleton<SignInGuard>();
-        return services.AddRateLimiter(limiter =>
-        {
-            limiter.OnRejected = async (context, cancellationToken) =>
-            {
-                if (context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
-                {
-                    context.HttpContext.Response.Headers.RetryAfter = ((int)Math.Ceiling(retryAfter.TotalSeconds)).ToString(CultureInfo.InvariantCulture);
-                }
-
-                context.HttpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
-                await Problems.Of(StatusCodes.Status429TooManyRequests, "rate_limited", "Too many requests; try again shortly.")
-                    .ExecuteAsync(context.HttpContext);
-            };
-            limiter.AddPolicy(SignUp, http => RateLimitPartition.GetFixedWindowLimiter(Address(http), _ => Window(Limits(http).SignUpPerAddressPerHour, TimeSpan.FromHours(1))));
-            limiter.AddPolicy(SignIn, http => RateLimitPartition.GetFixedWindowLimiter(Address(http), _ => Window(Limits(http).SignInPerAddressPerMinute, TimeSpan.FromMinutes(1))));
-            limiter.AddPolicy(Write, http => RateLimitPartition.GetFixedWindowLimiter(
-                http.User.UserIdOf()?.Value.ToString() ?? Address(http), _ => Window(Limits(http).WritesPerUserPerMinute, TimeSpan.FromMinutes(1))));
-        });
+        SignUp,
+        SignIn,
+        Write,
     }
 
-    private static RateLimitOptions Limits(HttpContext http) => http.RequestServices.GetRequiredService<ApiOptions>().RateLimits;
+    /// <summary>Applies a policy to an endpoint or every endpoint in a group.</summary>
+    public static TBuilder Limited<TBuilder>(this TBuilder builder, Policy policy)
+        where TBuilder : IEndpointConventionBuilder =>
+        builder.AddEndpointFilter(async (context, next) =>
+        {
+            var http = context.HttpContext;
+            var limits = http.RequestServices.GetRequiredService<ApiOptions>().RateLimits;
+            var (key, permits, window) = policy switch
+            {
+                Policy.SignUp => ($"sign-up:{Address(http)}", limits.SignUpPerAddressPerHour, TimeSpan.FromHours(1)),
+                Policy.SignIn => ($"sign-in:{Address(http)}", limits.SignInPerAddressPerMinute, TimeSpan.FromMinutes(1)),
+                _ => ($"write:{http.User.UserIdOf()?.Value.ToString() ?? Address(http)}", limits.WritesPerUserPerMinute, TimeSpan.FromMinutes(1)),
+            };
+            var (count, retryAfter) = await http.RequestServices.GetRequiredService<SharedCounters>().IncrementAsync(key, window);
+            if (count <= permits)
+            {
+                return await next(context);
+            }
+
+            http.Response.Headers.RetryAfter = Seconds(retryAfter);
+            return Problems.Of(StatusCodes.Status429TooManyRequests, "rate_limited", "Too many requests; try again shortly.");
+        });
+
+    public static string Seconds(TimeSpan wait) => ((int)Math.Ceiling(Math.Max(1, wait.TotalSeconds))).ToString(CultureInfo.InvariantCulture);
 
     private static string Address(HttpContext http) => http.Connection.RemoteIpAddress?.ToString() ?? "unknown";
-
-    private static FixedWindowRateLimiterOptions Window(int permits, TimeSpan window) =>
-        new() { PermitLimit = permits, Window = window, QueueLimit = 0, AutoReplenishment = true };
 }
 
 /// <summary>
-/// Per-account sign-in limits: at most so many attempts a minute, and a lockout after repeated wrong
-/// passwords, so guessing one account's password is slow whichever addresses it comes from.
+/// Per-account sign-in limits, shared across instances: at most so many attempts a minute, and a lockout
+/// after repeated wrong passwords, so guessing one account's password is slow whichever addresses it comes from.
 /// </summary>
-internal sealed class SignInGuard(ApiOptions options, TimeProvider clock)
+internal sealed class SignInGuard(SharedCounters counters, ApiOptions options)
 {
-    private readonly ConcurrentDictionary<string, Attempts> _accounts = new(StringComparer.Ordinal);
-
-    private sealed class Attempts
-    {
-        public readonly Lock Gate = new();
-        public DateTimeOffset WindowStart;
-        public int InWindow;
-        public int Failures;
-        public DateTimeOffset LockedUntil;
-    }
-
     /// <summary>Counts an attempt; false when the account is locked or over its per-minute limit.</summary>
-    public bool TryAttempt(string normalizedEmail)
+    public async Task<bool> TryAttemptAsync(string normalizedEmail)
     {
-        var now = clock.GetUtcNow();
-        var attempts = _accounts.GetOrAdd(normalizedEmail, _ => new Attempts());
-        lock (attempts.Gate)
+        if (await counters.HasFlagAsync($"locked:{normalizedEmail}"))
         {
-            if (now < attempts.LockedUntil)
-            {
-                return false;
-            }
+            return false;
+        }
 
-            if (now - attempts.WindowStart >= TimeSpan.FromMinutes(1))
-            {
-                (attempts.WindowStart, attempts.InWindow) = (now, 0);
-            }
+        var (count, _) = await counters.IncrementAsync($"sign-in-account:{normalizedEmail}", TimeSpan.FromMinutes(1));
+        return count <= options.RateLimits.SignInPerAccountPerMinute;
+    }
 
-            return ++attempts.InWindow <= options.RateLimits.SignInPerAccountPerMinute;
+    public async Task FailedAsync(string normalizedEmail)
+    {
+        var (failures, _) = await counters.IncrementAsync($"sign-in-failed:{normalizedEmail}", options.RateLimits.LockoutDuration);
+        if (failures >= options.RateLimits.LockoutFailures)
+        {
+            await counters.SetFlagAsync($"locked:{normalizedEmail}", options.RateLimits.LockoutDuration);
+            await counters.ClearAsync($"sign-in-failed:{normalizedEmail}", options.RateLimits.LockoutDuration);
         }
     }
 
-    public void Failed(string normalizedEmail)
-    {
-        var attempts = _accounts.GetOrAdd(normalizedEmail, _ => new Attempts());
-        lock (attempts.Gate)
-        {
-            if (++attempts.Failures >= options.RateLimits.LockoutFailures)
-            {
-                (attempts.Failures, attempts.LockedUntil) = (0, clock.GetUtcNow() + options.RateLimits.LockoutDuration);
-            }
-        }
-    }
-
-    public void Succeeded(string normalizedEmail)
-    {
-        if (_accounts.TryGetValue(normalizedEmail, out var attempts))
-        {
-            lock (attempts.Gate)
-            {
-                attempts.Failures = 0;
-            }
-        }
-    }
+    public Task SucceededAsync(string normalizedEmail) =>
+        counters.ClearAsync($"sign-in-failed:{normalizedEmail}", options.RateLimits.LockoutDuration);
 }

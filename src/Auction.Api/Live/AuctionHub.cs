@@ -33,7 +33,7 @@ internal sealed class AuctionHub(Presence presence) : Hub
     {
         if (Context.User?.UserIdOf() is { } user)
         {
-            presence.Connected(user.Value);
+            await presence.ConnectedAsync(user.Value);
             await Groups.AddToGroupAsync(Context.ConnectionId, UserGroup(user.Value));
             if (Context.User.SessionOf() is { } session)
             {
@@ -44,14 +44,14 @@ internal sealed class AuctionHub(Presence presence) : Hub
         await base.OnConnectedAsync();
     }
 
-    public override Task OnDisconnectedAsync(Exception? exception)
+    public override async Task OnDisconnectedAsync(Exception? exception)
     {
         if (Context.User?.UserIdOf() is { } user)
         {
-            presence.Disconnected(user.Value);
+            await presence.DisconnectedAsync(user.Value);
         }
 
-        return base.OnDisconnectedAsync(exception);
+        await base.OnDisconnectedAsync(exception);
     }
 
     [HubMethodName("Watch")]

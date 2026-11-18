@@ -39,6 +39,14 @@ public sealed class RedisOutageTests(MigratedDatabase db, Browsers browsers)
             }
 
             Assert.Equal(1200, (await api.Anonymous().GetJsonAsync($"/api/v1/auctions/{id}")).GetProperty("currentPriceCents").GetInt64());
+
+            // Sessions are checked in PostgreSQL and limits counted locally: a signed-in user still works,
+            // and a new sign-in still ends the old session.
+            Assert.Equal(HttpStatusCode.OK, await seller.Http.StatusOfGetAsync("/api/v1/account/me"));
+            Assert.Equal(HttpStatusCode.Created, (await seller.Http.PostCommandAsync("/api/v1/auctions", ApiCalls.Terms())).StatusCode);
+            var (_, again) = await api.SignInAsync(buyer.Email);
+            Assert.Equal(HttpStatusCode.OK, again.StatusCode);
+            Assert.Equal(HttpStatusCode.Unauthorized, await buyer.Http.StatusOfGetAsync("/api/v1/account/me"));
             await Assertions.Expect(watcher.GetByTestId("current-price")).ToHaveTextAsync("$12.00", new() { Timeout = 12_000 });
 
             // Admin health shows Redis degraded, never the whole system down (REL-02).

@@ -33,7 +33,10 @@ internal static class ApiHosting
         builder.Services.AddSingleton<AccountStore>();
         builder.Services.AddSingleton<SessionStore>();
         builder.Services.AddSingleton<NotificationStore>();
-        builder.Services.AddApiRateLimits();
+        builder.Services.AddSingleton<Caching.RedisJobs>();
+        builder.Services.AddSingleton<Caching.SharedCounters>();
+        builder.Services.AddSingleton<Caching.AuctionCache>();
+        builder.Services.AddSingleton<SignInGuard>();
         builder.Services.AddOptions<Images.ImageOptions>().Bind(builder.Configuration.GetSection("Images"))
             .Validate(options => options.IsValid(), "Images options are out of range.").ValidateOnStart();
         builder.Services.AddSingleton(services => services.GetRequiredService<IOptions<Images.ImageOptions>>().Value);
@@ -54,6 +57,7 @@ internal static class ApiHosting
         builder.Services.AddSingleton<AdminReader>();
         builder.Services.AddSingleton<RedisHealth>();
         builder.Services.AddSingleton<Presence>();
+        builder.Services.AddHostedService(services => services.GetRequiredService<Presence>());
 
         builder.Services.AddProblemDetails();
         builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme).AddCookie(cookie =>
@@ -123,7 +127,6 @@ internal static class ApiHosting
         app.UseMiddleware<SameOriginJsonMiddleware>();
         app.UseAuthentication();
         app.UseAuthorization();
-        app.UseRateLimiter();
 
         var api = app.MapGroup("/api/v1");
         api.MapAccounts();

@@ -3,6 +3,7 @@ using System.Text.Json;
 using Auction.Api;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Auction.IntegrationTests.Api;
 
@@ -15,6 +16,9 @@ namespace Auction.IntegrationTests.Api;
 public sealed class ApiHost(string connectionString, Uri engineAddress, bool demoMode, string redis, IReadOnlyDictionary<string, string>? settings = null)
     : WebApplicationFactory<IApiAssembly>
 {
+    /// <summary>A test setting: the client address every request appears to come from (the test server has none).</summary>
+    public const string ClientAddressSetting = "Test:ClientAddress";
+
     public const int DefaultPageSize = 3;
     public const int MaxPageSize = 5;
     public static readonly Uri BaseAddress = new("https://localhost");
@@ -84,6 +88,11 @@ public sealed class ApiHost(string connectionString, Uri engineAddress, bool dem
         {
             builder.UseSetting(name, value);
         }
+
+        if (settings?.GetValueOrDefault(ClientAddressSetting) is { } address)
+        {
+            builder.ConfigureServices(services => services.AddSingleton<Microsoft.AspNetCore.Hosting.IStartupFilter>(new ClientAddress(System.Net.IPAddress.Parse(address))));
+        }
         builder.UseSetting("Api:DefaultPageSize", DefaultPageSize.ToString(System.Globalization.CultureInfo.InvariantCulture));
         builder.UseSetting("Api:MaxPageSize", MaxPageSize.ToString(System.Globalization.CultureInfo.InvariantCulture));
     }
@@ -91,3 +100,17 @@ public sealed class ApiHost(string connectionString, Uri engineAddress, bool dem
 
 /// <summary>A signed-in user and the client that carries their session cookie.</summary>
 public sealed record ApiUser(HttpClient Http, Guid Id, string Email);
+
+/// <summary>Gives every request the same client address, as requests through one proxy would have.</summary>
+internal sealed class ClientAddress(System.Net.IPAddress address) : Microsoft.AspNetCore.Hosting.IStartupFilter
+{
+    public Action<Microsoft.AspNetCore.Builder.IApplicationBuilder> Configure(Action<Microsoft.AspNetCore.Builder.IApplicationBuilder> next) => app =>
+    {
+        app.Use(nextMiddleware => context =>
+        {
+            context.Connection.RemoteIpAddress = address;
+            return nextMiddleware(context);
+        });
+        next(app);
+    };
+}

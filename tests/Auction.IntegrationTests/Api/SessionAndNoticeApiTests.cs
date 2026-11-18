@@ -84,6 +84,7 @@ public sealed class SessionAndNoticeApiTests(MigratedDatabase db)
             ["Api:RateLimits:SignUpPerAddressPerHour"] = "2",
             ["Api:RateLimits:WritesPerUserPerMinute"] = "3",
             ["Api:RateLimits:LockoutFailures"] = "3",
+            [ApiHost.ClientAddressSetting] = $"10.{Random.Shared.Next(256)}.{Random.Shared.Next(256)}.{Random.Shared.Next(1, 255)}",
         });
         var seller = await limited.SignUpAsync();
         var bystander = await limited.SignUpAsync();
