@@ -1,0 +1,5 @@
+<Solution>
+  <Folder Name="/tests/">
+    <Project Path="tests/Auction.IntegrationTests/Auction.IntegrationTests.csproj" />
+  </Folder>
+</Solution>

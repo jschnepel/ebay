@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Thresholds for the SonarAnalyzer rules enabled in .editorconfig. -->
+<AnalysisInput>
+  <Rules>
+    <Rule>
+      <Key>S107</Key>
+      <Parameters><Parameter><Key>max</Key><Value>6</Value></Parameter></Parameters>
+    </Rule>
+    <Rule>
+      <Key>S134</Key>
+      <Parameters><Parameter><Key>max</Key><Value>3</Value></Parameter></Parameters>
+    </Rule>
+  </Rules>
+</AnalysisInput>

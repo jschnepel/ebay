@@ -1,0 +1,33 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+[*.{md,yml,yaml,json,xml,props,csproj,slnx}]
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false
+
+[*.cs]
+csharp_style_namespace_declarations = file_scoped:warning
+dotnet_sort_system_directives_first = true
+
+# Hard limits, each verified with a deliberate-violation probe:
+#   parameters <= 6 (S107, threshold in eng/SonarLint.xml)
+#   nesting depth <= 3 (S134, threshold in eng/SonarLint.xml; stricter than the standard's hard limit of 4)
+#   cyclomatic complexity <= 15 (CA1502, threshold in eng/CodeMetricsConfig.txt)
+# Method (<= 60 logical lines), class (<= 500) and file (<= 600) length are NOT tool-enforced here
+# (S138/S104 did not fire in the NuGet analyzer); they are checked in code review.
+dotnet_diagnostic.S107.severity = warning
+dotnet_diagnostic.S134.severity = warning
+dotnet_diagnostic.CA1502.severity = warning
+
+# Tests: behavior-sentence names (code-rules §15) use underscores by convention.
+[tests/**.cs]
+dotnet_diagnostic.CA1707.severity = none

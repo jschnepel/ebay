@@ -1,0 +1,14 @@
+# Secret scanning (required) plus .NET formatting. Revs pinned at setup on 2026-11-16.
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
+  - repo: local
+    hooks:
+      - id: dotnet-format
+        name: dotnet format (verify)
+        entry: dotnet format --verify-no-changes
+        language: system
+        pass_filenames: false
+        files: \.(cs|csproj|props|editorconfig)$

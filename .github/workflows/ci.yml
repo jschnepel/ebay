@@ -1,0 +1,64 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      # Actions pinned by commit SHA (resolved 2026-11-16).
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          global-json-file: global.json
+
+      - name: Restore (locked)
+        run: dotnet restore --locked-mode
+
+      - name: Format check
+        run: dotnet format --verify-no-changes --no-restore
+
+      - name: Build (warnings are errors)
+        run: dotnet build --no-restore -c Release
+
+      - name: Test (Microsoft.Testing.Platform; Testcontainers uses the runner's Docker)
+        run: dotnet test --no-build -c Release --report-trx --results-directory "$GITHUB_WORKSPACE/TestResults"
+
+      - name: Fail on zero discovered tests
+        shell: bash
+        run: |
+          total=$(grep -ho 'total="[0-9]*"' TestResults/*.trx | grep -o '[0-9]*' | awk '{s+=$1} END {print s+0}')
+          echo "Discovered tests: $total"
+          if [ "$total" -eq 0 ]; then echo "::error::Zero tests discovered"; exit 1; fi
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: test-results
+          path: TestResults/
+          retention-days: 14
+
+  # Final aggregator: fails on any non-success (failure, skipped, cancelled) of required jobs.
+  gate:
+    if: always()
+    needs: [build-test]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every gate to succeed
+        shell: bash
+        run: |
+          result="${{ needs.build-test.result }}"
+          echo "build-test: $result"
+          if [ "$result" != "success" ]; then exit 1; fi
