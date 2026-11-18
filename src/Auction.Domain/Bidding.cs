@@ -24,7 +24,7 @@ public enum BidSource
 /// One public bid-history step. <see cref="Amount"/> is always a visible price, never a private maximum.
 /// It's null for a bidder who was outbid at once: their bid is shown, its amount isn't.
 /// </summary>
-public sealed record BidStep(Guid BidderId, Money? Amount, BidSource Source);
+public sealed record BidStep(UserId BidderId, Money? Amount, BidSource Source);
 
 /// <summary>The result of one bid: the new state and its history steps, or the reason it was refused.</summary>
 public sealed record BidDecision(BidRejection Rejection, AuctionState State, IReadOnlyList<BidStep> Steps)
@@ -39,7 +39,7 @@ public sealed record BidDecision(BidRejection Rejection, AuctionState State, IRe
 public static class Bidding
 {
     public static BidDecision Place(
-        AuctionState state, Guid bidderId, Money amount, DateTimeOffset decisionTime, AuctionLimits limits)
+        AuctionState state, UserId bidderId, Money amount, DateTimeOffset decisionTime, AuctionLimits limits)
     {
         ArgumentNullException.ThrowIfNull(state);
         ArgumentNullException.ThrowIfNull(limits);
@@ -64,7 +64,7 @@ public static class Bidding
 
     // A bid is open when startsAt <= decisionTime < endsAt, by database time. Sellers can't bid on their own auction.
     private static BidRejection CheckEligibility(
-        AuctionState state, Guid bidderId, Money amount, DateTimeOffset decisionTime, AuctionLimits limits)
+        AuctionState state, UserId bidderId, Money amount, DateTimeOffset decisionTime, AuctionLimits limits)
     {
         if (state.Status != AuctionStatus.Active || decisionTime < state.Terms.StartsAt)
         {
@@ -85,7 +85,7 @@ public static class Bidding
     }
 
     // FIXED_INCREMENT: the first bid is at least the opening price; every later bid is exactly price + increment.
-    private static BidDecision PlaceFixed(AuctionState state, Guid bidderId, Money amount)
+    private static BidDecision PlaceFixed(AuctionState state, UserId bidderId, Money amount)
     {
         if (state.CurrentPrice is null && !amount.IsAtLeast(state.Terms.OpeningPrice))
         {
@@ -108,7 +108,7 @@ public static class Bidding
 
     // PROXY: the amount is the bidder's private maximum. It may never be lowered, and must reach the
     // minimum next bid. Raising it to the same amount keeps the original order for tie-breaking.
-    private static BidDecision PlaceProxy(AuctionState state, Guid bidderId, Money maximum)
+    private static BidDecision PlaceProxy(AuctionState state, UserId bidderId, Money maximum)
     {
         var own = state.Maxima.Find(m => m.BidderId == bidderId);
         if (own is not null && !maximum.IsAtLeast(own.Maximum))
@@ -142,7 +142,7 @@ public static class Bidding
     // Public history shows visible prices only; maxima are private (docs/requirements.md §5.2). A bidder outbid at once
     // gets a step without an amount, followed by the leader's automatic answer at the new price. The price can
     // be capped by the leader's maximum, so it doesn't always reveal the outbid amount.
-    private static List<BidStep> ProxySteps(AuctionState before, AuctionState after, Guid bidderId)
+    private static List<BidStep> ProxySteps(AuctionState before, AuctionState after, UserId bidderId)
     {
         var price = after.CurrentPrice!.Value;
         if (after.LeaderId != bidderId)
@@ -164,7 +164,7 @@ public static class Bidding
 /// </summary>
 internal static class ProxyResolver
 {
-    public static (Guid LeaderId, Money Price) Resolve(IReadOnlyList<ProxyMaximum> maxima, AuctionTerms terms)
+    public static (UserId LeaderId, Money Price) Resolve(IReadOnlyList<ProxyMaximum> maxima, AuctionTerms terms)
     {
         var ordered = maxima.OrderByDescending(m => m.Maximum.Cents).ThenBy(m => m.Sequence).ToList();
         var top = ordered[0];

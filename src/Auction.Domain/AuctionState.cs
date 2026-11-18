@@ -25,7 +25,7 @@ public enum CloseOutcome
 /// A bidder's private maximum under <see cref="BidEntry.Proxy"/>. <see cref="Sequence"/> is the order in
 /// which this amount was accepted, so the earlier of two equal maxima leads.
 /// </summary>
-public sealed record ProxyMaximum(Guid BidderId, Money Maximum, long Sequence);
+public sealed record ProxyMaximum(UserId BidderId, Money Maximum, long Sequence);
 
 /// <summary>
 /// One auction's state. Immutable: every rule returns a new state, so the engine can apply it inside its
@@ -33,9 +33,9 @@ public sealed record ProxyMaximum(Guid BidderId, Money Maximum, long Sequence);
 /// </summary>
 public sealed record AuctionState
 {
-    public required Guid Id { get; init; }
+    public required AuctionId Id { get; init; }
 
-    public required Guid SellerId { get; init; }
+    public required UserId SellerId { get; init; }
 
     public required AuctionTerms Terms { get; init; }
 
@@ -44,7 +44,7 @@ public sealed record AuctionState
     /// <summary>Null until the first accepted bid.</summary>
     public Money? CurrentPrice { get; init; }
 
-    public Guid? LeaderId { get; init; }
+    public UserId? LeaderId { get; init; }
 
     /// <summary>Private maxima, one per bidder (proxy auctions only).</summary>
     public ImmutableList<ProxyMaximum> Maxima { get; init; } = [];
@@ -60,6 +60,6 @@ public sealed record AuctionState
         && Terms.Reserve is { } reserve
         && price.IsAtLeast(reserve);
 
-    public static AuctionState NewDraft(Guid id, Guid sellerId, AuctionTerms terms) =>
+    public static AuctionState NewDraft(AuctionId id, UserId sellerId, AuctionTerms terms) =>
         new() { Id = id, SellerId = sellerId, Terms = terms };
 }

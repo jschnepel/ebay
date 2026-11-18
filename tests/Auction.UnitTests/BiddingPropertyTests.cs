@@ -12,9 +12,9 @@ namespace Auction.UnitTests;
 /// </summary>
 public sealed class BiddingPropertyTests
 {
-    private static readonly Guid[] People = [Seller, A, B, C];
+    private static readonly UserId[] People = [Seller, A, B, C];
 
-    private sealed record Scenario(AuctionTerms Terms, RefTerms Reference, IReadOnlyList<(Guid Bidder, Money Amount)> Bids);
+    private sealed record Scenario(AuctionTerms Terms, RefTerms Reference, IReadOnlyList<(UserId Bidder, Money Amount)> Bids);
 
     private static readonly Gen<AuctionTerms> GenTerms =
         Gen.Select(Gen.Long[1, 5_000], Gen.Long[1, 500], Gen.Enum<FloorType>(), Gen.Long[0, 20_000], Gen.Enum<BidEntry>())
@@ -32,7 +32,7 @@ public sealed class BiddingPropertyTests
 
     // Amounts cluster on opening + k * increment so fixed-increment bids are sometimes exactly right,
     // with occasional off-step jitter so the refusal paths are exercised too.
-    private static Gen<(Guid, Money)> GenBid(AuctionTerms terms) =>
+    private static Gen<(UserId, Money)> GenBid(AuctionTerms terms) =>
         Gen.Select(Gen.Int[0, People.Length - 1], Gen.Long[0, 60], Gen.Long[0, 3], Gen.Long[0, terms.Increment.Cents])
             .Select((who, steps, jitterChance, jitter) => (
                 People[who],
@@ -55,11 +55,11 @@ public sealed class BiddingPropertyTests
         GenScenario.Sample(scenario =>
         {
             var (state, accepted) = Run(scenario);
-            var expected = NaiveAuction.Replay(scenario.Reference, Seller, scenario.Bids.Select(b => new RefBid(b.Bidder, b.Amount.Cents)));
+            var expected = NaiveAuction.Replay(scenario.Reference, Seller.Value, scenario.Bids.Select(b => new RefBid(b.Bidder.Value, b.Amount.Cents)));
             var closed = Lifecycle.Close(state, End).State;
 
             Assert.Equal(expected.Accepted, accepted);
-            Assert.Equal(expected.Leader, closed.LeaderId);
+            Assert.Equal(expected.Leader, closed.LeaderId?.Value);
             Assert.Equal(expected.PriceCents, closed.CurrentPrice?.Cents);
             Assert.Equal(expected.Outcome, closed.Outcome.ToString());
         }, iter: 2_000);

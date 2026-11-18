@@ -6,7 +6,7 @@ namespace Auction.UnitTests;
 /// <summary>Lifecycle transitions and outcomes, frozen terms, listing validation and cancellation.</summary>
 public sealed class LifecycleTests
 {
-    private static AuctionState Draft(AuctionTerms terms) => AuctionState.NewDraft(Guid.NewGuid(), Seller, terms);
+    private static AuctionState Draft(AuctionTerms terms) => AuctionState.NewDraft(AuctionId.New(), Seller, terms);
 
     [Fact]
     public void Publishing_before_the_start_schedules_and_after_the_start_activates_now()

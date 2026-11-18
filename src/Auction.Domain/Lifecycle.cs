@@ -25,7 +25,7 @@ public sealed record LifecycleResult(LifecycleError Error, AuctionState State, I
 public static class Lifecycle
 {
     /// <summary>Owner-only, and only while a draft: published terms are frozen.</summary>
-    public static LifecycleResult EditTerms(AuctionState state, Guid actorId, AuctionTerms terms)
+    public static LifecycleResult EditTerms(AuctionState state, UserId actorId, AuctionTerms terms)
     {
         ArgumentNullException.ThrowIfNull(state);
         ArgumentNullException.ThrowIfNull(terms);
@@ -41,7 +41,7 @@ public static class Lifecycle
     /// Draft → Scheduled, or Active when the start has passed ("start now": the start becomes <paramref name="now"/>).
     /// <paramref name="now"/> is the database time read under the auction lock.
     /// </summary>
-    public static LifecycleResult Publish(AuctionState state, Guid actorId, DateTimeOffset now, AuctionLimits limits)
+    public static LifecycleResult Publish(AuctionState state, UserId actorId, DateTimeOffset now, AuctionLimits limits)
     {
         ArgumentNullException.ThrowIfNull(state);
         if (actorId != state.SellerId)
@@ -100,7 +100,7 @@ public static class Lifecycle
     }
 
     /// <summary>Owner-only, from Scheduled or Active, before any accepted bid.</summary>
-    public static LifecycleResult CancelByOwner(AuctionState state, Guid actorId)
+    public static LifecycleResult CancelByOwner(AuctionState state, UserId actorId)
     {
         ArgumentNullException.ThrowIfNull(state);
         if (actorId != state.SellerId)

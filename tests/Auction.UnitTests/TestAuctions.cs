@@ -9,10 +9,10 @@ internal static class TestAuctions
     public static readonly DateTimeOffset End = Start.AddHours(2);
     public static readonly DateTimeOffset During = Start.AddMinutes(30);
 
-    public static readonly Guid Seller = Guid.Parse("00000000-0000-0000-0000-00000000000a");
-    public static readonly Guid A = Guid.Parse("00000000-0000-0000-0000-0000000000a1");
-    public static readonly Guid B = Guid.Parse("00000000-0000-0000-0000-0000000000b2");
-    public static readonly Guid C = Guid.Parse("00000000-0000-0000-0000-0000000000c3");
+    public static readonly UserId Seller = new(Guid.Parse("00000000-0000-0000-0000-00000000000a"));
+    public static readonly UserId A = new(Guid.Parse("00000000-0000-0000-0000-0000000000a1"));
+    public static readonly UserId B = new(Guid.Parse("00000000-0000-0000-0000-0000000000b2"));
+    public static readonly UserId C = new(Guid.Parse("00000000-0000-0000-0000-0000000000c3"));
 
     public static Money Usd(decimal dollars) => new((long)(dollars * 100));
 
@@ -34,10 +34,10 @@ internal static class TestAuctions
         };
 
     public static AuctionState Active(AuctionTerms terms) =>
-        AuctionState.NewDraft(Guid.NewGuid(), Seller, terms) with { Status = AuctionStatus.Active };
+        AuctionState.NewDraft(AuctionId.New(), Seller, terms) with { Status = AuctionStatus.Active };
 
     /// <summary>Places each bid during the auction and asserts it was accepted.</summary>
-    public static AuctionState WithBids(AuctionState state, params (Guid Bidder, decimal Dollars)[] bids)
+    public static AuctionState WithBids(AuctionState state, params (UserId Bidder, decimal Dollars)[] bids)
     {
         foreach (var (bidder, dollars) in bids)
         {
