@@ -1,0 +1,406 @@
+# Requirements
+
+Requirements, acceptance criteria and authorization rules. The architecture and design decisions are in [architecture.md](architecture.md); the build order is in [build-plan.md](build-plan.md). Requirement IDs are stable and are used in tests and in the traceability table (§10).
+
+## 1. Overview
+
+- **Objective:** a distributed auction platform across the whole stack: database, backend engine and web frontend.
+- **Technology:** .NET, Blazor with MudBlazor, gRPC, Redis, PostgreSQL, Docker.
+- **Core requirements:**
+  1. **Full-stack distributed platform:** a working auction system spanning persistence, backend processing and the web UI.
+  2. **Multi-interface and multi-user consistency:** several UIs open at once with several user accounts, with data kept consistent across all of them.
+  3. **Realism and simulation:** behave as realistically as possible, with simulated users and load.
+
+## 2. Unknowns and constraints
+
+| Item | State | Working assumption |
+|---|---|---|
+| Target release date | Confirmed: 2026-11-23 | — |
+| Time of day for the release | Unknown | End of day 2026-11-22 |
+| Auction style: timed or live (auctioneer-paced) | Unknown | Timed, eBay-style auctions with a fixed end time |
+| Permission to run a public hosted instance | Unknown | No public link until confirmed (HOST-02 only) |
+| Meaning of "multiple interfaces" | Decided | Buyer, Seller and Admin views (A1) |
+
+## 3. Engineering standards
+
+Intent-based standards at Tier 2 (no real money, safety or hardware), with .NET and web rule packs; see [ADR-0001](decisions/0001-adopt-portfolio-standards.md).
+
+## 4. Requirements and MoSCoW ([ADR-0002](decisions/0002-scope-cut-for-deadline.md))
+
+**Type key:**
+- **Core** = one of the core requirements in §1
+- **Stack** = follows from the chosen technology
+- **Implied** = expected of any real auction platform
+- **Engineering** = an engineering choice that makes the core provable
+
+### Must
+
+| ID | Requirement (short) | Type |
+|---|---|---|
+| INT-01 | Working persistence, backend processing and web UI | Core |
+| INT-02 | Multiple simultaneous interfaces and authenticated accounts, consistent data (see A1) | Core |
+| INT-03 | Realistic synthetic activity; documented auction-domain assumptions | Core |
+| INT-04 | Documentation and a reproducible one-command run | Core |
+| FND-01 | Pinned SDK, packages and containers; lock files; CI restore/build | Engineering |
+| FND-02 | .NET services: an ASP.NET Core API and a separate auction engine over gRPC; SQL (PostgreSQL); Docker Compose | Stack (.NET Core, gRPC, SQL, containers); the two-service split is Engineering (see A2) |
+| DOM-01 | USD integer cents, documented limits, checked arithmetic | Implied |
+| DOM-02 | Fixed deadlines, judged by `clock_timestamp()` read **after** taking the auction lock (never `now()`, which is frozen at transaction start) | Implied |
+| DOM-03 | Frozen published terms; no self-bidding; cancel only before the first accepted bid | Implied |
+| BID-01 | **Seller-selected bidding model**, two settings chosen on the draft and frozen at publish:<br/>- **Floor type:** `RESERVE` (default; hidden reserve ≥ opening price, public "reserve met / not met" badge), `MINIMUM_BID` (published minimum = opening price) or `ABSOLUTE` (no reserve; explicit seller choice).<br/>- **Bid entry:** `PROXY` (bidder sets a private maximum; the engine bids for them up to it) or `FIXED_INCREMENT` (each bid = current price + increment).<br/>Rules in §5.2 Bidding. Automatic counter-bids resolve inside the same transaction as the triggering bid (COR-02) | Engineering (grounded in UCC §2-328 and industry norms) |
+| LIF-01 | Lifecycle: Draft (owner-only; may be deleted) → publish → Scheduled, or Active if `startsAt` has passed → Active at `startsAt` → Closed at `endsAt` with one outcome: **Sold** (winner and final price recorded), **Reserve not met** (no sale) or **No bids**; or → Cancelled (by the owner from Scheduled or Active before any accepted bid, §5.2 Cancellation, or by an admin, ADM-01). An admin may move Active ↔ Suspended (ADM-01); a Suspended auction still closes at `endsAt` (§5.2 Suspension). A single close worker, polling every second, drives every time-based transition with status-guarded updates (until it activates an auction, bids on it get 409 "not active"; the gap is at most about a second): Scheduled → Active at `startsAt`, and Active or Suspended → Closed at `endsAt`; it claims due auctions with `FOR UPDATE SKIP LOCKED` and re-checks status and `clock_timestamp()` under the lock, so running it twice (or on two instances) changes nothing | Implied |
+| COR-01 | The engine alone mutates auction state, using freshly locked rows | Engineering |
+| COR-02 | Bid, auction state, command result and outbox event commit atomically | Engineering |
+| COR-03 | `Idempotency-Key` on every bid and auction command, scoped per actor, stored with a request hash and the recorded outcome in the engine's transaction, kept 24 h. Missing key → 400; same key with a different payload → 422 (IETF draft-ietf-httpapi-idempotency-key-header-08). The key is checked **after** taking the auction lock, so a concurrent duplicate waits for the first to commit and then receives its replayed outcome. Commands with no auction row yet (creating a draft) serialize on the idempotency row instead: `INSERT … ON CONFLICT DO NOTHING`, then lock that row, so a duplicate create replays rather than failing on the unique key; the draft's 409 "in flight" case therefore doesn't arise and isn't used. The key travels to the engine as the gRPC `request_id` | Engineering |
+| COR-04 | Replay the recorded outcome before re-checking time-sensitive rules | Engineering |
+| COR-05 | Immutable accepted history; per-auction sequence; monotonic version | Engineering |
+| API-01 | Documented REST (OpenAPI) and gRPC (.proto) contracts that match the running services; bidder identity never comes from the browser | Implied |
+| API-03 | Deterministic pagination, bounded payloads, Problem Details | Engineering |
+| SEC-01 | Identity cookie auth (HttpOnly, `SameSite=Strict`, same origin), real accounts (seeded and self-registered); cross-site request protection by **unsafe endpoints that accept only JSON (image upload included: images travel as base64 inside JSON, UI-05) plus an `Origin` check**, with no antiforgery tokens (Microsoft's guidance for same-origin JSON APIs; a recorded deviation from the packs, [ADR-0003](decisions/0003-same-origin-csrf-model.md)) | Implied |
+| AUTH-01 | **Sign-up and sign-in.** The sign-in page has an email field and a **New account** button. New account asks only for a display name and an email; the user is signed in straight away. Under `DEMO_MODE`, **self-registered** accounts sign in with **email only**, no password. **Seeded, simulator and admin accounts always need a password**, generated at deploy time and never committed; admins can't be self-registered (see §5.2 Accounts). Seeded account emails and passwords are never published (no README listing); visitors create their own account. Emails are unique (case-insensitive) and never shown to other users | Engineering |
+| AUTH-02 | **One active session per account.** Signing in from a new browser or device ends every other session of that account: its next request is rejected (401; revocation deletes the session's Redis cache entry in the same step, and with Redis down the check reads PostgreSQL), and an open page is told live that it was signed out because the account signed in elsewhere | Engineering |
+| SEC-04 | Owner permissions, draft privacy, admin accounts limited to admin actions, WebSocket origin checks, public-only notifications | Implied |
+| SEC-05 | **Separate database roles**, least privilege. A superuser **bootstrap script** (run once by the PostgreSQL container's init) creates the four login roles with SCRAM passwords from the environment; the unprivileged **migrator** owns the schema and issues all grants:<br/>- `migrator`: owns the schema; used only by the one-shot migrator<br/>- `engine`: auctions and drafts (SELECT, INSERT, UPDATE, DELETE; a trigger allows DELETE only for drafts; `FOR UPDATE` needs UPDATE), bids (**INSERT and SELECT only**, with a trigger rejecting UPDATE/DELETE, so COR-05's append-only history is enforced by the database), idempotency records, outbox (INSERT), notifications (INSERT), admin audit (INSERT), image blobs (SELECT, to check ownership), auction-image links (SELECT, INSERT, UPDATE for order and cover, DELETE, under the auction lock; a trigger refuses changes once the auction is published, except for the `migrator` role, which the seed and `reset-demo` use), per-user limits rows<br/>- `api`: **SELECT** on auctions, drafts and bids for reads (REST, the Redis-down fallback and image ownership checks); Identity tables (+ user-disable audit), sessions (AUTH-02), sign-in location (LOC-01), image blobs (INSERT, SELECT, DELETE of unattached blobs), per-user upload-quota rows and the global quota row (SELECT, INSERT, UPDATE), admin audit (SELECT, for ADM-03's read-only view), auction-image links (SELECT only), outbox SELECT + UPDATE(`published_at`) only, notifications SELECT + UPDATE(`read_at`) for marking a user's own notifications read; **no write grant on auction or bid tables**<br/>- `verifier`: read-only on all domain tables, used only by the separate verifier tool (SIM-03)<br/>Each service connects with its own role and credentials from the environment. `reset-demo` runs as `migrator`, which may TRUNCATE; the append-only triggers don't fire on TRUNCATE, and no runtime role has TRUNCATE | Engineering (needed by COR-01 and SIM-03) |
+| UI-01 | One MudBlazor app with **Buy** and **Sell** areas. Any ordinary account switches between them without signing in again. **Buy:** directory, detail/history, bid, my bids. **Sell:** create, edit and delete drafts (saved on the server, owner-only), publish, owned auctions and their history. **Shared header:** a notification bell with an unread count and a list of the user's own NOT-01 notifications; opening an item marks it read. Every view has loading, empty, error and permission-denied states, usable at 360 px | Core (web UI, multiple interfaces per A1) + Stack (MudBlazor) |
+| UI-05 | **Auction images.** A seller adds up to 4 images to a draft (JPEG, PNG or WebP; at most 5 MiB = 5,242,880 bytes each after decoding; type checked by file signature, not the name), reorders them, picks a cover, and removes them while it's a draft. Images freeze at publish with the other terms. The directory shows the cover; the detail page shows all of them.<br/>**Two steps, so the engine stays the single writer of auction state:**<br/>1. **Upload:** the API stores the bytes as an image blob owned by the user (§5.2 Images). The request is **JSON** (`{contentType, dataBase64}`), so it keeps the SEC-01 / ADR-0003 model unchanged. Blobs are content-addressed per owner: re-uploading the same bytes returns the same blob id, so a retry never duplicates.<br/>2. **Attach, reorder, remove:** gRPC commands to the engine with an `Idempotency-Key`, run under the auction row lock. The engine checks that the auction is a draft owned by the caller **and that the blob belongs to the caller** (otherwise 404), enforces the 4-image cap, and links or unlinks the blob. Publish runs under the same lock, so an attach either lands before publish or is refused.<br/>**Serving:** the validated content type, `X-Content-Type-Options: nosniff`, and an ETag from the content hash. Published images are `public, immutable`; a draft's images are `private, no-store`, so the proxy never caches owner-only content.<br/>**Limits** (the same values in `DEMO_MODE`, configurable otherwise):<br/>- ≤ 10 open drafts per user (409)<br/>- ≤ 20 auctions published per user per day (429)<br/>- ≤ 30 image uploads per user per hour (429)<br/>- ≤ 100 MiB of image blobs per user (507)<br/>- a 2 GiB total image cap for the hosted demo (507 until the nightly reset)<br/>Upload request bodies are capped at 8 MiB (8,388,608 bytes; 413 above that), which fits a 5 MiB image after base64 encoding (about 6.7 MiB); a decoded image over 5 MiB that still fits the body cap gets 422. All sizes are binary units (MiB, GiB). Unattached blobs older than 1 hour are swept and stop counting toward the quota. **Counted limits are race-free:** the draft cap is checked by the engine under a per-user limits row locked `FOR UPDATE`, the per-user image quota by the API under a per-user upload-quota row locked `FOR UPDATE`, and the 2 GiB total cap by the API under a single global quota row locked `FOR UPDATE` in the same transaction (it serializes uploads only for that check, no bottleneck at these rates), so concurrent requests can't overshoot any of them. The sweep and attach can't race: a link has a foreign key to its blob declared `ON DELETE RESTRICT` (never cascade, so deleting an attached blob fails instead of removing a link; SEC-05 tests it), so the sweep's delete and an attach serialize, and an attach of a blob already swept gets 404 | Engineering |
+| NOT-01 | In-app notifications, sent only to users associated with the auction: outbid (to the previous leader), won/lost at close (to its bidders), ended as Sold, Reserve not met or No bids (to the seller; Reserve not met also to its bidders), suspended/cancelled by an admin, including the admin's stated reason (to the seller and bidders). No email (`DEMO_MODE`-safe). | Engineering |
+| UI-03 | Buyer directory: title keyword search, a status filter (active / ending soon = ending within 1 hour, configurable / closed), and sort by ending soonest; paginated | Engineering (a marketplace without search is unrealistic, A3) |
+| UI-04 | MudBlazor **Admin** area, shown only to admin accounts: live activity (active auctions, recent bids, online-user count), system health (API, engine, PostgreSQL, Redis, outbox backlog) and **system latency KPIs** over a rolling 5-minute window, refreshed live:<br/>- API request latency p50/p95<br/>- bid latency p50/p95 (API receipt → engine commit → response)<br/>- engine gRPC call latency p95<br/>- publish lag p95 (commit → SignalR hint sent)<br/><br/>Measured in-process with .NET metrics histograms; no external dashboard. A window with no samples shows "not measured".<br/>**Moderation lists:**<br/>- all published auctions (every status), searchable by title, seller display name or seller account ID, filterable by status, paginated, with suspend / resume / cancel actions<br/>- all user accounts, searchable by display name or account ID, showing enabled/disabled, paginated, with disable / enable actions | Engineering (A1) |
+| ADM-01 | Admin moderation, with a reason: suspend an Active auction, resume a Suspended one, cancel a Scheduled, Active or Suspended one (§7); disable or enable a user account. Every action is audited | Engineering |
+| ADM-02 | Admin starts and stops a simulator profile from the Admin UI, limited to bounded profiles; under `DEMO_MODE`, only the smoke and realistic profiles. The API starts and stops runs through the simulator's control endpoint, reachable only on the internal network and authenticated with a shared token from the environment; without the token the simulator returns 401, and it refuses a second concurrent run (409). **First candidate to cut if the deadline is at risk.** | Engineering |
+| RT-01 | Live updates across open interfaces via SignalR invalidation hints; REST, engine and SQL stay authoritative | Implied (consistency across live UIs); SignalR is Engineering |
+| RT-02 | Version-gated client refresh; never regress to older state; reconcile (re-fetch the open view) on reconnect, when the tab becomes visible again, and every 10 s while a view is open, so a silent loss of live hints (e.g. Redis down, REL-02) heals without a reconnect | Engineering |
+| OUT-01 | Events created atomically in the engine's transaction; a **single relay** in the API publishes them in commit-safe order (reads only below the current snapshot's `xmin`, ordered by `(xid8, id)`; `LISTEN/NOTIFY` only as a wake-up), retries unpublished events, and stamps `published_at`. Every event carries `(auction_id, seq)` | Engineering |
+| REL-01 | Basic bounds: request deadlines, lock-wait timeout, connection-pool limits | Engineering |
+| REL-02 | **Redis does real but non-authoritative work** (see Design decisions in [architecture.md](architecture.md)): read cache for auction directory and detail pages (refreshed by the relay, version-checked), the "ending soon" sorted index, presence and live counters, shared rate-limit counters, the per-request session-validity cache, and the SignalR backplane, which is in the delivery path from day 1 even on one instance (hub messages go out through Redis), so with Redis down live hints stop while WebSockets stay up and RT-02's periodic reconcile keeps views correct; a second instance (RT-03) is what makes the backplane necessary for cross-instance fan-out. **Bidding never depends on it:** with Redis down, bids still succeed, reads fall back to PostgreSQL, rate limits fall back to per-instance in-memory counters (they never block everyone), and the admin health panel shows the degraded features | Engineering (Redis itself is Stack) |
+| SIM-01 | Isolated cookie jar per virtual user; identity verified via /auth/me | Engineering |
+| SIM-02 | Seeded, realistic simulated activity. Profiles (smoke, realistic, hot-burst) are our design. Simulated bidders are **visibly labelled as simulated** wherever their name appears | Core (simulators); profiles Engineering |
+| SIM-03 | Independent invariant oracle after each run, which recomputes every auction's price and outcome from its bid history under its bidding model, using a deliberately naive **reference model** shared with the property tests and never referencing the engine's code; unknown outcomes resolved | Engineering |
+| SIM-04 | The simulator is optional; the app works without it | Engineering |
+| SIM-05 | Real Identity users seeded; the simulator uses the ordinary public login. Simulator accounts are reserved for it and not listed publicly, so its sign-ins never end a person's session (AUTH-02). Only one simulator run at a time (CLI lock and ADM-02), so runs never evict each other's virtual users | Engineering |
+| SIM-16 | Headless CLI with a scenario report | Engineering |
+| TST-01 | Integration tests against real PostgreSQL and Redis (Testcontainers) | Engineering |
+| OPS-01 | One-shot migrator; startup never resets state | Engineering |
+| DEL-01 | A tagged, tested release with a quickstart and its known limitations | Core (documentation and how to run it) + Engineering (tag, green CI) |
+| HOST-01 | Platform-ready: `/health` (liveness, no dependencies) and `/ready` (engine and PostgreSQL only; Redis is reported as degraded in Admin health, never as not-ready, per REL-02) mapped in Production; an in-binary health probe for Compose healthchecks (chiseled images have no shell); env config; `DEMO_MODE`; idempotent `reset-demo`; served under a configurable `PATH_BASE` (e.g. `/projects/ebay`, sign-in at `<PATH_BASE>/login`); forwarded headers trusted only from the configured platform proxy | Engineering |
+
+### Should
+
+| ID | Requirement | Type |
+|---|---|---|
+| API-02 | Owner-scoped bid-request status endpoint (accepted / rejected / not-recorded / unknown) | Engineering |
+| UI-02 | The UI keeps uncertain request state across reload and reconnect | Engineering |
+| COR-06 | Coherent snapshot reads for detail responses | Engineering |
+| RT-03 | Two API replicas behind a load balancer with affinity, showing cross-replica consistency through the Redis backplane; also needs shared Data Protection keys (SEC-03), cross-replica session revocation, and per-user (not per-replica) rate limits. **Stretch: only if the core is done by day 5** | Engineering |
+| SEC-03 | Shared Data Protection keys between replicas (needed only with RT-03) | Engineering |
+| REL-04 | Graceful shutdown; dependency-degradation reporting | Engineering |
+| OBS-01 | OpenTelemetry traces, metrics and logs on the request, transaction and publish paths, exported over OTLP to the standalone Aspire dashboard in an optional `observability` Compose profile (a developer tool, never the KPI source) | Engineering |
+| SIM-07 | The simulator persists its original key and payload and recovers uncertain outcomes | Engineering |
+| SIM-08 | Simulator SignalR observers checking non-regressing refresh | Engineering |
+| HOST-02 | Live on a home server behind the portfolio site's reverse proxy (depends on the separate hosting-platform project) | Engineering |
+| ADM-03 | Read-only, paginated audit log of admin actions in the Admin area (who, what, target, reason, when) | Engineering |
+| LOC-01 | **Coarse sign-in location, for security only.** At each sign-in the API looks up the client IP (from the forwarded header behind the proxy) in an offline IP-to-region database and stores **country and region only**, never city or coordinates, plus a salted hash of the IP; the raw IP is never stored. Shown in two places: the AUTH-02 signed-out notice ("your account signed in from Oregon, US") and the admin user list (last sign-in region). Hashes and regions are purged after 30 days. No browser location prompt. The sign-up form says what's collected and why. Unknown or private IPs show "unknown location". The IP database is chosen when LOC-01 is built (e.g. a free offline country/region database whose licence allows redistribution). A real system would go finer (city/metro and network) for per-location operational telemetry; see [compliance.md](compliance.md) §5 | Engineering (basis: [compliance.md](compliance.md) §5) |
+
+### Could
+
+| ID | Requirement | Type |
+|---|---|---|
+| SEC-02 | Validated mTLS API→engine; accept actor assertions only from the API service identity | Engineering |
+| OUT-03 | Quarantine permanent schema failures; audited replay preserving event identity | Engineering |
+| REL-03 | Acknowledged commits survive tested process crashes (intact storage) | Engineering |
+| REL-05 | Alerts on backlog and storage pressure; throttle before exhaustion | Engineering |
+| TST-02 | A test-only second engine proves correctness doesn't depend on process-local locks | Engineering |
+| SIM-06 | Bounded closed-loop, burst and paced workloads with complete slot/attempt accounting | Engineering |
+| SIM-09 | Privileged fault control kept outside the traffic runner (read-only evidence access moved to SEC-05's `verifier` role) | Engineering |
+| SIM-10 | Distinguish public-only checks from full integration verification | Engineering |
+| SIM-11 | Classify outcomes, recovery and offered-load coverage separately; pass requires progress plus complete evidence | Engineering |
+| SIM-12 | Documented operation without deferred components; never fake payment, email or settlement | Engineering |
+| SIM-13 | Authorized HTTPS targets, input limits, secret isolation, non-destructive fixture setup | Engineering |
+| SIM-14 | Sanitized machine-readable evidence, with null for unmeasured values | Engineering |
+| SIM-15 | Separate setup/warmup/load/drain phases; bounded shutdown | Engineering |
+| UI-07 | Auction categories, with a category filter in the directory | Engineering |
+| ADM-04 | Reset the demo from the Admin area. If built, it triggers the same host-run `reset-demo` job rather than resetting inside the app under live connections; `DEMO_MODE` only | Engineering |
+
+### Won't (this release)
+
+- **OPS-02:** backup/restore drill.
+- **DEL-02 items:** password-based self-registration and password reset (AUTH-01 covers demo sign-up), email verification, separate metrics stacks (Grafana, Prometheus etc.; the optional Aspire dashboard of OBS-01 is a developer viewer, not a product feature), Kubernetes, extra brokers.
+- **Out-of-domain features:** payments, shipping, bid retractions, soft close / extended bidding (see [compliance.md](compliance.md)), pay-per-bid, watchlists, Buy It Now.
+- **Full-text and faceted search** beyond UI-03.
+
+## 5. Assumptions
+
+### 5.1 Scope assumptions
+
+| # | Assumption | Reason |
+|---|---|---|
+| A1 | "Multiple interfaces" means **three role-based interfaces: Buyer, Seller and Admin**. Each can be open in several concurrent sessions (different users, browsers, devices). The CLI simulator is an additional, non-UI client of the same public API. All of them stay consistent. | Buyer, seller and admin are the three roles of a marketplace. |
+| A2 | "Distributed" means separate networked services: an API and an auction engine over gRPC, PostgreSQL, and Redis for shared cache, presence, rate limits and the SignalR backplane, plus (Should) two API replicas. It does **not** mean multi-host or high availability. | Shows real distributed concerns (network boundaries, idempotency, eventual notification) without multi-host infrastructure. |
+| A3 | "Realistic" covers both the domain rules (§5.2) and simulated users bidding in bursts and at a steady pace. | Realism covers both activity and users. |
+| A4 | **Simulated subsystems:** the subsystems a real marketplace has but this project doesn't build (payments, shipping, email, identity verification) are **not** simulated, and nothing pretends to settle money (SIM-12). The simulated subsystems are the **users** (SIM-02) and the **platform load** (profiles). The clock is real database time; tests use a fake clock only at the unit layer. | Simulated payments would be fake behaviour nobody can verify; the core is consistency under multi-user load. |
+| A5 | **Consistency model.** Bid decisions are strongly consistent: serialized per auction under a row lock in PostgreSQL. Every open view (Buyer, Seller, Admin, any browser) is **eventually consistent with a time bound**: it shows a committed change within **2 s at p95** while connected, never regresses to an older version (RT-02), and re-fetches on reconnect (RT-01). | Makes "consistent" testable: a staleness beyond the bound fails INT-02. |
+
+### 5.2 Domain policies
+
+The legal and industry basis for these policies, and what a real marketplace would add, is in [compliance.md](compliance.md) (primary sources linked inline there).
+
+| Policy | Decision | Reason |
+|---|---|---|
+| Model | Ascending-price, one item per auction, USD only | The classic online-auction model |
+| Images | Blobs are stored in PostgreSQL (`bytea`, with content hash, type, size and dimensions) in an `image_blobs` table written by the `api` role, so binary data never passes through the engine. Links from an auction to its blobs live in `auction_images`, written only by the engine under the auction lock (UI-05). No re-encoding: the server checks file signatures and size and serves only the three allowed types. Deleting a draft removes its links, and the hourly sweep removes unattached blobs. The seed and `reset-demo` (running as `migrator`) insert the bundled demo images directly, without the upload route or its rate limits, and `reset-demo` deletes uploaded images | Keeps binary data out of the engine with no extra storage service (see Design decisions in [architecture.md](architecture.md)) |
+| Money | `long` cents in C#, `int64` in Protobuf, `bigint` in SQL; the UI parses decimal dollars exactly | No floating-point errors |
+| Amount cap | 1,000,000,000 cents, configured | Explicit, testable demo limit |
+| First bid | ≥ opening price, for every floor type | Standard rule |
+| Later bids | `FIXED_INCREMENT`: exactly current price + increment. `PROXY`: a new maximum must be ≥ current price + increment (or ≥ opening price for the first bid). Checked arithmetic throughout | Standard; prevents overflow |
+| Increment | Set by the seller on the draft: default 100 cents ($1.00), minimum 1 cent, frozen at publish like the other terms | One simple rule instead of a price-band table |
+| Bidding (BID-01) | **Proxy price rule:** the leader is the bidder with the highest maximum; the current price is min(highest maximum, second-highest maximum + increment), or the opening price with one bidder. Equal maxima: the earlier accepted maximum leads, at the tied amount. Under `RESERVE`, once the leader's maximum reaches the reserve, the price rises to at least the reserve (capped by that maximum). Every automatic step is recorded in the bid history as `source = proxy`. **Maxima are private:** only their owner sees them; nobody else does, admins included | Our stated rule, modelled on eBay's published behaviour; the formula and tie rule are from community and academic sources, so we document ours instead of claiming eBay's ([compliance.md](compliance.md)) |
+| Reserve | Set on the draft, ≥ opening price, never shown to anyone but the seller. The public sees only "reserve met / not met". It can't change after publish (frozen terms). At close, if the highest bid is below it: **Reserve not met**, no sale | UCC §2-328(3) with-reserve presumption; eBay's met/not-met badge |
+| Absolute | No reserve; the highest valid bid wins. Only by explicit seller choice; labelled "No reserve" | UCC §2-328(3); Fla. Stat. §468.382 |
+| Ownership | A seller can't bid on their own auction | Prevents shill bidding |
+| Existing leader | May raise their own bid (`FIXED_INCREMENT`) or their own maximum (`PROXY`) if the rules pass; raising a maximum never raises their own price, except under `RESERVE` when the raised maximum is the first to reach the reserve, which lifts the price to the reserve (§5.2 Bidding). **A maximum can't be lowered or withdrawn** (422), consistent with no retractions | Standard proxy behaviour |
+| Listing validation | Title 3–120 characters; description up to 4,000; opening price ≥ 1 cent and ≤ the cap; increment ≥ 1 cent; reserve (if `RESERVE`) ≥ opening price; `endsAt` > `startsAt`; duration from 1 minute (demo) to 14 days; 0–4 images (UI-05). **At publish:** `endsAt` must be in the future by database time; a past `startsAt` means "start now". Drafts may be saved incomplete; publish rejects any invalid field with 422 and field-level Problem Details | Explicit, testable limits; drafts can be saved incomplete |
+| Publication | Freezes item details, prices, increment, floor type, reserve, bid entry, currency, start and end | Fairness to bidders; UCC terms must be fixed before bidding |
+| Cancellation | Owner only, while the auction is Scheduled or Active and before any accepted bid, checked under the auction lock, for **every** floor type. An owner can't cancel a Suspended, Closed or Cancelled auction (409): lifting a suspension is the admin's call, and closed outcomes are final. Stricter than UCC §2-328's with-reserve default (withdrawal until close), by design | Fairness once bidding starts |
+| Deadline | `startsAt ≤ dbDecisionTime < endsAt`, where `dbDecisionTime = clock_timestamp()` read after taking the lock | One authoritative clock; `now()` would accept a bid that waited on the lock past the deadline |
+| Closing | At `endsAt` the worker closes the auction. The outcome is **Sold** (winner = current leader, price = current price), **Reserve not met** (no sale; the seller and bidders are told), or **No bids**. Ties are already resolved by the bidding rule (earliest maximum or bid wins). Like the rest of the bid history, the outcome and final price are public; bidders appear in public history as anonymous labels ("Bidder 1", "Bidder 2"), so the public can't tell **who** won. **Only users associated with the auction (the seller and its bidders) are notified of the result**, and only the winner and seller see each other's display names; nobody sees email addresses. | Only the people involved are notified; public prices with anonymous bidders match eBay-style bid history |
+| Ordering | No first-in-first-out promise by browser arrival; accepted bids are serialized per auction | Honest about distributed timing |
+| Drafts | Saved on the server and visible only to their owner, not even to admins. The owner may edit or hard-delete a draft; a draft has no bids, so nothing is lost. | Unpublished listings stay private |
+| Visibility | Drafts owner-only. Published auctions, prices and bid history are public, with bidders shown as anonymous per-auction labels; a user sees their own bids marked "You", and simulator accounts' labels always carry "(simulated)" | Expected marketplace behavior (eBay-style anonymised bid history) |
+| Terminal states | Closed and Cancelled never reopen | Integrity |
+| Suspension (admin) | Active → Suspended: bids are rejected and the end time is **not** extended. Resume → Active, if still before `endsAt`. Reaching `endsAt` while Suspended → Closed by the normal rules (§5.2 Closing: Sold, Reserve not met or No bids), using the price and leader reached before suspension. | Moderation without rewriting history |
+| Admin cancel | An admin may cancel a Scheduled, Active or Suspended auction, even after bids, with a recorded reason. Accepted bids stay in history; there is no winner. | Moderation override, audited |
+| Disabled user | Can't sign in. Existing sessions are rejected on their next request. Their past bids stay valid. | Account safety without rewriting history |
+| Demo access | The one-command local run uses `DEMO_MODE=true` (the `deploy/.env.example` default). Visitors create their own Buy/Sell account on the sign-in page. **One password source:** seeded admin, demo and simulator account passwords come from the environment (`.env` locally, the platform's secrets when hosted). The one-command run creates `.env` with generated values if it's missing, prints the admin password once to the operator's console, and writes it to the git-ignored `deploy/.demo-credentials`; the hosted copy shows it only to users signed in to the portfolio site. `reset-demo` never changes passwords | Visitors never need a shared password, and no secret is committed |
+| Accounts | Self-registered accounts store only a display name and an email; no email is ever sent. Under `DEMO_MODE`, email-only sign-in applies only to self-registered accounts, so anyone who knows such an account's email can use it (or sign its owner out, AUTH-02): accepted for the demo, stated on the sign-up form and in the README. Seeded, simulator and admin accounts have passwords from the environment (see Demo access; never committed), so visitors can't take them over and the simulator can't be signed out mid-run. Outside `DEMO_MODE` (tests of the hardened path), email-only sign-in and self-registration are off, and only password accounts can sign in. `reset-demo` deletes self-registered accounts and their data, so visitors' names and emails don't persist past the nightly reset. | Fast sign-up for visitors without exposing privileged accounts or keeping personal data |
+| Sessions | One active session per account (AUTH-02). The newest sign-in wins; older sessions are revoked server-side, not just in the browser | Revocation must happen on the server to be real |
+| Roles | Buyer and Seller are capabilities of every ordinary user account: any user can buy and sell, switching between the Buy and Sell areas freely. **Admin accounts have admin privileges only:** they can't bid, publish or sell. Admin is granted only through seeding. | Keeps moderation separate from trading; no public admin sign-up |
+| Late commit | A valid pre-deadline decision may commit after the deadline; retries return the recorded result | Explicit decision-time policy |
+
+## 6. Acceptance criteria (Musts)
+
+**The demo journey** (used by UI-01, SIM-04 and the cut order):
+1. A seller signs up and publishes a `PROXY` + `RESERVE` auction.
+2. Two buyers in separate browsers bid; every open view updates live.
+3. One buyer is outbid and is notified.
+4. An admin, in a fourth browser, watches activity and latency, then suspends and resumes the auction.
+5. The auction closes, the winner and seller are notified, and the public sees the outcome.
+6. The simulator runs the realistic profile (from the Admin area or the CLI), and the CLI verifier reports zero violations.
+
+**Proving-layer key:**
+- **U** = unit
+- **D** = database (real PostgreSQL)
+- **S** = service (real API, engine and containers)
+- **B** = browser
+- **R** = release (clean clone)
+
+| ID | Given / When / Then | Layer |
+|---|---|---|
+| INT-01 | **Given** the stack started with one command, **when** a seller creates and publishes an auction and a buyer bids, **then** the bid is persisted and shown in the UI | S, B |
+| INT-02 | **Given** two browsers signed in as different buyers, a third signed in as the auction's seller, a fourth on the Admin activity view, plus a running simulator on the same auction, **when** any of them bids, **then** every open browser shows the new current price, without a manual reload, within the A5 bound (2 s); **and** no browser ever shows an older price after a newer one | B |
+| INT-03 | **Given** the realistic simulator profile, **when** it runs, **then** concurrent bidding happens across several auctions; **and** the README documents §5 | S |
+| INT-04 | **Given** a fresh clone, **when** the README's one command runs (creating `.env` with generated secrets if it's missing), **then** the app starts with seed data and the full suite passes | R |
+| FND-01 | **Given** CI, **when** it runs on a push, **then** restore succeeds in locked mode, the build has zero warnings, and the aggregator job is green | R |
+| FND-02 | **Given** Compose is up, **when** a bid is placed through the API, **then** it reaches the engine over gRPC (an engine log/trace correlates with the API request) and persists in PostgreSQL | S |
+| DOM-01 | **Given** amounts with fractional cents, values over the cap, or values that would overflow, **when** they're bid, **then** each is rejected with its specific error; **control:** a valid amount is accepted | U, D |
+| DOM-02 | **Given** an auction ending at T, **when** a bid is decided at T or later by database time, **then** it's rejected; **control:** just before T it's accepted (fake clock in U, database time in D); **and** a bid whose transaction started before T but waited on the lock until after T is rejected | U, D |
+| DOM-03 | **Given** a published auction, **when** the seller bids, edits its terms, or cancels after the first accepted bid, **then** each is rejected; **controls:** another user's bid, and a cancel before any bid, both succeed; **and** publishing a draft that breaks a §5.2 Listing validation rule (end in the past, end before start, reserve below opening, title too short) returns 422 with the failing field named, while a valid draft publishes (control) | U, D |
+| BID-01 | **Given** a `PROXY` auction with opening $10 and increment $1, **when** A sets max $50 and then B sets max $30, **then** A leads at $31 and B is outbid; **when** C sets max $50 later, **then** A still leads at $50 (earlier equal maximum). **Given** a `FIXED_INCREMENT` auction at $20 with increment $5, **when** a bid of $26 arrives, **then** 422; $25 is accepted (control). **Given** a `RESERVE` auction with reserve $100, **when** it closes at $80, **then** the outcome is Reserve not met with no winner; **at** $100 or more, Sold (control). **When** anyone but the seller reads the auction, **then** no reserve amount and no other bidder's maximum appear in any response | U, D, S |
+| LIF-01 | **Given** a Scheduled auction, **when** `startsAt` passes, **then** it's Active. **Given** an Active `MINIMUM_BID` or `ABSOLUTE` auction with bids, **when** `endsAt` passes, **then** it's Closed as Sold, with winner = the current leader and final price = the current price (§5.2 Bidding; under `PROXY` that isn't the leader's maximum). **Given** a `RESERVE` auction, **then** Sold if the current price reached the reserve, otherwise Reserve not met (BID-01). **Given** no bids, **then** Closed as No bids. **Given** a Suspended auction with bids, **when** `endsAt` passes, **then** it closes by the same rules using the state reached before suspension. Re-running the worker changes nothing. | U, D |
+| COR-01 | **Given** the `api` database role (SEC-05), **when** it attempts a direct write to the auction tables, **then** the write is refused; every mutation goes through the engine | S |
+| COR-02 | **Given** a fault injected after the bid insert, **when** the transaction aborts, **then** no bid, state change, command result or outbox event persists | D |
+| COR-03 | **Given** a bid key used by user A, **when** A repeats it with the same payload, **then** the stored result is returned; **with** a different payload → 422; **when** two identical requests race, **then** exactly one bid is recorded and both responses carry the same outcome; **without** a key → 400; **when** user B uses the same key value, **then** B's command is independent (keys are scoped per actor) | D, S |
+| COR-04 | **Given** an accepted bid, **when** it's retried with the same key after the deadline, **then** the original acceptance is returned | D |
+| COR-05 | **Given** N concurrent bids on one auction, **when** they complete, **then** accepted sequences are 1..k with no gaps, the version strictly increases, and history rows are never updated or deleted | D |
+| API-01 | **Given** the running services, **when** the contract tests call each documented REST route (OpenAPI) and gRPC method (.proto), **then** responses match the contracts; **and** a request carrying a forged bidder ID is attributed to the cookie principal | S |
+| API-03 | **Given** a list endpoint, **when** it's called without a page size or above the maximum, **then** it returns at most the maximum, in deterministic order; **and** errors are RFC 9457 Problem Details with no internals | S |
+| SEC-01 | **Given** a signed-in user, **when** an unsafe request arrives with a foreign `Origin`, or as a form post instead of JSON, **then** it's rejected (403 and 415); **control:** a same-origin JSON request succeeds; **and** the session cookie is `HttpOnly`, `SameSite=Strict` and `Secure` behind HTTPS | S |
+| AUTH-01 | **Given** the sign-in page under `DEMO_MODE`, **when** a visitor creates an account with a name and an email, **then** they're signed in and can bid and sell; **when** they sign out and sign in with that email, **then** they're back in. **When** the sign-up response is lost and the client retries, **then** it gets 409 for the now-existing email and the page offers to sign in with it, which under `DEMO_MODE` reaches the same account (control: the account exists exactly once; sign-up takes no `Idempotency-Key`). **When** someone else registers an email that already exists (any letter case), **then** 409. **When** anyone signs in to a seeded, simulator or admin account without its password, **then** it's refused (control: with the password, it succeeds). **Outside** `DEMO_MODE`, email-only sign-in and self-registration are refused, and password accounts still sign in (control) | S, B |
+| AUTH-02 | **Given** user A signed in on browser 1, **when** A signs in on browser 2, **then** browser 1's next request gets 401, and its open page shows "signed out: your account signed in elsewhere" within the A5 bound; browser 2 keeps working (control). Another user's session is unaffected (control) | S, B |
+| SEC-04 | **Given** each row of §7, **when** it's exercised, **then** the expected result occurs, with a known-good control per row | S |
+| SEC-05 | **Given** the migrated database, **when** each role attempts an operation outside its grants (`api` inserts a bid; `verifier` updates any row; `engine` alters the schema), **then** PostgreSQL refuses it; **controls:** each role's allowed operations succeed | D |
+| UI-01 | **Given** each main view, **when** it's loading, empty, failing or forbidden, **then** the matching state renders; **and** the axe scan shows zero serious or critical violations; **and** the demo journey works at 360 px width; **and** one account bids in the Buy area, switches to Sell and publishes an auction without signing in again; **and** a draft saved in the Sell area is still there after signing in from a different browser, and is gone after the owner deletes it (control: another user can't open it) | B |
+| UI-05 | **Given** a seller's draft, **when** they upload and attach a JPEG, a PNG and a WebP, pick a cover and publish, **then** the directory shows the cover and the detail page shows all three to anyone. **When** they upload a decoded 5.5 MiB image (its JSON request still fits the 8 MiB cap), or a file named `.png` that isn't one (wrong signature), **then** each gets 422 with the reason; a 7 MiB image (its JSON request is over 8 MiB) gets 413. **When** user B attaches a blob owned by user A to B's own draft, **then** 404 (control: B's own blob attaches). **When** 11 draft creates or uploads that would cross the storage quota race, **then** exactly the allowed number succeed; the same holds for uploads from different users racing past the total cap (the test configures a small cap), with 507 for the rest. **When** five attaches race on one draft, **then** exactly four succeed and the fifth gets 409. **When** an attach races publish, **then** it either lands before publish or gets 409, never after. **When** the same upload is retried, **then** the same blob id comes back. **When** a user exceeds the upload rate, the daily publish cap, the draft cap or the storage quota, **then** 429, 429, 409 or 507 respectively. **When** anyone else attaches to or removes from that draft, **then** 404. **After** publish, attach and remove are refused (409). **And** served images carry the validated `Content-Type` and `nosniff`, and a draft's images are `no-store` (control: a valid upload and attach succeed) | D, S, B |
+| NOT-01 | **Given** a `MINIMUM_BID` auction with a seller and two bidders, **when** bidder B outbids A, **then** only A gets "outbid". **When** it closes, **then** B gets "won", A gets "lost", the seller gets "ended", and a third user who never bid gets nothing (control). Notifications survive a reload. **And** A's bell shows an unread count of 1 within the A5 bound; after A opens the item, the count is 0 after a reload. **Given** a `RESERVE` auction that closes below its reserve, **then** the seller and every bidder get "reserve not met". **Given** an auction that closes with no bids, **then** the seller gets "ended, no bids". **When** an admin suspends or cancels an auction with a reason, **then** the seller and its bidders get the notice including that reason, and nobody else does (control) | D, S, B |
+| UI-03 | **Given** seeded auctions, **when** a buyer searches a title keyword, filters by status, and sorts by ending soonest, **then** only matching auctions appear, in the correct order, paginated; **control:** an empty query returns all published auctions | S, B |
+| UI-04 | **Given** the Admin UI open, **when** the simulator generates bids, **then** live activity and the outbox backlog update without a reload; **when** Redis is stopped, **then** health shows Redis as degraded while bidding still works; **and** each latency KPI equals the exact p50/p95 of the measurements recorded in its rolling 300 × 1-second window (checked with a fake clock and known samples), (control: with no traffic, they show "not measured", never zero); **and** the admin auction list finds an auction by seller display name and status, and the user list finds a user by display name or account ID, each paginated, with drafts never listed | B, S |
+| ADM-01 | **Given** an Active auction with bids, **when** an admin suspends it, **then** new bids are rejected (409); after resume, bids are accepted again (control). **When** an admin cancels it, **then** it's Cancelled with history kept and an audit row written. **When** an admin disables a user, **then** that user's next request is rejected (control: other users are unaffected). | D, S, B |
+| ADM-02 | **Given** an admin, **when** they start the smoke profile from the UI, **then** simulated bids appear and the run stops when requested or when done; **when** a non-admin calls the same endpoint, **then** 404 (per §7); **under** `DEMO_MODE`, **then** the hot-burst profile is refused | S, B |
+| RT-01 | **Given** two browsers on one auction, **when** SignalR messages are lost (Redis stopped mid-test, which stops live hints even on one instance while the WebSockets stay up), **then** within RT-02's 10 s reconcile interval both re-fetch and show the correct state, with no reconnect; **when** a connection drops and returns, **then** that browser re-fetches on reconnect (control: with Redis up, updates arrive live within the A5 bound) | S, B |
+| RT-02 | **Given** an older response arriving after a newer one, **when** the client applies it, **then** the client keeps the newer version | U, B |
+| OUT-01 | **Given** the relay stopped during a bid, **when** it restarts, **then** the event is published, and duplicates are tolerated by consumers; **and** **given** two transactions where the lower outbox id commits last, **then** the relay publishes both, in order, without skipping either | D, S |
+| REL-01 | **Given** lock contention beyond the configured wait, **when** a bid arrives, **then** it fails fast with a defined retryable error, without hanging | D, S |
+| REL-02 | **Given** Redis stopped, **when** a buyer bids, **then** the bid is accepted, the auction page still loads (from PostgreSQL), and Admin health shows Redis degraded; **and** when Redis returns, caches refill and clients reconcile; **and** a cached auction page never shows an older version than PostgreSQL after the relay has published the change | S |
+| SIM-01 | **Given** the simulator's virtual users, **when** setup completes, **then** each /auth/me identity matches its seeded account before any load starts | S |
+| SIM-02 | **Given** a seed, **when** the smoke, realistic or hot-burst profile runs, **then** the report shows intended vs. actual load and the outcome counts | S |
+| SIM-03 | **Given** a finished run, **when** the separate verifier tool (which shares no production rule code) reads the database with the read-only `verifier` role, **then** zero invariant violations are found and no unknown outcomes remain | S |
+| SIM-04 | **Given** the simulator stopped, **when** steps 1–5 of the demo journey run in the browser, **then** they all pass | B |
+| SIM-05 | **Given** seeded simulator accounts, **when** the simulator logs in, **then** it uses the ordinary public password sign-in, sending same-origin JSON like a browser | S |
+| SIM-16 | **Given** `simulator run <profile>`, **when** an invariant is violated, **then** it exits non-zero; **otherwise** it exits zero and writes a report | S |
+| TST-01 | **Given** the test suite, **when** it runs, **then** every SQL claim uses Testcontainers PostgreSQL/Redis, and no in-memory database provider is referenced anywhere | R |
+| OPS-01 | **Given** data in the database, **when** services restart, **then** the data is unchanged, and migrations run only through the migrator command | S |
+| DEL-01 | **Given** the release, **when** it's tagged, **then** the tag points at a commit with green CI, and the README has the quickstart and Known Limitations | R |
+| HOST-01 | **Given** the stack, **when** `/health` and `/ready` are called, **then** they report liveness and readiness correctly; `DEMO_MODE` is honored; running `reset-demo` twice gives the same state (the same seeded accounts and passwords, the same seeded auctions with start and end times relative to the reset time, and no self-registered accounts, sessions or bids); it works behind a forwarding proxy under `PATH_BASE=/projects/ebay` (pages, API and SignalR all resolve, the cookie is scoped to the path); **and** forwarded headers from an untrusted source are ignored | S |
+
+## 7. Authorization
+
+Every row needs a test. Rows marked **control** are the known-good cases that make the rejection tests meaningful.
+
+| Actor | Action | Resource | Expected |
+|---|---|---|---|
+| Anonymous | Browse / view | Published auctions and bid history (anonymous bidder labels) | 200 (control) |
+| Anonymous | View | any draft | 404 |
+| Anonymous | Bid, create, publish, cancel | any | 401 |
+| Anonymous | Create an account (name + email) | — | 201 and signed in (control); an existing email (any letter case), including a retry after a lost response, gets 409 and the page offers sign-in |
+| Anonymous | Sign in by email only | a self-registered account, `DEMO_MODE` on | 200 (control) |
+| Anonymous | Sign in by email only | a seeded, simulator or admin account, or any account with `DEMO_MODE` off | 401 |
+| Anonymous | Sign in with password | a seeded, simulator or admin account, either mode | 200 (control) |
+| Revoked session (AUTH-02) | Any authenticated request | — | 401 |
+| User | Create | own draft | 201 (control) |
+| User | Upload image blobs; attach / reorder / remove images | own draft | 201 / 200 (control) |
+| User | Attach / reorder / remove images | their own published auction | 409 (images freeze at publish) |
+| User | Attach / reorder / remove images | another user's draft or published auction | 404 (owner-only action; consistent with the edit row) |
+| User | Attach an image blob | a blob owned by another user | 404 |
+| User | View an unattached blob, or a draft's images | their own | 200, `private, no-store` (control) |
+| User | View an unattached blob, or a draft's images | another user's | 404 |
+| Admin | Upload image blobs | — | 403 (admin accounts have admin privileges only). Attaching or removing images always targets a draft, so it's 404 (Draft row below) |
+| Anonymous | Any endpoint that needs a signed-in user (drafts, images, bids, my bids, notifications, request status, sign-out) | any | 401 |
+| Anonymous | Any admin route or endpoint | — | 404 (same as a non-admin; existence isn't revealed) |
+| Anyone | View images | a published auction, through its auction image URL | 200, `public, immutable` (control). Caching follows the URL (published auction vs. draft), not the blob, so a blob reused in a later draft is still private there |
+| User | View / edit / publish / delete | own draft | 200 (control) |
+| User | View | another user's **published** auction and its history | 200 (control; same as anonymous) |
+| User | View / edit / publish / delete / cancel / bid | another user's **draft** | 404 (existence isn't revealed) |
+| User | Edit / publish / cancel | another user's published auction | 404 (owner-only actions don't reveal ownership checks) |
+| User | Delete | own published auction | 409 (only drafts can be deleted; cancel instead) |
+| User | Edit terms | own **published** auction | 409 |
+| User | Cancel | own Scheduled or Active auction before the first accepted bid | 200 (control) |
+| User | Cancel | own auction after an accepted bid | 409 |
+| User | Cancel | own auction that's Suspended, Closed or Cancelled | 409 |
+| User | Bid | own auction | 409 (self-bid) |
+| User | Bid | another user's **Active** auction, valid amount | accepted (control) |
+| User | Read | another bidder's proxy maximum, or an auction's reserve amount (not their own auction) | never returned, in any response or SignalR message |
+| Seller | Read | their own auction's reserve amount | 200 (control) |
+| User | Bid | a published auction that's Scheduled, Suspended, Closed or Cancelled | 409 (not active) |
+| User | Bid or set a maximum | below the minimum next bid, a fixed-increment amount other than the next step (too high or too low), or lowering their own maximum | 422 |
+| User | View request status | own bid requests | 200 (Should: API-02) |
+| User | View request status | another user's requests | 404 |
+| Browser | Open a SignalR connection | from the app's own origin | accepted (control) |
+| Browser | Open a SignalR connection | from a foreign `Origin` | rejected |
+| Any SignalR subscriber to an auction group | Receive auction hints | — | public fields only (auction ID, version); never bidder identity |
+| A user's own connections | Receive per-user messages (notification count changed, session revoked) | only that user's connections | sent to the user's own group only (control: another user receives nothing) |
+| Simulator virtual user | any | — | same as User; no privileged path |
+| Admin | View activity and health | Admin UI | 200 (control) |
+| User (non-admin) | Any admin route or endpoint | — | 404 (existence isn't revealed) |
+| Admin | Suspend | an Active auction | 200, audited (control) |
+| Admin | Resume | a Suspended auction before `endsAt` | 200, audited (control) |
+| Admin | Cancel | a Scheduled, Active or Suspended auction | 200, audited (control) |
+| Admin | Suspend / resume / cancel | an auction in any other state (e.g. suspend a Scheduled one, resume an Active one), or a Closed or Cancelled auction | 409 |
+| Admin | Any action | a Draft | 404 (drafts are owner-only, §5.2 Drafts) |
+| Admin | Bid on a published auction, or create or publish an auction | any published auction or new draft (another user's draft: 404, row above) | 403 (admin accounts have admin privileges only, §5.2 Roles) |
+| Admin | Open the Buy or Sell area | — | not shown in navigation; the API refuses the actions above |
+| User (non-admin) | Switch between the Buy and Sell areas | — | allowed without signing in again (control) |
+| Admin | Disable / enable | a user account (not their own) | 200, audited |
+| Admin | Disable | their own account | 409 (prevents locking the admin out) |
+| Admin | See bidder and seller identities | admin lists, auction history, audit log | display name and account ID; never email addresses |
+| Admin | Start / stop a simulator profile | bounded profiles (smoke and realistic under `DEMO_MODE`) | 202 (control) / 409 for hot-burst under `DEMO_MODE` |
+| Disabled user | Any authenticated request | — | 401 |
+| User | Read notifications | own notifications | 200 (control) |
+| User | Read notifications | another user's notifications | 404 |
+| User | Mark notifications read | another user's notifications | 404 |
+| User | See the winner's display name | a Closed auction they sold or won | 200 (control) |
+| User or anonymous | See the winner's identity | a Closed auction they didn't sell or win | anonymous label only; outcome and final price are public |
+| Lifecycle worker (system) | Activate / close | due auctions | yes |
+| Anything except the API service | Call | the engine's gRPC | unreachable (internal Compose network only; mTLS is a Could) |
+| Anything except the API service | Call | the simulator's control endpoint | 401 without the shared control token; not published outside the internal network |
+
+## 8. Non-functional targets
+
+| Area | Target | How measured |
+|---|---|---|
+| API p95, typical read | < 300 ms on the demo host with seed data | simulator realistic profile |
+| Bid p95, realistic profile | < 500 ms | simulator report |
+| Frontend LCP | < 2.5 s | Playwright trace / Lighthouse, recorded once |
+| View convergence (A5) | A committed change shows in every connected view within 2 s at p95; while Redis is down (REL-02), within RT-02's 10 s reconcile interval | browser test (INT-02) + simulator observers (SIM-08, Should) |
+| Hot-burst correctness | 50 bidders on one auction for 30 s → zero invariant violations | oracle |
+| Accessibility | WCAG 2.2 AA basics; zero serious or critical axe violations | browser tests |
+| Login rate limiting | Password accounts use ASP.NET Core Identity lockout (its defaults: 5 failed attempts, then 5 minutes). ≤ 10 attempts/min per account, and ≤ 60/min per client IP (taken only from the trusted proxy's forwarded header), then 429. All limits are configuration; the simulator and test environments set their own, so a 50-user run from one machine isn't throttled | service test |
+| Sign-up rate limiting | ≤ 20 new accounts/hour per client IP (trusted forwarded header; sized for several users behind one shared IP), then 429 | service test |
+| Write rate limiting | Every write endpoint (bids, drafts, publish, cancel, image upload, notification read, admin actions) limited per authenticated user ID (configured; counted in Redis, shared across replicas), then 429; image quotas per UI-05 | service test |
+| Cookies | `HttpOnly`, `Secure` (when HTTPS), `SameSite=Strict`, app-specific name, `Path` = the path base | service test |
+| Security headers | CSP, `X-Content-Type-Options`, `Referrer-Policy`, `frame-ancestors` | service test |
+| Password hashing | ASP.NET Core Identity default (PBKDF2), documented | code review + doc |
+| Secrets | gitleaks clean in pre-commit (today) and CI (build step 16); no default credentials | CI |
+| Dependencies | NuGetAudit fails the build on any advisory, low and above, transitive included (the pack's rule, as set in `Directory.Build.props`); one Trivy image scan with results in code scanning; Dependabot version updates | CI |
+
+Unmeasured values are reported as "not measured".
+
+### OWASP Top 10 (2025) mapping
+
+Required by the stack pack (§7). Each category maps to a mitigation in this spec and the test that proves it, or to an accepted risk.
+
+| Category | Mitigation | Proven by |
+|---|---|---|
+| A01 Broken Access Control | §7 authorization table: owner-only actions return 404 to anyone else, admins have admin privileges only, actor identity comes from the principal; no server-side fetch of user-supplied URLs (images arrive as bytes), so no SSRF path | SEC-04 (every §7 row, with a control) |
+| A02 Security Misconfiguration | Security headers and cookie rows (above); no default credentials; the engine's gRPC is internal only; `DEMO_MODE` gates self-registration; chiseled base images | Security headers and Cookies rows (service tests); §7's engine-unreachable row (SEC-04) |
+| A03 Software Supply Chain Failures | Locked restore, NuGetAudit failing on any advisory, Trivy image scan, Dependabot, pinned action SHAs, build attestations | CI (Dependencies row) |
+| A04 Cryptographic Failures | TLS at the platform edge; Identity password hashing; SCRAM database passwords; `Secure` cookies over HTTPS; secrets only from the environment | Password hashing and Secrets rows; code review |
+| A05 Injection | Parameterized Npgsql and EF Core only, no SQL built from strings; Blazor output encoding and CSP; images served only with their validated type and `nosniff` (UI-05) | service tests; UI-05 acceptance |
+| A06 Insecure Design | The §5 domain policies, a single writer of auction state (COR-01), append-only bids, quotas and rate limits, and an independent verifier of the invariants | COR-01..05, SIM-03 (oracle) |
+| A07 Authentication Failures | Login rate limits and Identity lockout for password accounts (Login row above); single active session (AUTH-02); `SameSite=Strict` cookie. **Accepted risk:** under `DEMO_MODE`, self-registered accounts sign in by email alone, so lockout doesn't apply to them; they hold no real data, can't be admins, and the nightly reset deletes them | AUTH-01, AUTH-02, Login rate limiting row |
+| A08 Software or Data Integrity Failures | Append-only bid trigger; idempotency records; outbox written in the same transaction; no deserialization of untrusted types (JSON DTOs only); attested images | COR-03, COR-05, SEC-05 tests |
+| A09 Security Logging and Alerting Failures | Admin actions and user disables are audited (ADM-01, ADM-03); structured logs without secrets or emails. **Accepted gap:** no alerting or on-call for a demo; degraded dependencies show in the admin health panel instead | ADM-01 acceptance; REL-02 |
+| A10 Mishandling of Exceptional Conditions | Problem Details without stack traces; authorization fails closed; lock-timeout and deadlock retries; Redis-down fallbacks (REL-02); `/ready` fails when the engine or database is down | API-03, REL-01, REL-02 acceptance |
+
+## 9. Schedule
+
+The target release is 2026-11-23. The build order, dependencies, schedule and cut order are in [build-plan.md](build-plan.md). If the deadline is at risk, work is cut in that order; the correctness core (build steps 1–10) is never cut.
+
+## 10. Traceability
+
+Status comes from evidence only.
+
+| ID | Type | Implementation | Test(s) | Proving layer | Status |
+|---|---|---|---|---|---|
+| INT-01 | Core | | | S, B | not started |
+| INT-02 | Core | | | B | not started |
+| INT-03 | Core | | | S | not started |
+| INT-04 | Core | | | R | not started |
+| FND-01 | Engineering | `global.json`, `Directory.*.props`, lock files, `.github/workflows/ci.yml` | CI workflow gates | R | implemented; CI green |
+| FND-02 | Stack | | | S | not started |
+| DOM-01 | Implied | `src/Auction.Domain/Money.cs` | `MoneyTests` | U, D | U passed; D pending |
+| DOM-02 | Implied | `src/Auction.Domain/Bidding.cs` | `FixedIncrementAndEligibilityTests` | U, D | U passed; D pending |
+| DOM-03 | Implied | `Bidding.cs`, `Lifecycle.cs`, `ListingValidator.cs` | `FixedIncrementAndEligibilityTests`, `LifecycleTests` | U, D | U passed; D pending |
+| BID-01 | Engineering | `src/Auction.Domain/Bidding.cs` | `ProxyBiddingTests`, `FixedIncrementAndEligibilityTests`, `BiddingPropertyTests` | U, D, S | U passed; D, S pending |
+| LIF-01 | Implied | `src/Auction.Domain/Lifecycle.cs` | `LifecycleTests` | U, D | U passed; D pending |
+| COR-01 | Engineering | | | S | not started |
+| COR-02 | Engineering | | | D | not started |
+| COR-03 | Engineering | | | D, S | not started |
+| COR-04 | Engineering | | | D | not started |
+| COR-05 | Engineering | | | D | not started |
+| API-01 | Implied | | | S | not started |
+| API-03 | Engineering | | | S | not started |
+| SEC-01 | Implied | | | S | not started |
+| AUTH-01 | Engineering | | | S, B | not started |
+| AUTH-02 | Engineering | | | S, B | not started |
+| SEC-04 | Implied | | | S | not started |
+| SEC-05 | Engineering | | | D | not started |
+| UI-01 | Core / Stack | | | B | not started |
+| UI-05 | Engineering | | | D, S, B | not started |
+| NOT-01 | Engineering | | | D, S, B | not started |
+| UI-03 | Engineering | | | S, B | not started |
+| UI-04 | Engineering (A1) | | | B, S | not started |
+| ADM-01 | Engineering | | | D, S, B | not started |
+| ADM-02 | Engineering | | | S, B | not started |
+| RT-01 | Implied / Engineering | | | S, B | not started |
+| RT-02 | Engineering | | | U, B | not started |
+| OUT-01 | Engineering | | | D, S | not started |
+| REL-01 | Engineering | | | D, S | not started |
+| REL-02 | Engineering | | | S | not started |
+| SIM-01 | Engineering | | | S | not started |
+| SIM-02 | Core / Engineering | | | S | not started |
+| SIM-03 | Engineering | `tests/Auction.ReferenceModel` (reference model only) | `BiddingPropertyTests` | S | reference model built; verifier pending |
+| SIM-04 | Engineering | | | B | not started |
+| SIM-05 | Engineering | | | S | not started |
+| SIM-16 | Engineering | | | S | not started |
+| TST-01 | Engineering | Testcontainers PostgreSQL 18 | `PostgresEnvironmentTests` (2) | R | partial: PostgreSQL done, Redis not yet |
+| OPS-01 | Engineering | | | S | not started |
+| DEL-01 | Core / Engineering | | | R | not started |
+| HOST-01 | Engineering | | | S | not started |

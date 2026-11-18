@@ -139,7 +139,7 @@ public static class Bidding
         return new BidDecision(BidRejection.None, next, ProxySteps(state, next, bidderId));
     }
 
-    // Public history shows visible prices only; maxima are private. A bidder outbid at once
+    // Public history shows visible prices only; maxima are private (docs/requirements.md §5.2). A bidder outbid at once
     // gets a step without an amount, followed by the leader's automatic answer at the new price. The price can
     // be capped by the leader's maximum, so it doesn't always reveal the outbid amount.
     private static List<BidStep> ProxySteps(AuctionState before, AuctionState after, Guid bidderId)
@@ -158,7 +158,7 @@ public static class Bidding
 }
 
 /// <summary>
-/// The proxy price rule: the highest maximum leads, the earlier one on a tie; the price
+/// The proxy price rule (docs/requirements.md §5.2, Bidding): the highest maximum leads, the earlier one on a tie; the price
 /// is min(top, second + increment), or the opening price with one bidder; under RESERVE, once the leader's
 /// maximum reaches the reserve, the price rises to at least the reserve.
 /// </summary>
