@@ -90,7 +90,7 @@ public sealed class IdempotencyTests(MigratedDatabase db)
         var id = await ActiveAsync(_engine, UserId.New(), Terms(now, duration: TimeSpan.FromSeconds(3)));
         var context = As(UserId.New());
         var accepted = await _engine.PlaceBidAsync(context, id, new Money(1500), _ct);
-        await WaitUntilAsync(now.AddSeconds(3.5));
+        await db.WaitUntilAsync(now.AddSeconds(3.5));
 
         var retried = await _engine.PlaceBidAsync(context, id, new Money(1500), _ct);
         var fresh = await BidAsync(_engine, UserId.New(), id, 2500);
@@ -135,13 +135,5 @@ public sealed class IdempotencyTests(MigratedDatabase db)
             new CommandContext(UserId.New(), new string('k', 256)), Terms(await db.NowAsync()), _ct);
 
         Assert.Equal(CommandError.InvalidKey, created.Error);
-    }
-
-    private async Task WaitUntilAsync(DateTimeOffset moment)
-    {
-        while (await db.NowAsync() < moment)
-        {
-            await Task.Delay(100, _ct);
-        }
     }
 }

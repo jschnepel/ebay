@@ -72,6 +72,13 @@ public sealed class AuctionEngine(NpgsqlDataSource dataSource, EngineOptions opt
                 : Refuse(auctionId, Enum.Parse<CommandError>(decision.Rejection.ToString()));
         }, cancellationToken);
 
+    /// <summary>
+    /// Activates scheduled auctions whose start has passed and closes auctions whose end has passed.
+    /// Returns how many changed.
+    /// </summary>
+    public Task<int> AdvanceDueAuctionsAsync(CancellationToken cancellationToken) =>
+        throw new NotImplementedException($"{dataSource.ConnectionString} {cancellationToken.IsCancellationRequested}");
+
     private Task<CommandOutcome> RunAsync(
         CommandContext context, AuctionId auctionId, byte[] requestHash, Func<LockedAuction, DateTimeOffset, Decision> decide, CancellationToken cancellationToken)
     {

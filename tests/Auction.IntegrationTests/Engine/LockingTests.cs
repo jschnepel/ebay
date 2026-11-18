@@ -22,7 +22,7 @@ public sealed class LockingTests(MigratedDatabase db)
         await using (var holder = await HoldLockAsync(id))
         {
             var bid = BidAsync(engine, UserId.New(), id, 1500);
-            await WaitUntilAsync(now.AddSeconds(4));
+            await db.WaitUntilAsync(now.AddSeconds(4));
             Assert.False(bid.IsCompleted, "the bid should still be waiting for the lock");
             await holder.CommitAsync(_ct);
 
@@ -120,14 +120,6 @@ public sealed class LockingTests(MigratedDatabase db)
                 FOR EACH ROW EXECUTE FUNCTION auction.{name}();
             """);
         return new FaultTrigger(db, name);
-    }
-
-    private async Task WaitUntilAsync(DateTimeOffset moment)
-    {
-        while (await db.NowAsync() < moment)
-        {
-            await Task.Delay(100, _ct);
-        }
     }
 
     private sealed class LockHolder(NpgsqlConnection connection, NpgsqlTransaction transaction) : IAsyncDisposable

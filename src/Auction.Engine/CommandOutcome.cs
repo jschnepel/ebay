@@ -74,4 +74,10 @@ public sealed record EngineOptions
 
     /// <summary>Attempts per command when a lock times out or a deadlock is detected.</summary>
     public int MaxAttempts { get; init; } = 3;
+
+    /// <summary>How often the close worker looks for auctions due to start or end.</summary>
+    public TimeSpan SweepInterval { get; init; } = TimeSpan.FromSeconds(1);
+
+    /// <summary>The most auctions one sweep advances before the worker checks again at once.</summary>
+    public int SweepBatchSize { get; init; } = 100;
 }

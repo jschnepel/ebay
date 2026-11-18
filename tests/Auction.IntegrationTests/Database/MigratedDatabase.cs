@@ -64,6 +64,15 @@ public sealed class MigratedDatabase : IAsyncLifetime
     public async Task<DateTimeOffset> NowAsync() =>
         new(await ScalarAsync<DateTime>(Migrator, "SELECT clock_timestamp()"));
 
+    /// <summary>Waits until the database clock reaches <paramref name="moment"/>.</summary>
+    public async Task WaitUntilAsync(DateTimeOffset moment)
+    {
+        while (await NowAsync() < moment)
+        {
+            await Task.Delay(100, TestContext.Current.CancellationToken);
+        }
+    }
+
     public string ConnectionStringFor(string role) =>
         new NpgsqlConnectionStringBuilder(_postgres.GetConnectionString())
         {

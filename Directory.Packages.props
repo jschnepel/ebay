@@ -16,6 +16,7 @@
 
     <!-- Hosting and logging -->
     <PackageVersion Include="Microsoft.Extensions.Logging.Console" Version="10.0.15" />
+    <PackageVersion Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.15" />
 
     <!-- Testing -->
     <!-- Microsoft.Testing.Platform runner (global.json "test.runner"); no VSTest packages. -->
