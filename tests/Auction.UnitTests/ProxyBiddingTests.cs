@@ -139,10 +139,13 @@ public sealed class ProxyBiddingTests
     {
         var terms = Terms(floor: FloorType.Reserve, opening: 10m, reserve: 100m);
 
-        var state = WithBids(Active(terms), (A, 100m), (B, 40m));
+        var exactlyReserve = WithBids(Active(terms), (A, 100m));
+        var aboveReserve = WithBids(Active(terms), (A, 120m));
+        var refused = Bidding.Place(exactlyReserve, B, Usd(40m), During, AuctionLimits.Default);
 
-        Assert.Equal(A, state.LeaderId);
-        Assert.Equal(Usd(100m), state.CurrentPrice);
+        Assert.Equal(Usd(100m), exactlyReserve.CurrentPrice); // lifted to the reserve, which equals the maximum
+        Assert.Equal(Usd(100m), aboveReserve.CurrentPrice);   // lifted to the reserve, not to the maximum
+        Assert.Equal(BidRejection.BelowMinimum, refused.Rejection); // the lifted price sets the next minimum
     }
 
     [Fact]
