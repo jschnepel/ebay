@@ -1,6 +1,6 @@
 # 0004. Keep process records outside the repository
 
-- **Status:** PROPOSED
+- **Status:** APPROVED by Joey Schnepel, 2026-11-18
 
 ## Context
 
