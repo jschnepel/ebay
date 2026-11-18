@@ -4,6 +4,7 @@ using Auction.Domain;
 namespace Auction.Engine;
 
 /// <summary>Why a command was refused. <see cref="None"/> means it succeeded.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter<CommandError>))]
 public enum CommandError
 {
     None,

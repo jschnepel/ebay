@@ -50,7 +50,7 @@ Intent-based standards at Tier 2 (no real money, safety or hardware), with .NET 
 | LIF-01 | Lifecycle: Draft (owner-only; may be deleted) → publish → Scheduled, or Active if `startsAt` has passed → Active at `startsAt` → Closed at `endsAt` with one outcome: **Sold** (winner and final price recorded), **Reserve not met** (no sale) or **No bids**; or → Cancelled (by the owner from Scheduled or Active before any accepted bid, §5.2 Cancellation, or by an admin, ADM-01). An admin may move Active ↔ Suspended (ADM-01); a Suspended auction still closes at `endsAt` (§5.2 Suspension). A single close worker, polling every second, drives every time-based transition with status-guarded updates (until it activates an auction, bids on it get 409 "not active"; the gap is at most about a second): Scheduled → Active at `startsAt`, and Active or Suspended → Closed at `endsAt`; it claims due auctions with `FOR UPDATE SKIP LOCKED` and re-checks status and `clock_timestamp()` under the lock, so running it twice (or on two instances) changes nothing | Implied |
 | COR-01 | The engine alone mutates auction state, using freshly locked rows | Engineering |
 | COR-02 | Bid, auction state, command result and outbox event commit atomically | Engineering |
-| COR-03 | `Idempotency-Key` on every bid and auction command, scoped per actor, stored with a request hash and the recorded outcome in the engine's transaction, kept 24 h. Missing key → 400; same key with a different payload → 422 (IETF draft-ietf-httpapi-idempotency-key-header-08). The key is checked **after** taking the auction lock, so a concurrent duplicate waits for the first to commit and then receives its replayed outcome. Commands with no auction row yet (creating a draft) serialize on the idempotency row instead: `INSERT … ON CONFLICT DO NOTHING`, then lock that row, so a duplicate create replays rather than failing on the unique key; the draft's 409 "in flight" case therefore doesn't arise and isn't used. The key travels to the engine as the gRPC `request_id` | Engineering |
+| COR-03 | `Idempotency-Key` on every bid and auction command, scoped per actor, stored with a request hash and the recorded outcome in the engine's transaction, kept 24 h. Missing key → 400; same key with a different payload → 422 (IETF draft-ietf-httpapi-idempotency-key-header-08). The key is checked **after** taking the auction lock, so a concurrent duplicate waits for the first to commit and then receives its replayed outcome. Commands with no auction row yet (creating a draft) serialize on the idempotency row instead: the engine chooses the new id first and inserts the record with its outcome using `INSERT … ON CONFLICT DO NOTHING`, so a concurrent duplicate waits on the key, inserts nothing and replays the outcome rather than failing on the unique key; the draft's 409 "in flight" case therefore doesn't arise and isn't used. The key travels to the engine as the gRPC `request_id` | Engineering |
 | COR-04 | Replay the recorded outcome before re-checking time-sensitive rules | Engineering |
 | COR-05 | Immutable accepted history; per-auction sequence; monotonic version | Engineering |
 | API-01 | Documented REST (OpenAPI) and gRPC (.proto) contracts that match the running services; bidder identity never comes from the browser | Implied |
@@ -366,15 +366,15 @@ Status comes from evidence only.
 | FND-01 | Engineering | `global.json`, `Directory.*.props`, lock files, `.github/workflows/ci.yml` | CI workflow gates | R | implemented; CI green |
 | FND-02 | Stack | | | S | not started |
 | DOM-01 | Implied | `src/Auction.Domain/Money.cs`; amount CHECK constraints in `src/Auction.Migrator/Schema` | `MoneyTests`, `AmountLimitTests` | U, D | U passed; D passed |
-| DOM-02 | Implied | `src/Auction.Domain/Bidding.cs` | `FixedIncrementAndEligibilityTests` | U, D | U passed; D pending |
-| DOM-03 | Implied | `Bidding.cs`, `Lifecycle.cs`, `ListingValidator.cs` | `FixedIncrementAndEligibilityTests`, `LifecycleTests` | U, D | U passed; D pending |
-| BID-01 | Engineering | `src/Auction.Domain/Bidding.cs` | `ProxyBiddingTests`, `FixedIncrementAndEligibilityTests`, `BiddingPropertyTests` | U, D, S | U passed; D, S pending |
+| DOM-02 | Implied | `src/Auction.Domain/Bidding.cs`; clock read after the lock in `src/Auction.Engine/AuctionStore.cs` | `FixedIncrementAndEligibilityTests`, `LockingTests` | U, D | U passed; D passed |
+| DOM-03 | Implied | `Bidding.cs`, `Lifecycle.cs`, `ListingValidator.cs`, `src/Auction.Engine` | `FixedIncrementAndEligibilityTests`, `LifecycleTests`, `AuctionCommandTests`, `AuctionRowRuleTests` | U, D | U passed; D passed |
+| BID-01 | Engineering | `src/Auction.Domain/Bidding.cs`, `src/Auction.Engine` | `ProxyBiddingTests`, `FixedIncrementAndEligibilityTests`, `BiddingPropertyTests`, `AuctionCommandTests`, `BidRaceTests` | U, D, S | U passed; D passed; S pending (step 7) |
 | LIF-01 | Implied | `src/Auction.Domain/Lifecycle.cs` | `LifecycleTests` | U, D | U passed; D pending |
 | COR-01 | Engineering | `api` role grants in `src/Auction.Migrator/Schema/InitialSchemaSql.cs` | `RoleGrantTests` | S | API write refusal passed at D; S pending (step 7) |
-| COR-02 | Engineering | | | D | not started |
-| COR-03 | Engineering | | | D, S | not started |
-| COR-04 | Engineering | | | D | not started |
-| COR-05 | Engineering | `bids_append_only` trigger, `(auction_id, seq)` key | `BidHistoryTests` | D | append-only history passed; gap-free sequences under concurrency pending (step 4) |
+| COR-02 | Engineering | one transaction per command in `src/Auction.Engine/AuctionEngine.cs` | `LockingTests` (fault after the bid insert) | D | passed |
+| COR-03 | Engineering | `src/Auction.Engine/IdempotencyStore.cs`, `AuctionEngine.cs` | `IdempotencyTests` | D, S | D passed; S pending (missing key → 400 at the API, step 7) |
+| COR-04 | Engineering | replay before the rules in `src/Auction.Engine/AuctionEngine.cs` | `IdempotencyTests` | D | passed |
+| COR-05 | Engineering | `bids_append_only` trigger, `(auction_id, seq)` key, `src/Auction.Engine` | `BidHistoryTests`, `BidRaceTests` | D | passed |
 | API-01 | Implied | | | S | not started |
 | API-03 | Engineering | | | S | not started |
 | SEC-01 | Implied | | | S | not started |
@@ -392,7 +392,7 @@ Status comes from evidence only.
 | RT-01 | Implied / Engineering | | | S, B | not started |
 | RT-02 | Engineering | | | U, B | not started |
 | OUT-01 | Engineering | | | D, S | not started |
-| REL-01 | Engineering | | | D, S | not started |
+| REL-01 | Engineering | lock timeout and retries in `src/Auction.Engine/AuctionEngine.cs` | `LockingTests` | D, S | lock wait: D passed; request deadlines and pool limits: S pending (step 6) |
 | REL-02 | Engineering | | | S | not started |
 | SIM-01 | Engineering | | | S | not started |
 | SIM-02 | Core / Engineering | | | S | not started |

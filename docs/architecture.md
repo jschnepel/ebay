@@ -147,7 +147,7 @@ tests/
   Auction.BrowserTests/     Playwright: Buy/Sell/Admin journeys, multi-browser consistency, axe
 ```
 
-Projects are added as each build step needs them; today `Auction.Domain`, `Auction.Migrator`, the unit and integration tests and the reference model exist.
+Projects are added as each build step needs them; today `Auction.Domain`, `Auction.Migrator`, `Auction.Engine` (its commands, not yet the gRPC host or close worker), the unit and integration tests and the reference model exist.
 
 ## Data model
 
