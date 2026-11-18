@@ -11,15 +11,21 @@ namespace Auction.Api.Accounts;
 internal static class Principal
 {
     public const string KindClaim = "kind";
+    public const string SessionClaim = "sid";
 
-    public static ClaimsPrincipal For(Account account) =>
+    public static ClaimsPrincipal For(Account account, Guid session) =>
         new(new ClaimsIdentity(
             [
                 new Claim(ClaimTypes.NameIdentifier, account.Id.Value.ToString()),
                 new Claim(ClaimTypes.Name, account.DisplayName),
                 new Claim(KindClaim, account.Kind),
+                new Claim(SessionClaim, session.ToString()),
             ],
             CookieAuthenticationDefaults.AuthenticationScheme));
+
+    /// <summary>The server-side session this cookie belongs to (AUTH-02).</summary>
+    public static Guid? SessionOf(this ClaimsPrincipal user) =>
+        Guid.TryParse(user.FindFirstValue(SessionClaim), out var id) ? id : null;
 
     /// <summary>The signed-in user's id, or null for an anonymous request.</summary>
     public static UserId? UserIdOf(this ClaimsPrincipal user) =>

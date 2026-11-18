@@ -46,6 +46,9 @@ public sealed class RoleGrantTests(MigratedDatabase db)
         { MigratedDatabase.Api, "SELECT 1 FROM users" },
         { MigratedDatabase.Api, "INSERT INTO users (id, email, normalized_email, display_name) SELECT gen_random_uuid(), 'a@b.c', 'A@B.C', 'A' WHERE false" },
         { MigratedDatabase.Api, "UPDATE users SET disabled_at = now() WHERE false" },
+        { MigratedDatabase.Api, "SELECT 1 FROM sessions" },
+        { MigratedDatabase.Api, "INSERT INTO sessions (id, user_id) SELECT gen_random_uuid(), gen_random_uuid() WHERE false" },
+        { MigratedDatabase.Api, "UPDATE sessions SET revoked_at = now() WHERE false" },
         { MigratedDatabase.Api, "INSERT INTO admin_audit (admin_id, action, target_type, target_id, reason) SELECT gen_random_uuid(), 'disable', 'user', gen_random_uuid(), 'r' WHERE false" },
     };
 
@@ -96,6 +99,10 @@ public sealed class RoleGrantTests(MigratedDatabase db)
         // Accounts belong to the API alone: nobody else reads emails, and nobody rewrites or deletes an account.
         { MigratedDatabase.Api, "UPDATE users SET password_hash = NULL WHERE false" },
         { MigratedDatabase.Api, "UPDATE users SET kind = 'admin' WHERE false" },
+        { MigratedDatabase.Api, "UPDATE sessions SET user_id = gen_random_uuid() WHERE false" },
+        { MigratedDatabase.Api, "DELETE FROM sessions WHERE false" },
+        { MigratedDatabase.Engine, "SELECT 1 FROM sessions" },
+        { MigratedDatabase.Verifier, "SELECT 1 FROM sessions" },
         { MigratedDatabase.Api, "UPDATE admin_audit SET reason = 'x' WHERE false" },
         { MigratedDatabase.Api, "DELETE FROM users WHERE false" },
         { MigratedDatabase.Engine, "SELECT 1 FROM users" },

@@ -20,10 +20,11 @@ internal static class AuctionEndpoints
         auctions.MapGet("/{id:guid}", DetailAsync).Produces<AuctionDetail>().ProducesProblem(StatusCodes.Status404NotFound);
         auctions.MapGet("/{id:guid}/bids", BidsAsync).Produces<Page<BidView>>().ProducesProblem(StatusCodes.Status404NotFound);
 
-        var commands = auctions.MapGroup("").RequireAuthorization()
+        var commands = auctions.MapGroup("").RequireAuthorization().RequireRateLimiting(RateLimits.Write)
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status429TooManyRequests)
             .ProducesValidationProblem(StatusCodes.Status422UnprocessableEntity)
             .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
         commands.MapPost("", CreateAsync).Produces<CommandResponse>(StatusCodes.Status201Created);

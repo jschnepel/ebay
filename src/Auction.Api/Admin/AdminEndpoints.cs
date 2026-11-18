@@ -31,7 +31,7 @@ internal static class AdminEndpoints
 
     public static RouteGroupBuilder MapAdmin(this RouteGroupBuilder api)
     {
-        var admin = api.MapGroup("/admin").WithTags("Admin").AddEndpointFilter(AdminOnlyAsync)
+        var admin = api.MapGroup("/admin").WithTags("Admin").AddEndpointFilter(AdminOnlyAsync).RequireRateLimiting(RateLimits.Write)
             .ProducesProblem(StatusCodes.Status404NotFound);
         admin.MapGet("/activity", ActivityAsync).Produces<Activity>();
         admin.MapGet("/health", HealthAsync).Produces<AdminHealth>();

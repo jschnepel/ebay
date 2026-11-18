@@ -1,6 +1,8 @@
 @inherits LayoutComponentBase
 @implements IDisposable
 @inject Session Session
+@inject Notices Notices
+@inject LiveUpdates Live
 @inject NavigationManager Navigation
 
 <MudThemeProvider />
@@ -28,6 +30,11 @@
         <MudSpacer />
         @if (Session.Account is { } account)
         {
+            <MudBadge Content="@Notices.Unread" Visible="@(Notices.Unread > 0)" Color="Color.Error" Overlap="true" Class="mr-2">
+                <MudIconButton Icon="@Icons.Material.Filled.Notifications" Color="Color.Inherit" Href="/notifications"
+                               aria-label="@($"Notifications, {Notices.Unread} unread")" data-testid="bell" />
+            </MudBadge>
+            <span hidden data-testid="unread-count">@Notices.Unread</span>
             <MudText Class="mr-2" data-testid="signed-in-as">@account.DisplayName</MudText>
             <MudButton Color="Color.Inherit" OnClick="SignOutAsync">Sign out</MudButton>
         }
@@ -38,16 +45,29 @@
     </MudAppBar>
     <MudMainContent>
         <MudContainer MaxWidth="MaxWidth.Large" Class="py-4">
+            @if (Session.EndedElsewhere)
+            {
+                <MudAlert Severity="Severity.Warning" Class="mb-4" data-testid="signed-out-notice">
+                    Signed out: your account signed in elsewhere. <MudLink Href="/sign-in">Sign in again</MudLink> to continue here.
+                </MudAlert>
+            }
             @Body
         </MudContainer>
     </MudMainContent>
 </MudLayout>
 
 @code {
+    private Guid? _connectedAs;
+
     protected override async Task OnInitializedAsync()
     {
         Session.Changed += OnSessionChanged;
+        Notices.Changed += OnNoticesChanged;
+        Live.Notified += Notices.RefreshAsync;
+        Live.Reconnected += RefreshNoticesAsync;
+        Live.SignedOut += OnSignedOutAsync;
         await Session.LoadAsync();
+        await FollowSessionAsync();
     }
 
     private async Task SignOutAsync()
@@ -56,7 +76,49 @@
         Navigation.NavigateTo("/");
     }
 
-    private void OnSessionChanged() => InvokeAsync(StateHasChanged);
+    // The live connection belongs to whoever is signed in; it's reopened when that changes.
+    private async Task FollowSessionAsync()
+    {
+        var current = Session.Account?.Id;
+        if (current == _connectedAs)
+        {
+            return;
+        }
 
-    public void Dispose() => Session.Changed -= OnSessionChanged;
+        _connectedAs = current;
+        if (current is null)
+        {
+            Notices.Clear();
+            await Live.RestartAsync();
+            return;
+        }
+
+        await Live.RestartAsync();
+        await Notices.RefreshAsync();
+    }
+
+    private Task RefreshNoticesAsync() => Session.Account is null ? Task.CompletedTask : Notices.RefreshAsync();
+
+    private Task OnSignedOutAsync()
+    {
+        Session.SignedOutElsewhere();
+        return Task.CompletedTask;
+    }
+
+    private void OnSessionChanged() => InvokeAsync(async () =>
+    {
+        StateHasChanged();
+        await FollowSessionAsync();
+    });
+
+    private void OnNoticesChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose()
+    {
+        Session.Changed -= OnSessionChanged;
+        Notices.Changed -= OnNoticesChanged;
+        Live.Notified -= Notices.RefreshAsync;
+        Live.Reconnected -= RefreshNoticesAsync;
+        Live.SignedOut -= OnSignedOutAsync;
+    }
 }

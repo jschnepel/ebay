@@ -115,3 +115,7 @@ public sealed record ModeratedAuction(
     Guid Id, string Title, string Status, Guid SellerId, string SellerName, long? CurrentPriceCents, long BidCount, DateTimeOffset EndsAt, long Version);
 
 public sealed record UserSummary(Guid Id, string DisplayName, string Kind, bool Disabled, DateTimeOffset CreatedAt);
+
+public sealed record NotificationView(long Id, Guid? AuctionId, string? AuctionTitle, string Kind, string? Reason, DateTimeOffset CreatedAt, bool Read);
+
+public sealed record NotificationPage(IReadOnlyList<NotificationView> Items, string? NextCursor, long Unread);

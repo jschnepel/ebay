@@ -12,12 +12,22 @@ public sealed class Session(AuctionApi api)
 
     public Account? Account { get; private set; }
 
+    /// <summary>Set when the server ended this session because the account signed in elsewhere.</summary>
+    public bool EndedElsewhere { get; private set; }
+
     /// <summary>Asks the API once per page load; later calls wait for the same answer.</summary>
     public Task LoadAsync() => _loading ??= LoadCoreAsync();
 
     public void SignedIn(Account account)
     {
-        Account = account;
+        (Account, EndedElsewhere) = (account, false);
+        Changed?.Invoke();
+    }
+
+    /// <summary>The account signed in on another browser or device, which ended this session.</summary>
+    public void SignedOutElsewhere()
+    {
+        (Account, EndedElsewhere) = (null, true);
         Changed?.Invoke();
     }
 

@@ -2,6 +2,7 @@ using Auction.Api.Accounts;
 using Auction.Api.Admin;
 using Auction.Api.Auctions;
 using Auction.Api.Live;
+using Auction.Api.Notifications;
 using Auction.Contracts.V1;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -29,6 +30,9 @@ internal static class ApiHosting
             services.GetRequiredService<IConfiguration>().GetConnectionString("Api")
             ?? throw new InvalidOperationException("ConnectionStrings:Api is not set.")));
         builder.Services.AddSingleton<AccountStore>();
+        builder.Services.AddSingleton<SessionStore>();
+        builder.Services.AddSingleton<NotificationStore>();
+        builder.Services.AddApiRateLimits();
         builder.Services.AddSingleton<AuctionReader>();
         builder.Services.AddSingleton<IPasswordHasher<Account>, PasswordHasher<Account>>();
 
@@ -57,11 +61,13 @@ internal static class ApiHosting
             // An API answers with a status, never a redirect to a sign-in page.
             cookie.Events.OnRedirectToLogin = context => SetStatusAsync(context.Response, StatusCodes.Status401Unauthorized);
             cookie.Events.OnRedirectToAccessDenied = context => SetStatusAsync(context.Response, StatusCodes.Status403Forbidden);
-            // A disabled (or deleted) account loses its session on its next request.
+            // A revoked session (signed in elsewhere, signed out) or a disabled account fails its next request.
             cookie.Events.OnValidatePrincipal = async context =>
             {
-                var accounts = context.HttpContext.RequestServices.GetRequiredService<AccountStore>();
-                if (context.Principal?.UserIdOf() is not { } user || !await accounts.IsActiveAsync(user, context.HttpContext.RequestAborted))
+                var sessions = context.HttpContext.RequestServices.GetRequiredService<SessionStore>();
+                if (context.Principal?.UserIdOf() is not { } user
+                    || context.Principal.SessionOf() is not { } session
+                    || !await sessions.IsValidAsync(session, user, context.HttpContext.RequestAborted))
                 {
                     context.RejectPrincipal();
                     await context.HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
@@ -111,11 +117,13 @@ internal static class ApiHosting
         app.UseMiddleware<SameOriginJsonMiddleware>();
         app.UseAuthentication();
         app.UseAuthorization();
+        app.UseRateLimiter();
 
         var api = app.MapGroup("/api/v1");
         api.MapAccounts();
         api.MapAuctions();
         api.MapAdmin();
+        api.MapNotifications();
         app.MapHub<AuctionHub>(AuctionHub.Path);
         app.MapOpenApi();
         app.MapHealthChecks("/health");

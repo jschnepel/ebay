@@ -478,6 +478,37 @@ namespace Auction.Migrator.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Auction.Migrator.Schema.SessionRow", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<DateTimeOffset?>("RevokedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("revoked_at");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_sessions");
+
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("ix_sessions_user_id")
+                        .HasFilter("revoked_at IS NULL");
+
+                    b.ToTable("sessions", "auction");
+                });
+
             modelBuilder.Entity("Auction.Migrator.Schema.UserLimitsRow", b =>
                 {
                     b.Property<Guid>("UserId")
@@ -609,6 +640,16 @@ namespace Auction.Migrator.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_proxy_maxima_auctions_auction_id");
+                });
+
+            modelBuilder.Entity("Auction.Migrator.Schema.SessionRow", b =>
+                {
+                    b.HasOne("Auction.Migrator.Schema.UserRow", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_sessions_users_user_id");
                 });
 #pragma warning restore 612, 618
         }

@@ -195,3 +195,15 @@ public sealed class UserRow
 
     public DateTimeOffset? DisabledAt { get; set; }
 }
+
+/// <summary>A signed-in browser's session (AUTH-02); signing in elsewhere revokes it.</summary>
+public sealed class SessionRow
+{
+    public Guid Id { get; set; }
+
+    public Guid UserId { get; set; }
+
+    public DateTimeOffset CreatedAt { get; set; }
+
+    public DateTimeOffset? RevokedAt { get; set; }
+}

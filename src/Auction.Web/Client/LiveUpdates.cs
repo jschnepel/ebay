@@ -26,6 +26,42 @@ public sealed class LiveUpdates(NavigationManager navigation) : IAsyncDisposable
     /// <summary>The connection came back; hints may have been missed, so re-fetch.</summary>
     public event Func<Task>? Reconnected;
 
+    /// <summary>A new notification arrived for the signed-in user.</summary>
+    public event Func<Task>? Notified;
+
+    /// <summary>This session ended because the account signed in somewhere else.</summary>
+    public event Func<Task>? SignedOut;
+
+    /// <summary>
+    /// Opens the connection now (it otherwise opens on the first watch), so a signed-in user hears about
+    /// notifications and sign-outs on every page.
+    /// </summary>
+    public Task ConnectAsync() => ConnectionAsync();
+
+    /// <summary>
+    /// Reconnects as whoever is now signed in: the server sorts a connection into its user's groups when it
+    /// opens, so a sign-in or sign-out needs a fresh one. Watches are restored on it.
+    /// </summary>
+    public async Task RestartAsync()
+    {
+        await _gate.WaitAsync();
+        try
+        {
+            if (_connection is not null)
+            {
+                await _connection.DisposeAsync();
+                _connection = null;
+            }
+        }
+        finally
+        {
+            _gate.Release();
+        }
+
+        var connection = await ConnectionAsync();
+        await RestoreAsync(connection.ConnectionId);
+    }
+
     public async Task WatchAsync(Guid auctionId)
     {
         var count = _auctions.GetValueOrDefault(auctionId) + 1;
@@ -106,6 +142,8 @@ public sealed class LiveUpdates(NavigationManager navigation) : IAsyncDisposable
                     .WithAutomaticReconnect(new KeepTrying())
                     .Build();
                 _connection.On<AuctionChanged>("changed", hint => RaiseAsync(Changed, handler => handler(hint)));
+                _connection.On("notified", () => RaiseAsync(Notified, handler => handler()));
+                _connection.On("signedOut", () => RaiseAsync(SignedOut, handler => handler()));
                 _connection.Reconnected += RestoreAsync;
                 await _connection.StartAsync();
             }

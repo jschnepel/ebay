@@ -29,11 +29,14 @@ public sealed class ApiOptions
     /// <summary>How long the relay waits before trying again after a failure (database or Redis down).</summary>
     public TimeSpan RelayRetryDelay { get; init; } = TimeSpan.FromSeconds(2);
 
+    public RateLimitOptions RateLimits { get; init; } = new();
+
     public bool IsValid() =>
         EngineAddress is { IsAbsoluteUri: true }
         && EngineDeadline > TimeSpan.Zero
         && DefaultPageSize >= 1
         && MaxPageSize >= DefaultPageSize
         && RelayPollInterval > TimeSpan.Zero
-        && RelayRetryDelay > TimeSpan.Zero;
+        && RelayRetryDelay > TimeSpan.Zero
+        && RateLimits.IsValid();
 }

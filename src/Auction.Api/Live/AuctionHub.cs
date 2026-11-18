@@ -18,17 +18,30 @@ internal sealed class AuctionHub(Presence presence) : Hub
     public const string Path = "/hubs/auctions";
     public const string ChangedMethod = "changed";
     public const string DirectoryGroup = "directory";
+    public const string NotifiedMethod = "notified";
+    public const string SignedOutMethod = "signedOut";
+
+    /// <summary>Every connection of one user, for their notifications.</summary>
+    public static string UserGroup(Guid userId) => $"user:{userId:N}";
+
+    /// <summary>Every connection of one session, told when signing in elsewhere ends it.</summary>
+    public static string SessionGroup(Guid sessionId) => $"session:{sessionId:N}";
 
     public static string GroupFor(Guid auctionId) => $"auction:{auctionId:N}";
 
-    public override Task OnConnectedAsync()
+    public override async Task OnConnectedAsync()
     {
         if (Context.User?.UserIdOf() is { } user)
         {
             presence.Connected(user.Value);
+            await Groups.AddToGroupAsync(Context.ConnectionId, UserGroup(user.Value));
+            if (Context.User.SessionOf() is { } session)
+            {
+                await Groups.AddToGroupAsync(Context.ConnectionId, SessionGroup(session));
+            }
         }
 
-        return base.OnConnectedAsync();
+        await base.OnConnectedAsync();
     }
 
     public override Task OnDisconnectedAsync(Exception? exception)

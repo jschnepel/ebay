@@ -1,0 +1,87 @@
+@page "/notifications"
+@implements IDisposable
+@inject AuctionApi Api
+@inject Session Session
+@inject Notices Notices
+@inject NavigationManager Navigation
+
+<PageTitle>Notifications</PageTitle>
+<MudText Typo="Typo.h4" HtmlTag="h1" Class="mb-4">Notifications</MudText>
+
+@if (Session.Account is null)
+{
+    <MudText><MudLink Href="/sign-in?returnUrl=/notifications">Sign in</MudLink> to see your notifications.</MudText>
+}
+else if (_items is null)
+{
+    <MudProgressCircular Indeterminate="true" aria-label="Loading notifications" />
+}
+else if (_items.Count == 0)
+{
+    <MudText>Nothing yet. You'll hear here when you're outbid, when your auctions end, and about moderation.</MudText>
+}
+else
+{
+    <MudList T="string" Dense="true">
+        @foreach (var item in _items)
+        {
+            <MudListItem T="string" OnClick="() => OpenAsync(item)" data-testid="notification">
+                <MudText Typo="@(item.Read ? Typo.body2 : Typo.subtitle2)">
+                    @(item.Read ? "" : "● ")@NoticeText.For(item)
+                </MudText>
+                <MudText Typo="Typo.caption">@Format.Time(item.CreatedAt)</MudText>
+            </MudListItem>
+        }
+    </MudList>
+    @if (_next is not null)
+    {
+        <MudButton Class="mt-2" Variant="Variant.Outlined" OnClick="MoreAsync">Show more</MudButton>
+    }
+}
+
+@code {
+    private List<NotificationView>? _items;
+    private string? _next;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Session.LoadAsync();
+        Notices.Changed += OnNoticesChanged;
+        if (Session.Account is not null)
+        {
+            await MoreAsync();
+        }
+    }
+
+    private async Task MoreAsync()
+    {
+        var page = await Api.NotificationsAsync(_next);
+        if (page.Value is { } value)
+        {
+            (_items ??= []).AddRange(value.Items);
+            _next = value.NextCursor;
+        }
+    }
+
+    private async Task OpenAsync(NotificationView item)
+    {
+        if (!item.Read)
+        {
+            await Notices.MarkReadAsync(item.Id);
+        }
+
+        if (item.AuctionId is { } auction)
+        {
+            Navigation.NavigateTo($"/auctions/{auction}");
+        }
+    }
+
+    private void OnNoticesChanged() => InvokeAsync(async () =>
+    {
+        (_items, _next) = (null, null);
+        await MoreAsync();
+        StateHasChanged();
+    });
+
+    public void Dispose() => Notices.Changed -= OnNoticesChanged;
+}

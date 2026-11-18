@@ -19,7 +19,8 @@ public sealed record OutboxEvent(long Id, Guid AuctionId, long Version, string T
 /// A hint that fails to send (Redis down) stays unpublished and is retried.
 /// </summary>
 internal sealed partial class OutboxRelay(
-    NpgsqlDataSource dataSource, IHubContext<AuctionHub> hub, ApiOptions options, Admin.AdminKpis kpis, ILogger<OutboxRelay> logger) : BackgroundService
+    NpgsqlDataSource dataSource, IHubContext<AuctionHub> hub, Notifications.NotificationStore notifications, ApiOptions options, Admin.AdminKpis kpis,
+    ILogger<OutboxRelay> logger) : BackgroundService
 {
     public const string Channel = "auction_outbox";
     public const int BatchSize = 100;
@@ -68,6 +69,13 @@ internal sealed partial class OutboxRelay(
 
         if (events.Count > 0)
         {
+            // Each user notified by these changes is told to refresh their bell.
+            var recipients = await notifications.RecipientsAsync([.. events.Select(e => (e.AuctionId, e.Version))], cancellationToken);
+            if (recipients.Count > 0)
+            {
+                await hub.Clients.Groups([.. recipients.Select(AuctionHub.UserGroup)]).SendAsync(AuctionHub.NotifiedMethod, cancellationToken);
+            }
+
             await using var stamp = dataSource.CreateCommand(StampSql);
             stamp.Parameters.Add(new NpgsqlParameter { Value = events.Select(e => e.Id).ToArray() });
             await stamp.ExecuteNonQueryAsync(cancellationToken);

@@ -12,7 +12,8 @@ namespace Auction.IntegrationTests.Api;
 /// Page sizes are small so pagination is exercised with a handful of auctions. Every host shares one Redis
 /// backplane, as API instances do, so a live hint from whichever host runs the relay reaches them all.
 /// </summary>
-public sealed class ApiHost(string connectionString, Uri engineAddress, bool demoMode, string redis) : WebApplicationFactory<IApiAssembly>
+public sealed class ApiHost(string connectionString, Uri engineAddress, bool demoMode, string redis, IReadOnlyDictionary<string, string>? settings = null)
+    : WebApplicationFactory<IApiAssembly>
 {
     public const int DefaultPageSize = 3;
     public const int MaxPageSize = 5;
@@ -37,6 +38,14 @@ public sealed class ApiHost(string connectionString, Uri engineAddress, bool dem
 
     public HttpClient Anonymous(bool handleCookies = true) =>
         CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = BaseAddress, HandleCookies = handleCookies, AllowAutoRedirect = false });
+
+    private static readonly Dictionary<string, string> Unlimited = new()
+    {
+        ["Api:RateLimits:SignInPerAccountPerMinute"] = "100000",
+        ["Api:RateLimits:SignInPerAddressPerMinute"] = "100000",
+        ["Api:RateLimits:SignUpPerAddressPerHour"] = "100000",
+        ["Api:RateLimits:WritesPerUserPerMinute"] = "100000",
+    };
 
     /// <summary>A new self-registered user, signed in on their own client.</summary>
     public async Task<ApiUser> SignUpAsync(string? displayName = null)
@@ -69,6 +78,12 @@ public sealed class ApiHost(string connectionString, Uri engineAddress, bool dem
         builder.UseSetting("ConnectionStrings:Redis", redis);
         builder.UseSetting("Api:RelayPollInterval", "00:00:00.500");
         builder.UseSetting("Api:RelayRetryDelay", "00:00:00.500");
+
+        // Every test signs users up and in from one address, so the limits are out of the way unless a test sets them.
+        foreach (var (name, value) in Unlimited.Concat(settings ?? new Dictionary<string, string>()))
+        {
+            builder.UseSetting(name, value);
+        }
         builder.UseSetting("Api:DefaultPageSize", DefaultPageSize.ToString(System.Globalization.CultureInfo.InvariantCulture));
         builder.UseSetting("Api:MaxPageSize", MaxPageSize.ToString(System.Globalization.CultureInfo.InvariantCulture));
     }

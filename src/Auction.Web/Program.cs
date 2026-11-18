@@ -13,6 +13,7 @@ builder.Services.AddScoped(_ => new HttpClient { BaseAddress = new Uri(builder.H
 builder.Services.AddScoped<AuctionApi>();
 builder.Services.AddScoped<Session>();
 builder.Services.AddScoped<LiveUpdates>();
+builder.Services.AddScoped<Notices>();
 builder.Services.AddTransient<ViewRefresher>();
 builder.Services.AddMudServices();
 

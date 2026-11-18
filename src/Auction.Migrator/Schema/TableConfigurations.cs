@@ -195,3 +195,16 @@ internal sealed class UserConfiguration : IEntityTypeConfiguration<UserRow>
         builder.Property(u => u.CreatedAt).HasDefaultValueSql("now()");
     }
 }
+
+internal sealed class SessionConfiguration : IEntityTypeConfiguration<SessionRow>
+{
+    public void Configure(EntityTypeBuilder<SessionRow> builder)
+    {
+        builder.ToTable("sessions");
+        builder.HasKey(s => s.Id);
+        builder.HasOne<UserRow>().WithMany().HasForeignKey(s => s.UserId).OnDelete(DeleteBehavior.Restrict);
+        // Revoking finds an account's live sessions.
+        builder.HasIndex(s => s.UserId).HasFilter("revoked_at IS NULL");
+        builder.Property(s => s.CreatedAt).HasDefaultValueSql("now()");
+    }
+}

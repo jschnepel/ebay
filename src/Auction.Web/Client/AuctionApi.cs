@@ -52,6 +52,12 @@ public sealed class AuctionApi(HttpClient http)
     public Task<ApiResult<CommandResponse>> BidAsync(Guid id, long amountCents, string key) =>
         SendAsync<CommandResponse>(HttpMethod.Post, $"auctions/{id}/bids", new { amountCents }, key);
 
+    public Task<ApiResult<NotificationPage>> NotificationsAsync(string? cursor) =>
+        SendAsync<NotificationPage>(HttpMethod.Get, WithCursor("me/notifications", cursor));
+
+    public Task<ApiResult<object>> MarkNotificationReadAsync(long id) =>
+        SendAsync<object>(HttpMethod.Post, $"me/notifications/{id}/read");
+
     public Task<ApiResult<CommandResponse>> DeleteDraftAsync(Guid id, string key) =>
         SendAsync<CommandResponse>(HttpMethod.Delete, $"auctions/{id}", key: key);
 
