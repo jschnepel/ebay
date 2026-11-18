@@ -136,7 +136,7 @@ src/
   Auction.Engine/      gRPC service, close worker, raw Npgsql data access (single writer)
   Auction.Api/         minimal APIs in feature folders, auth + sessions, SignalR hub, outbox relay, Redis jobs; serves the WASM app
   Auction.Web/         Blazor WebAssembly + MudBlazor: Buy, Sell and Admin areas
-  Auction.Migrator/    EF Core migration bundle + grants, seed, reset-demo
+  Auction.Migrator/    EF Core schema model and migrations (with triggers and grants), one-shot runner; later seed and reset-demo
   Auction.Simulator/   CLI virtual users over the public API
   Auction.Verifier/    read-only invariant checker using the reference model
 tests/
@@ -147,7 +147,24 @@ tests/
   Auction.BrowserTests/     Playwright: Buy/Sell/Admin journeys, multi-browser consistency, axe
 ```
 
-Projects are added as each build step needs them; today `Auction.Domain`, the unit and integration tests and the reference model exist.
+Projects are added as each build step needs them; today `Auction.Domain`, `Auction.Migrator`, the unit and integration tests and the reference model exist.
+
+## Data model
+
+All tables live in the `auction` schema, owned by the `migrator` role. Money is `bigint` cents from 1 to 1,000,000,000; times are `timestamptz`; ids are `uuid`. Enum-like columns are snake_case text with CHECK constraints. The model is in `src/Auction.Migrator/Schema`; triggers and grants are in `InitialSchemaSql.cs`.
+
+| Table | Holds | Integrity in the database | Written by |
+|---|---|---|---|
+| `auctions` | Terms, status, current price, leader, bid count, version, outcome | Drafts may be incomplete; anything past draft must be a complete listing with a valid reserve. Terms are frozen after publish and only drafts can be deleted (triggers). A leader exists exactly when a bid has been accepted, and is never the seller | engine |
+| `proxy_maxima` | Each bidder's private maximum and when it was accepted | Not readable by the `api` role, so a maximum can't leak through a read | engine |
+| `bids` | The public accepted history, keyed `(auction_id, seq)`; an outbid-at-once step has no amount | Append-only: a trigger refuses UPDATE and DELETE, even for the owner. Rejected bids are recorded only as idempotency outcomes | engine |
+| `idempotency_records` | Outcome per `(actor, key)` with a SHA-256 request hash; swept after 24 hours | | engine |
+| `outbox_events` | Change events with the writing transaction's `xid8`, for the relay | The `api` role may only set `published_at` | engine; relay in the API |
+| `notifications` | Outbid and closing notices per user | The `api` role may only set `read_at` | engine; read state by the API |
+| `admin_audit` | Every admin action with its reason | | engine |
+| `user_limits` | Per-user draft and publish counters, locked `FOR UPDATE` | | engine |
+
+Identity, session and sign-in tables arrive with the API (steps 7 and 12), and image tables with step 13; each comes with its own grants and tests.
 
 ## Engineering rules
 
@@ -200,6 +217,9 @@ Each package is pinned in `Directory.Packages.props` and locked by the lock file
 | Package | Purpose | Licence |
 |---|---|---|
 | Npgsql | PostgreSQL driver | PostgreSQL |
+| Npgsql.EntityFrameworkCore.PostgreSQL, Microsoft.EntityFrameworkCore.Relational | Schema model and migrations | PostgreSQL, MIT |
+| Microsoft.EntityFrameworkCore.Design, dotnet-ef | Generating migrations (development only) | MIT |
+| Microsoft.Extensions.Logging.Console | JSON console logs | MIT |
 | SonarAnalyzer.CSharp | Size, nesting and code-smell analyzers (build only) | Sonar Source-Available |
 | Microsoft.VisualStudio.Threading.Analyzers | Async misuse analyzers (build only) | MIT |
 | xunit.v3 | Test framework | Apache-2.0 |

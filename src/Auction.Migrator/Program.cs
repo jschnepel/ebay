@@ -2,7 +2,11 @@ using Auction.Migrator;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 
-using var loggerFactory = LoggerFactory.Create(logging => logging.AddJsonConsole());
+// EF Core logs its probe for the history table as a failed command on an empty database; real failures
+// still surface as the exception logged below.
+using var loggerFactory = LoggerFactory.Create(logging => logging
+    .AddJsonConsole()
+    .AddFilter("Microsoft.EntityFrameworkCore.Database.Command", LogLevel.None));
 var logger = loggerFactory.CreateLogger("Auction.Migrator");
 
 var connectionString = Environment.GetEnvironmentVariable("MIGRATOR_CONNECTION_STRING");

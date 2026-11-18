@@ -10,7 +10,8 @@ Built bottom-up, one tested layer at a time ([build plan](docs/build-plan.md)).
 |---|---|
 | Toolchain and CI: pinned SDK, locked packages, zero-warning build, real-PostgreSQL tests | Built; CI green |
 | Auction rules: money, proxy and fixed-increment bidding, reserve, deadlines, listing validation, lifecycle | Built and unit-tested (88 tests); database and service layers not yet built |
-| Database, engine, API, UI, live updates, simulator | Not started |
+| Database: schema, four least-privilege roles, append-only bids, amount and lifecycle constraints, one-shot migrator | Built and tested against PostgreSQL 18 (108 integration tests) |
+| Engine, API, UI, live updates, simulator | Not started |
 
 The application can't be run yet. The one-command `docker compose up` arrives with build step 8.
 
@@ -48,7 +49,7 @@ dotnet test --no-build -c Release
 
 - **Unit tests** for every auction rule. Each rejection is paired with a control case that must succeed.
 - **Property tests** (CsCheck): each run generates 2,000 random auctions with random terms and bid sequences, and checks the rules against a separate naive reference model.
-- **Planted-bug checks:** seven deliberate bugs planted in the rules during development were each caught by the suite.
+- **Planted-bug checks:** deliberate bugs planted during development, seven in the rules and three in the database triggers and grants, were each caught by the suite.
 - **Real infrastructure:** database tests run against PostgreSQL 18, never an in-memory provider.
 - **CI** runs a locked restore, a format check, a zero-warning Release build and the full suite. It fails on any floating-point type in money code.
 - **Independent requirements audits:** the latest one confirms the rules are correct at the unit layer. The requirements stay open until the database and service layers are built and tested.
@@ -56,7 +57,7 @@ dotnet test --no-build -c Release
 ## Repository layout
 
 ```
-src/        application code (today: Auction.Domain)
+src/        application code (today: Auction.Domain, Auction.Migrator)
 tests/      unit, property and integration tests, and the reference model
 docs/       requirements, architecture, build plan, decision records
 deploy/     Docker Compose and the environment template
@@ -77,6 +78,6 @@ eng/        analyzer thresholds
 ## Known limitations
 
 - Not a real marketplace: no payments, shipping or email.
-- Only the auction rules are built so far; everything above them is planned in the build plan.
+- Only the auction rules and the database are built so far; everything above them is planned in the build plan.
 
 Items deliberately left out are listed in the [requirements](docs/requirements.md) §4 under Should, Could and Won't.

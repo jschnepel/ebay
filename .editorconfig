@@ -31,3 +31,7 @@ dotnet_diagnostic.CA1502.severity = warning
 # Tests: behavior-sentence names (code-rules §15) use underscores by convention.
 [tests/**.cs]
 dotnet_diagnostic.CA1707.severity = none
+
+# EF Core migrations are generated; analyzers and style rules skip them.
+[src/**/Migrations/*.cs]
+generated_code = true

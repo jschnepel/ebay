@@ -365,23 +365,23 @@ Status comes from evidence only.
 | INT-04 | Core | | | R | not started |
 | FND-01 | Engineering | `global.json`, `Directory.*.props`, lock files, `.github/workflows/ci.yml` | CI workflow gates | R | implemented; CI green |
 | FND-02 | Stack | | | S | not started |
-| DOM-01 | Implied | `src/Auction.Domain/Money.cs` | `MoneyTests` | U, D | U passed; D pending |
+| DOM-01 | Implied | `src/Auction.Domain/Money.cs`; amount CHECK constraints in `src/Auction.Migrator/Schema` | `MoneyTests`, `AmountLimitTests` | U, D | U passed; D passed |
 | DOM-02 | Implied | `src/Auction.Domain/Bidding.cs` | `FixedIncrementAndEligibilityTests` | U, D | U passed; D pending |
 | DOM-03 | Implied | `Bidding.cs`, `Lifecycle.cs`, `ListingValidator.cs` | `FixedIncrementAndEligibilityTests`, `LifecycleTests` | U, D | U passed; D pending |
 | BID-01 | Engineering | `src/Auction.Domain/Bidding.cs` | `ProxyBiddingTests`, `FixedIncrementAndEligibilityTests`, `BiddingPropertyTests` | U, D, S | U passed; D, S pending |
 | LIF-01 | Implied | `src/Auction.Domain/Lifecycle.cs` | `LifecycleTests` | U, D | U passed; D pending |
-| COR-01 | Engineering | | | S | not started |
+| COR-01 | Engineering | `api` role grants in `src/Auction.Migrator/Schema/InitialSchemaSql.cs` | `RoleGrantTests` | S | API write refusal passed at D; S pending (step 7) |
 | COR-02 | Engineering | | | D | not started |
 | COR-03 | Engineering | | | D, S | not started |
 | COR-04 | Engineering | | | D | not started |
-| COR-05 | Engineering | | | D | not started |
+| COR-05 | Engineering | `bids_append_only` trigger, `(auction_id, seq)` key | `BidHistoryTests` | D | append-only history passed; gap-free sequences under concurrency pending (step 4) |
 | API-01 | Implied | | | S | not started |
 | API-03 | Engineering | | | S | not started |
 | SEC-01 | Implied | | | S | not started |
 | AUTH-01 | Engineering | | | S, B | not started |
 | AUTH-02 | Engineering | | | S, B | not started |
 | SEC-04 | Implied | | | S | not started |
-| SEC-05 | Engineering | | | D | not started |
+| SEC-05 | Engineering | `deploy/postgres/init-roles.sh`, `src/Auction.Migrator/Schema/InitialSchemaSql.cs` | `RoleGrantTests`, `MigrationTests` | D | passed for the step-3 tables; Identity, session and image tables pending (steps 7, 12, 13) |
 | UI-01 | Core / Stack | | | B | not started |
 | UI-05 | Engineering | | | D, S, B | not started |
 | NOT-01 | Engineering | | | D, S, B | not started |
@@ -401,6 +401,6 @@ Status comes from evidence only.
 | SIM-05 | Engineering | | | S | not started |
 | SIM-16 | Engineering | | | S | not started |
 | TST-01 | Engineering | Testcontainers PostgreSQL 18 | `PostgresEnvironmentTests` (2) | R | partial: PostgreSQL done, Redis not yet |
-| OPS-01 | Engineering | | | S | not started |
+| OPS-01 | Engineering | `src/Auction.Migrator`, `migrator` service in `deploy/compose.yaml` | `MigrationTests` | S | re-run keeps data passed at D; S pending (step 8) |
 | DEL-01 | Core / Engineering | | | R | not started |
 | HOST-01 | Engineering | | | S | not started |

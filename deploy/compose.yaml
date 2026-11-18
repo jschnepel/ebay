@@ -1,4 +1,4 @@
-# Local stack. Application services (api, engine, web, migrator) are added slice by slice.
+# Local stack. Application services are added as each build step needs them.
 # Infrastructure images are pinned by digest (resolved 2026-11-16 via docker pull).
 # Ports bind to 127.0.0.1 only; nothing infrastructure-level is exposed publicly.
 name: auction
@@ -10,12 +10,19 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-auction}
       POSTGRES_USER: ${POSTGRES_USER:-auction_admin}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}
+      # Read once by the bootstrap script, when the data volume is first initialised.
+      MIGRATOR_DB_PASSWORD: ${MIGRATOR_DB_PASSWORD:?set MIGRATOR_DB_PASSWORD in deploy/.env}
+      ENGINE_DB_PASSWORD: ${ENGINE_DB_PASSWORD:?set ENGINE_DB_PASSWORD in deploy/.env}
+      API_DB_PASSWORD: ${API_DB_PASSWORD:?set API_DB_PASSWORD in deploy/.env}
+      VERIFIER_DB_PASSWORD: ${VERIFIER_DB_PASSWORD:?set VERIFIER_DB_PASSWORD in deploy/.env}
     ports:
       - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql
+      - ./postgres/init-roles.sh:/docker-entrypoint-initdb.d/10-init-roles.sh:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      # Over TCP: during first-start initialisation the socket answers before TCP clients are accepted.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 3s
       retries: 20
@@ -24,6 +31,18 @@ services:
         limits:
           cpus: "1.0"
           memory: 1g
+
+  # One-shot: applies pending migrations as the schema-owning role, then exits 0.
+  migrator:
+    build:
+      context: ..
+      dockerfile: src/Auction.Migrator/Dockerfile
+    environment:
+      MIGRATOR_CONNECTION_STRING: Host=postgres;Database=${POSTGRES_DB:-auction};Username=migrator;Password=${MIGRATOR_DB_PASSWORD};GSS Encryption Mode=Disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
 
   redis:
     image: redis:8@sha256:1f88291b4c57bdf249f02eb085a8669889b2d2954e91d4de5118a5da6b78dd53

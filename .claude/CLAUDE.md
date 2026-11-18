@@ -20,4 +20,6 @@ Follow the engineering standards in `standards/` (a local, untracked, read-only 
 - Format check: `dotnet format --verify-no-changes --no-restore`
 - Build: `dotnet build --no-restore -c Release` (warnings are errors)
 - Test: `dotnet test --no-build -c Release --report-trx --results-directory TestResults` (needs Docker)
-- Infrastructure: `docker compose -f deploy/compose.yaml up -d` (copy `deploy/.env.example` to `deploy/.env` and set `POSTGRES_PASSWORD`)
+- Infrastructure: `docker compose -f deploy/compose.yaml up -d postgres redis` (copy `deploy/.env.example` to `deploy/.env` and set the five passwords)
+- Migrate: `docker compose -f deploy/compose.yaml up migrator` (exits 0; safe to repeat)
+- New migration: `dotnet tool restore`, then `dotnet ef migrations add <Name> --project src/Auction.Migrator --output-dir Migrations`; triggers and grants go in `Schema/` SQL called from the migration
