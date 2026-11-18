@@ -191,6 +191,14 @@ public sealed class MigratedDatabase : IAsyncLifetime
         return new ApiHost(ConnectionStringFor(Api), engine.Address, demoMode: true, RedisConnectionString, settings);
     }
 
+    /// <summary>A site of its own on a local port with the given settings (a path base, say); the caller disposes it.</summary>
+    public async Task<(ApiHost Host, Uri Address)> SiteWithAsync(IReadOnlyDictionary<string, string> settings)
+    {
+        var engine = await EngineServiceAsync();
+        var host = ApiHost.OnLocalPort(ConnectionStringFor(Api), engine.Address, RedisConnectionString, out var address, settings);
+        return (host, address);
+    }
+
     public AuctionEngine CreateEngine(EngineOptions? options = null) => new(EngineDataSource, options ?? new EngineOptions());
 
     /// <summary>The database clock, which decides every deadline.</summary>

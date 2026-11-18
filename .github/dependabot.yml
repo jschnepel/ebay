@@ -1,0 +1,26 @@
+# Weekly update pull requests for every pinned dependency. Each one still has to pass CI before it merges.
+version: 2
+updates:
+  - package-ecosystem: nuget
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      dotnet:
+        patterns: ["*"]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: docker
+    directories:
+      - /src/Auction.Api
+      - /src/Auction.Engine
+      - /src/Auction.Migrator
+      - /src/Auction.Simulator
+    schedule:
+      interval: weekly
+  - package-ecosystem: docker-compose
+    directory: /deploy
+    schedule:
+      interval: weekly

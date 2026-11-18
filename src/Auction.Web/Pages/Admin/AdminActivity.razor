@@ -32,7 +32,7 @@ else
                             @foreach (var bid in activity.RecentBids)
                             {
                                 <tr data-testid="recent-bid">
-                                    <td><MudLink Href="@($"/auctions/{bid.AuctionId}")">@bid.Title</MudLink></td>
+                                    <td><MudLink Href="@($"auctions/{bid.AuctionId}")">@bid.Title</MudLink></td>
                                     <td>@(bid.AmountCents is { } cents ? Format.Dollars(cents) : "outbid at once")</td>
                                     <td>@Format.Time(bid.AcceptedAt)</td>
                                 </tr>

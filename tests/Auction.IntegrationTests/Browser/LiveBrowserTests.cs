@@ -4,6 +4,7 @@ using Microsoft.Playwright;
 namespace Auction.IntegrationTests.Browser;
 
 /// <summary>Open browsers stay consistent without a reload (INT-02, RT-01, A5's 2-second bound).</summary>
+[Collection(Auction.IntegrationTests.Browser.BrowserJourneys.Name)]
 public sealed class LiveBrowserTests(MigratedDatabase db, Browsers browsers)
 {
     private static readonly LocatorAssertionsToHaveTextOptions WithinBound = new() { Timeout = 2_000 };

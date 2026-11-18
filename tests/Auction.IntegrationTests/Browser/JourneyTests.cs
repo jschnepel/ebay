@@ -4,6 +4,7 @@ using Microsoft.Playwright;
 namespace Auction.IntegrationTests.Browser;
 
 /// <summary>The demo journey in a real browser against the whole stack: client, API, engine and database.</summary>
+[Collection(Auction.IntegrationTests.Browser.BrowserJourneys.Name)]
 public sealed class JourneyTests(MigratedDatabase db, Browsers browsers)
 {
     [Fact]
@@ -70,6 +71,6 @@ public sealed class JourneyTests(MigratedDatabase db, Browsers browsers)
         await visitor.GotoAsync("/sell");
 
         await Assertions.Expect(visitor.GetByRole(AriaRole.Link, new() { Name = "Sign in", Exact = true }).Last).ToBeVisibleAsync();
-        await Assertions.Expect(visitor.GetByRole(AriaRole.Button, new() { Name = "New listing" })).ToHaveCountAsync(0);
+        await Assertions.Expect(visitor.GetByRole(AriaRole.Link, new() { Name = "New listing" })).ToHaveCountAsync(0);
     }
 }

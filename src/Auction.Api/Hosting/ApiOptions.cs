@@ -31,6 +31,22 @@ public sealed class ApiOptions
 
     public RateLimitOptions RateLimits { get; init; } = new();
 
+    /// <summary>
+    /// The path the site is served under behind the portfolio's reverse proxy (for example /projects/ebay);
+    /// empty serves it at the root. Pages, the API, the hub and the session cookie all live under it.
+    /// </summary>
+    public string PathBase { get; init; } = "";
+
+    /// <summary>
+    /// The reverse proxies whose X-Forwarded-For and X-Forwarded-Proto are believed (HOST-01), as
+    /// comma-separated IP addresses. From anyone else the headers are ignored, so a client can't choose its
+    /// own address for the rate limits.
+    /// </summary>
+    public string TrustedProxies { get; init; } = "";
+
+    public IReadOnlyList<System.Net.IPAddress> TrustedProxyAddresses =>
+        [.. TrustedProxies.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(System.Net.IPAddress.Parse)];
+
     /// <summary>How close to its end an active auction counts as "ending soon" in the directory (UI-03).</summary>
     public TimeSpan EndingSoonWindow { get; init; } = TimeSpan.FromHours(1);
 
@@ -42,5 +58,7 @@ public sealed class ApiOptions
         && RelayPollInterval > TimeSpan.Zero
         && RelayRetryDelay > TimeSpan.Zero
         && RateLimits.IsValid()
-        && EndingSoonWindow > TimeSpan.Zero;
+        && EndingSoonWindow > TimeSpan.Zero
+        && (PathBase.Length == 0 || (PathBase.StartsWith('/') && !PathBase.EndsWith('/')))
+        && TrustedProxies.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).All(proxy => System.Net.IPAddress.TryParse(proxy, out _));
 }

@@ -280,6 +280,8 @@ Each package is pinned in `Directory.Packages.props` and locked by the lock file
 - **Local / review:** `./run.sh` creates `deploy/.env` with generated secrets if it's missing, then runs `docker compose -f deploy/compose.yaml up` for all services on one host and waits until they're healthy. The migrator adds the demo seed (an admin, a demo seller and buyer, six active auctions) once, to an empty database. Every published port binds to 127.0.0.1 only.
 - **Live (HOST-02, Should):** the same containers on a home server behind the portfolio site's reverse proxy; TLS terminates at that proxy.
 
+**Hosting (HOST-01), as built:** `/health` answers without touching any dependency; `/ready` needs PostgreSQL and the engine (Redis is never a readiness condition). `PATH_BASE` serves pages, API, hub and cookie under one path (the client's links are all relative to its `<base href>`, which the server sets), and `TRUSTED_PROXIES` names the only addresses whose forwarded headers are believed. `docker compose -f deploy/compose.yaml run --rm migrator reset-demo` returns the data to the seeded state without touching any password.
+
 **Hosting requirements (HOST-01):**
 - `/health` (liveness, no dependencies) and `/ready` (engine and database).
 - All configuration through environment variables, documented in `deploy/.env.example`.

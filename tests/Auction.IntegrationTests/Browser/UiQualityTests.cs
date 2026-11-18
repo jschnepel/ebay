@@ -7,6 +7,7 @@ using Microsoft.Playwright;
 namespace Auction.IntegrationTests.Browser;
 
 /// <summary>UI-01 and UI-03 in the browser: accessibility, phone width, page states, drafts across browsers, search.</summary>
+[Collection(Auction.IntegrationTests.Browser.BrowserJourneys.Name)]
 public sealed class UiQualityTests(MigratedDatabase db, Browsers browsers)
 {
     [Fact]

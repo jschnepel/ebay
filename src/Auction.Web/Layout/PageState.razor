@@ -23,7 +23,7 @@
             <MudText>@(ForbiddenText ?? "Sign in to see this.")</MudText>
             @if (SignInReturn is not null)
             {
-                <MudButton Class="mt-2" Variant="Variant.Filled" Color="Color.Primary" Href="@($"/sign-in?returnUrl={Uri.EscapeDataString(SignInReturn)}")">Sign in</MudButton>
+                <MudButton Class="mt-2" Variant="Variant.Filled" Color="Color.Primary" Href="@($"sign-in?returnUrl={Uri.EscapeDataString(SignInReturn)}")">Sign in</MudButton>
             }
         </MudPaper>
         break;

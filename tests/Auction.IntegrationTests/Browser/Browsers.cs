@@ -18,7 +18,12 @@ public sealed class Browsers : IAsyncLifetime
     private IPlaywright? _playwright;
     private IBrowser? _browser;
 
-    public ValueTask InitializeAsync() => ValueTask.CompletedTask;
+    public ValueTask InitializeAsync()
+    {
+        // Explicit bounds (the 2-second A5 checks) stay as written; everything else allows a slow machine.
+        Assertions.SetDefaultExpectTimeout(10_000);
+        return ValueTask.CompletedTask;
+    }
 
     public async ValueTask DisposeAsync()
     {
@@ -64,5 +69,19 @@ public sealed class Browsers : IAsyncLifetime
         {
             _gate.Release();
         }
+    }
+}
+
+/// <summary>
+/// The browser tests run together, after the parallel tests, so their time bounds are measured without the
+/// rest of the suite competing for the machine.
+/// </summary>
+[CollectionDefinition(Name, DisableParallelization = true)]
+public sealed class BrowserJourneys
+{
+    public const string Name = "Browser journeys";
+
+    private BrowserJourneys()
+    {
     }
 }

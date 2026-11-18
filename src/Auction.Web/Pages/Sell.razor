@@ -18,7 +18,7 @@ else if (Session.Account?.IsAdmin == true)
 }
 else
 {
-    <MudButton Variant="Variant.Filled" Color="Color.Primary" Href="/sell/new" Class="mb-4">New listing</MudButton>
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" Href="sell/new" Class="mb-4">New listing</MudButton>
 
     @if (_message is not null)
     {
@@ -42,7 +42,7 @@ else
                 @foreach (var auction in _list.Items)
                 {
                     <tr data-testid="my-auction-row">
-                        <td><MudLink Href="@($"/auctions/{auction.Id}")">@auction.Title</MudLink></td>
+                        <td><MudLink Href="@($"auctions/{auction.Id}")">@auction.Title</MudLink></td>
                         <td>@Format.Price(auction)</td>
                         <td>@auction.BidCount</td>
                         <td>@Format.Status(auction.Status)</td>
@@ -50,7 +50,7 @@ else
                         <td>
                             @if (auction.Status == "draft")
                             {
-                                <MudButton Size="Size.Small" Href="@($"/sell/{auction.Id}/edit")">Edit</MudButton>
+                                <MudButton Size="Size.Small" Href="@($"sell/{auction.Id}/edit")">Edit</MudButton>
                                 <MudButton Size="Size.Small" Color="Color.Primary" OnClick="() => PublishAsync(auction)" Disabled="_busy">Publish</MudButton>
                                 <MudButton Size="Size.Small" Color="Color.Error" OnClick="() => DeleteAsync(auction)" Disabled="_busy">Delete</MudButton>
                             }

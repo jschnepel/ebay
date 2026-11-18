@@ -6,6 +6,7 @@ using Microsoft.Playwright;
 namespace Auction.IntegrationTests.Browser;
 
 /// <summary>The Admin area in a browser (UI-04, ADM-01, INT-02's fourth interface).</summary>
+[Collection(Auction.IntegrationTests.Browser.BrowserJourneys.Name)]
 public sealed class AdminBrowserTests(MigratedDatabase db, Browsers browsers)
 {
     private const string Password = "admin-browser-password";

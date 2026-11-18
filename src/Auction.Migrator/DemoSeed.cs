@@ -98,6 +98,38 @@ public static class DemoSeed
         return new DemoSeedResult(accounts, auctions);
     }
 
+    // Everything visitors made goes; the seeded, simulator and admin accounts (and their passwords) stay.
+    // TRUNCATE doesn't fire the append-only and frozen-image triggers, and only the schema owner may run it.
+    private const string ResetSql = """
+        TRUNCATE auction.bids, auction.proxy_maxima, auction.idempotency_records, auction.outbox_events, auction.notifications,
+                 auction.admin_audit, auction.auction_images, auction.image_blobs, auction.upload_quotas, auction.sessions,
+                 auction.user_limits, auction.auctions;
+        UPDATE auction.global_quota SET bytes_used = 0 WHERE id = 1;
+        DELETE FROM auction.users WHERE kind = 'self_registered';
+        """;
+
+    /// <summary>
+    /// reset-demo (HOST-01): back to the seeded state, with the demo auctions starting again relative to now.
+    /// Running it twice gives the same state, and it never changes a password.
+    /// </summary>
+    public static async Task<DemoSeedResult> ResetAsync(string connectionString, DemoSeedOptions options, CancellationToken cancellationToken)
+    {
+        await using (var connection = new NpgsqlConnection(connectionString))
+        {
+            await connection.OpenAsync(cancellationToken);
+            await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+            await ExecuteAsync(connection, "SELECT pg_advisory_xact_lock(7316891420551003)", cancellationToken);
+            await using (var reset = new NpgsqlCommand(ResetSql, connection, transaction))
+            {
+                await reset.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            await transaction.CommitAsync(cancellationToken);
+        }
+
+        return await RunAsync(connectionString, options, cancellationToken);
+    }
+
     private static IEnumerable<(string Email, string Name, string Kind, string Password)> Accounts(DemoSeedOptions options)
     {
         yield return (DemoSeedOptions.AdminEmail, "Admin", "admin", options.AdminPassword);

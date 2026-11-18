@@ -1,4 +1,5 @@
 @page "/sign-in"
+@page "/login"
 @inject AuctionApi Api
 @inject Session Session
 @inject NavigationManager Navigation
@@ -85,7 +86,8 @@
         }
 
         Session.SignedIn(result.Value!);
-        Navigation.NavigateTo(IsLocalPath(ReturnUrl) ? ReturnUrl! : "/");
+        // Return addresses are paths within the app; they resolve against the page's base, so the app works under a path base.
+        Navigation.NavigateTo(IsLocalPath(ReturnUrl) ? ReturnUrl!.TrimStart('/') : "./");
     }
 
     // Only a path on this site: "//host" and "/\host" would leave it.

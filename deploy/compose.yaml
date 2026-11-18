@@ -91,6 +91,9 @@ services:
       # The SignalR backplane (and, later, caches and rate limits). The API starts and bids work without it.
       ConnectionStrings__Redis: redis:6379,abortConnect=false
       Api__DemoMode: ${DEMO_MODE:-true}
+      # Behind the portfolio site's reverse proxy: the path it serves the app under, and the proxy's address.
+      Api__PathBase: ${PATH_BASE:-}
+      Api__TrustedProxies: ${TRUSTED_PROXIES:-}
     ports:
       - "127.0.0.1:${PORT:-8080}:8080"
     depends_on:

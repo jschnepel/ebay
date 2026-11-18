@@ -38,7 +38,7 @@ else
                 @foreach (var auction in _items)
                 {
                     <tr data-testid="moderated-auction">
-                        <td><MudLink Href="@($"/auctions/{auction.Id}")">@auction.Title</MudLink></td>
+                        <td><MudLink Href="@($"auctions/{auction.Id}")">@auction.Title</MudLink></td>
                         <td>@auction.SellerName</td>
                         <td>@(auction.CurrentPriceCents is { } cents ? Format.Dollars(cents) : "no bids")</td>
                         <td>@auction.BidCount</td>

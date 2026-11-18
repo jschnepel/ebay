@@ -54,7 +54,7 @@ else
     {
         @if (Session.Account is null)
         {
-            <MudText Class="mb-4"><MudLink Href="@($"/sign-in?returnUrl=/auctions/{Id}")">Sign in</MudLink> to bid.</MudText>
+            <MudText Class="mb-4"><MudLink Href="@($"sign-in?returnUrl=/auctions/{Id}")">Sign in</MudLink> to bid.</MudText>
         }
         else if (!Session.Account.IsAdmin)
         {

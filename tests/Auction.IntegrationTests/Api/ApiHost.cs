@@ -26,14 +26,15 @@ public sealed class ApiHost(string connectionString, Uri engineAddress, bool dem
     /// <summary>
     /// The same host on a real local port, for a browser: Kestrel instead of the in-memory test server.
     /// </summary>
-    public static ApiHost OnLocalPort(string connectionString, Uri engineAddress, string redis, out Uri address)
+    public static ApiHost OnLocalPort(
+        string connectionString, Uri engineAddress, string redis, out Uri address, IReadOnlyDictionary<string, string>? settings = null)
     {
         using var probe = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
         probe.Start();
         var port = ((System.Net.IPEndPoint)probe.LocalEndpoint).Port;
         probe.Stop();
 
-        var host = new ApiHost(connectionString, engineAddress, demoMode: true, redis);
+        var host = new ApiHost(connectionString, engineAddress, demoMode: true, redis, settings);
         host.UseKestrel(port);
         host.StartServer();
         address = new Uri($"http://127.0.0.1:{port}");

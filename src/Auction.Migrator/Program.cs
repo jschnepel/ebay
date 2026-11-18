@@ -25,7 +25,9 @@ Console.CancelKeyPress += (_, e) =>
 
 // SEED_DEMO=true adds the demo accounts and auctions after migrating; their passwords come from the
 // environment only.
-var seed = string.Equals(Environment.GetEnvironmentVariable("SEED_DEMO"), "true", StringComparison.OrdinalIgnoreCase);
+// "reset-demo" returns a running demo to its seeded state (the hosted copy runs it nightly).
+var reset = args.Contains("reset-demo");
+var seed = reset || string.Equals(Environment.GetEnvironmentVariable("SEED_DEMO"), "true", StringComparison.OrdinalIgnoreCase);
 var adminPassword = Environment.GetEnvironmentVariable("ADMIN_PASSWORD");
 var demoPassword = Environment.GetEnvironmentVariable("DEMO_PASSWORD");
 if (seed && (string.IsNullOrWhiteSpace(adminPassword) || string.IsNullOrWhiteSpace(demoPassword)))
@@ -41,8 +43,10 @@ try
     if (seed)
     {
         var simulatorPassword = Environment.GetEnvironmentVariable("SIMULATOR_PASSWORD");
-        var result = await DemoSeed.RunAsync(
-            connectionString, new DemoSeedOptions(adminPassword!, demoPassword!, simulatorPassword), cancellation.Token);
+        var passwords = new DemoSeedOptions(adminPassword!, demoPassword!, simulatorPassword);
+        var result = reset
+            ? await DemoSeed.ResetAsync(connectionString, passwords, cancellation.Token)
+            : await DemoSeed.RunAsync(connectionString, passwords, cancellation.Token);
         MigratorLog.Seeded(logger, result.AccountsAdded, result.AuctionsAdded);
     }
 

@@ -5,6 +5,7 @@ using Microsoft.Playwright;
 namespace Auction.IntegrationTests.Browser;
 
 /// <summary>UI-05 in the browser: a seller adds a photo to a draft, publishes, and the directory shows it as the cover.</summary>
+[Collection(Auction.IntegrationTests.Browser.BrowserJourneys.Name)]
 public sealed class ImageBrowserTests(MigratedDatabase db, Browsers browsers)
 {
     [Fact]

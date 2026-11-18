@@ -22,7 +22,7 @@ else if (_list.Items is null)
 }
 else if (_list.Items.Count == 0)
 {
-    <MudText>You haven't bid on anything yet. <MudLink Href="/">Browse the auctions</MudLink>.</MudText>
+    <MudText>You haven't bid on anything yet. <MudLink Href="./">Browse the auctions</MudLink>.</MudText>
 }
 else
 {
@@ -33,7 +33,7 @@ else
             @foreach (var auction in _list.Items)
             {
                 <tr data-testid="my-bid-row">
-                    <td><MudLink Href="@($"/auctions/{auction.Id}")">@auction.Title</MudLink></td>
+                    <td><MudLink Href="@($"auctions/{auction.Id}")">@auction.Title</MudLink></td>
                     <td>@Format.Price(auction)</td>
                     <td>@(auction.YouLead ? "Leading" : "Outbid")</td>
                     <td>@Format.Status(auction.Status)</td>

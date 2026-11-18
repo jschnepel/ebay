@@ -19,7 +19,7 @@ public sealed class Presence(Caching.RedisJobs redis, TimeProvider clock) : Back
     public async Task<int> OnlineUsersAsync()
     {
         var cutoff = clock.GetUtcNow().Add(-Expiry).ToUnixTimeMilliseconds();
-        var shared = await redis.TryAsync<long?>(async db => await db.SortedSetLengthAsync(Key, cutoff, double.PositiveInfinity));
+        var shared = await redis.TryAsync<long?>(async db => await db.SortedSetLengthAsync(Key, cutoff, long.MaxValue));
         return shared is { } count ? (int)count : _connections.Count;
     }
 
@@ -61,7 +61,7 @@ public sealed class Presence(Caching.RedisJobs redis, TimeProvider clock) : Back
                     await db.SortedSetAddAsync(Key, entries);
                 }
 
-                await db.SortedSetRemoveRangeByScoreAsync(Key, double.NegativeInfinity, now.Add(-Expiry).ToUnixTimeMilliseconds());
+                await db.SortedSetRemoveRangeByScoreAsync(Key, 0, now.Add(-Expiry).ToUnixTimeMilliseconds());
             });
         }
     }

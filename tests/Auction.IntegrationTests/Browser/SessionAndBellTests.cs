@@ -6,6 +6,7 @@ using Microsoft.Playwright;
 namespace Auction.IntegrationTests.Browser;
 
 /// <summary>AUTH-02 and NOT-01 in the browser: the signed-out notice and the notification bell, both live.</summary>
+[Collection(Auction.IntegrationTests.Browser.BrowserJourneys.Name)]
 public sealed class SessionAndBellTests(MigratedDatabase db, Browsers browsers)
 {
     private static readonly LocatorAssertionsToHaveTextOptions WithinBound = new() { Timeout = 2_000 };

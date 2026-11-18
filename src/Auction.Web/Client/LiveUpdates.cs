@@ -138,7 +138,7 @@ public sealed class LiveUpdates(NavigationManager navigation) : IAsyncDisposable
             if (_connection is null)
             {
                 _connection = new HubConnectionBuilder()
-                    .WithUrl(navigation.ToAbsoluteUri("/hubs/auctions"))
+                    .WithUrl(navigation.ToAbsoluteUri("hubs/auctions"))
                     .WithAutomaticReconnect(new KeepTrying())
                     .Build();
                 _connection.On<AuctionChanged>("changed", hint => RaiseAsync(Changed, handler => handler(hint)));

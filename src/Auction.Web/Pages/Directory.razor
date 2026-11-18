@@ -36,7 +36,7 @@
         else
         {
             <MudText>No auctions are listed yet.</MudText>
-            <MudButton Class="mt-2" Href="/sell/new" Variant="Variant.Outlined">List an item</MudButton>
+            <MudButton Class="mt-2" Href="sell/new" Variant="Variant.Outlined">List an item</MudButton>
         }
     </EmptyContent>
     <ChildContent>
@@ -45,7 +45,7 @@
             {
                 <MudItem xs="12" sm="6" md="4" lg="3">
                     <MudCard Outlined="true" Class="auction-card" data-testid="auction-row">
-                        <a href="@($"/auctions/{auction.Id}")" class="auction-card-picture" tabindex="-1" aria-hidden="true">
+                        <a href="@($"auctions/{auction.Id}")" class="auction-card-picture" tabindex="-1" aria-hidden="true">
                             @if (auction.CoverImageId is { } cover)
                             {
                                 <img src="@($"api/v1/images/{cover}")" alt="" data-testid="cover" />
@@ -56,7 +56,7 @@
                             }
                         </a>
                         <MudCardContent>
-                            <MudLink Href="@($"/auctions/{auction.Id}")" Typo="Typo.subtitle1" Class="auction-card-title">@auction.Title</MudLink>
+                            <MudLink Href="@($"auctions/{auction.Id}")" Typo="Typo.subtitle1" Class="auction-card-title">@auction.Title</MudLink>
                             <MudText Typo="Typo.h6" data-testid="price">@Format.Price(auction)</MudText>
                             <MudText Typo="Typo.body2">
                                 @auction.BidCount @(auction.BidCount == 1 ? "bid" : "bids") · @Format.Status(auction.Status)

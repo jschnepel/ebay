@@ -12,27 +12,27 @@
 
 <MudLayout>
     <MudAppBar Elevation="1" Dense="true">
-        <a href="/" class="brand d-none d-sm-inline">Auctions</a>
+        <a href="./" class="brand d-none d-sm-inline">Auctions</a>
         <nav aria-label="Main" class="d-flex align-center flex-wrap">
             @if (Session.Account?.IsAdmin == true)
             {
                 @* Admin accounts can't buy or sell, so they see only the admin area. *@
-                <MudButton Href="/admin" Color="Color.Inherit">Activity</MudButton>
-                <MudButton Href="/admin/auctions" Color="Color.Inherit">Auctions</MudButton>
-                <MudButton Href="/admin/users" Color="Color.Inherit">Users</MudButton>
+                <MudButton Href="admin" Color="Color.Inherit">Activity</MudButton>
+                <MudButton Href="admin/auctions" Color="Color.Inherit">Auctions</MudButton>
+                <MudButton Href="admin/users" Color="Color.Inherit">Users</MudButton>
             }
             else
             {
-                <MudButton Href="/" Color="Color.Inherit">Buy</MudButton>
-                <MudButton Href="/my-bids" Color="Color.Inherit">My bids</MudButton>
-                <MudButton Href="/sell" Color="Color.Inherit">Sell</MudButton>
+                <MudButton Href="./" Color="Color.Inherit">Buy</MudButton>
+                <MudButton Href="my-bids" Color="Color.Inherit">My bids</MudButton>
+                <MudButton Href="sell" Color="Color.Inherit">Sell</MudButton>
             }
         </nav>
         <MudSpacer />
         @if (Session.Account is { } account)
         {
             <MudBadge Content="@Notices.Unread" Visible="@(Notices.Unread > 0)" Color="Color.Error" Overlap="true" Class="mr-2">
-                <MudIconButton Icon="@Icons.Material.Filled.Notifications" Color="Color.Inherit" Href="/notifications"
+                <MudIconButton Icon="@Icons.Material.Filled.Notifications" Color="Color.Inherit" Href="notifications"
                                aria-label="@($"Notifications, {Notices.Unread} unread")" data-testid="bell" />
             </MudBadge>
             <span hidden data-testid="unread-count">@Notices.Unread</span>
@@ -41,7 +41,7 @@
         }
         else
         {
-            <MudButton Href="/sign-in" Color="Color.Inherit">Sign in</MudButton>
+            <MudButton Href="sign-in" Color="Color.Inherit">Sign in</MudButton>
         }
     </MudAppBar>
     <MudMainContent>
@@ -49,7 +49,7 @@
             @if (Session.EndedElsewhere)
             {
                 <MudAlert Severity="Severity.Warning" Class="mb-4" data-testid="signed-out-notice">
-                    Signed out: your account signed in elsewhere. <MudLink Href="/sign-in">Sign in again</MudLink> to continue here.
+                    Signed out: your account signed in elsewhere. <MudLink Href="sign-in">Sign in again</MudLink> to continue here.
                 </MudAlert>
             }
             @Body
@@ -89,7 +89,7 @@
     private async Task SignOutAsync()
     {
         await Session.SignOutAsync();
-        Navigation.NavigateTo("/");
+        Navigation.NavigateTo("./");
     }
 
     // The live connection belongs to whoever is signed in; it's reopened when that changes.

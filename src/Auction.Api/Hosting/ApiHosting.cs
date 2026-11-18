@@ -7,6 +7,7 @@ using Auction.Api.Notifications;
 using Auction.Contracts.V1;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Options;
 using Npgsql;
@@ -23,7 +24,10 @@ internal static class ApiHosting
 
         builder.Services.AddOptions<ApiOptions>()
             .Bind(builder.Configuration.GetSection("Api"))
-            .Validate(options => options.IsValid(), "Api options are missing or out of range (Api:EngineAddress is required).")
+            .Validate(
+                options => options.IsValid(),
+                "Api options are missing or out of range: Api:EngineAddress is required, Api:PathBase must start with / and not end with one, "
+                + "Api:TrustedProxies must be IP addresses, and the limits and intervals must be positive.")
             .ValidateOnStart();
         builder.Services.AddSingleton(services => services.GetRequiredService<IOptions<ApiOptions>>().Value);
 
@@ -63,6 +67,8 @@ internal static class ApiHosting
         builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme).AddCookie(cookie =>
         {
             cookie.Cookie.Name = SessionCookie;
+            // Scoped to the path base, so the cookie never reaches the other apps on the same host.
+            cookie.Cookie.Path = builder.Configuration["Api:PathBase"] is { Length: > 0 } pathBase ? pathBase : "/";
             cookie.Cookie.HttpOnly = true;
             cookie.Cookie.SameSite = SameSiteMode.Strict;
             cookie.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
@@ -96,12 +102,35 @@ internal static class ApiHosting
         }
 
         builder.Services.AddHostedService<OutboxRelay>();
-        builder.Services.AddHealthChecks();
+        builder.Services.AddHealthChecks().AddReadiness();
+        builder.Services.AddSingleton<AppPage>();
         return builder;
     }
 
     public static WebApplication MapApi(this WebApplication app)
     {
+        var options = app.Services.GetRequiredService<ApiOptions>();
+        if (options.TrustedProxyAddresses is { Count: > 0 } proxies)
+        {
+            var forwarded = new ForwardedHeadersOptions { ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto };
+            forwarded.KnownIPNetworks.Clear();
+            forwarded.KnownProxies.Clear();
+            foreach (var proxy in proxies)
+            {
+                forwarded.KnownProxies.Add(proxy);
+            }
+
+            app.UseForwardedHeaders(forwarded);
+        }
+
+        if (options.PathBase.Length > 0)
+        {
+            app.UsePathBase(options.PathBase);
+        }
+
+        // Routing runs after the path base is taken off, so routes match the path inside the app.
+        app.UseRouting();
+
         app.UseExceptionHandler();
         app.Use(async (context, next) =>
         {
@@ -136,13 +165,15 @@ internal static class ApiHosting
         api.MapImages();
         app.MapHub<AuctionHub>(AuctionHub.Path);
         app.MapOpenApi();
-        app.MapHealthChecks("/health");
+        // Liveness answers without touching any dependency; readiness needs PostgreSQL and the engine.
+        app.MapHealthChecks("/health", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions { Predicate = _ => false });
+        app.MapHealthChecks("/ready", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions { Predicate = check => check.Tags.Contains(Readiness.Tag) });
 
         // The Blazor client: its files, and its page for every other path so deep links load the app.
         // An unknown API path is still a 404 problem, never the app's page.
         app.MapStaticAssets();
         app.MapFallback("/api/{**path}", () => Problems.Of(StatusCodes.Status404NotFound, "not_found", "There is no such API path."));
-        app.MapFallbackToFile("index.html");
+        app.MapFallback((Delegate)AppPage.ServeAsync);
         return app;
     }
 
