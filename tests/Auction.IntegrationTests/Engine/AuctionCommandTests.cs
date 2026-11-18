@@ -50,15 +50,42 @@ public sealed class AuctionCommandTests(MigratedDatabase db)
     }
 
     [Fact]
-    public async Task Another_user_cannot_edit_or_publish_a_draft()
+    public async Task Another_users_draft_looks_like_an_unknown_auction()
     {
         var id = await DraftAsync(_engine, _seller, Terms(await db.NowAsync()));
         var other = UserId.New();
 
         var edited = await _engine.EditDraftAsync(As(other), id, Terms(await db.NowAsync()), _ct);
         var published = await _engine.PublishAsync(As(other), id, _ct);
+        var cancelled = await _engine.CancelAsync(As(other), id, _ct);
+        var bid = await BidAsync(_engine, other, id, 1500);
+        var unknown = await _engine.PublishAsync(As(other), AuctionId.New(), _ct);
 
-        Assert.Equal((CommandError.NotOwner, CommandError.NotOwner), (edited.Error, published.Error));
+        Assert.Equal(CommandError.NotFound, unknown.Error);
+        Assert.All([edited, published, cancelled, bid], o => Assert.Equivalent(unknown with { AuctionId = id }, o, strict: true));
+        Assert.Equal(0, await db.ScalarAsync<long>(MigratedDatabase.Verifier, "SELECT version FROM auctions WHERE id = $1", id.Value));
+    }
+
+    [Fact]
+    public async Task Another_user_cannot_cancel_a_published_auction()
+    {
+        var id = await ActiveAsync(_engine, _seller, Terms(await db.NowAsync()));
+
+        var cancelled = await _engine.CancelAsync(As(UserId.New()), id, _ct);
+
+        Assert.Equal(CommandError.NotOwner, cancelled.Error);
+    }
+
+    [Fact]
+    public async Task Events_carry_only_the_auction_and_its_version()
+    {
+        var id = await ActiveAsync(_engine, _seller, Terms(await db.NowAsync()));
+        await BidAsync(_engine, UserId.New(), id, 1500);
+
+        var payload = await db.ScalarAsync<string>(
+            MigratedDatabase.Verifier, "SELECT payload::text FROM outbox_events WHERE auction_id = $1 AND auction_version = 2", id.Value);
+
+        Assert.Equal("{\"version\": 2, \"auctionId\": \"" + id.Value + "\"}", payload);
     }
 
     [Fact]
@@ -168,13 +195,14 @@ public sealed class AuctionCommandTests(MigratedDatabase db)
     }
 
     [Fact]
-    public async Task Bidding_on_a_draft_or_an_unknown_auction_is_refused()
+    public async Task Bidding_on_an_unknown_auction_or_on_ones_own_draft_is_refused()
     {
         var draft = await DraftAsync(_engine, _seller, Terms(await db.NowAsync()));
 
-        var onDraft = await BidAsync(_engine, UserId.New(), draft, 1500);
         var unknown = await BidAsync(_engine, UserId.New(), AuctionId.New(), 1500);
+        var onOwnDraft = await BidAsync(_engine, _seller, draft, 1500);
 
-        Assert.Equal((CommandError.AuctionNotActive, CommandError.NotFound), (onDraft.Error, unknown.Error));
+        Assert.Equal((CommandError.NotFound, CommandError.AuctionNotActive), (unknown.Error, onOwnDraft.Error));
+        Assert.Equal(0, await CountAsync(db, "bids", draft));
     }
 }

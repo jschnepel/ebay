@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Npgsql;
@@ -7,6 +8,7 @@ namespace Auction.Engine;
 /// <summary>
 /// Drives every time-based transition: Scheduled → Active at the start, and Active or Suspended → Closed
 /// at the end. Polls every <see cref="EngineOptions.SweepInterval"/>; safe to run on several instances.
+/// Every <see cref="EngineOptions.KeySweepInterval"/> it also deletes expired idempotency records.
 /// </summary>
 public sealed partial class CloseWorker(AuctionEngine engine, EngineOptions options, ILogger<CloseWorker> logger) : BackgroundService
 {
@@ -18,11 +20,33 @@ public sealed partial class CloseWorker(AuctionEngine engine, EngineOptions opti
         }
 
         using var timer = new PeriodicTimer(options.SweepInterval);
+        long? lastKeySweep = null;
         do
         {
             await SweepUntilCaughtUpAsync(stoppingToken);
+            if (lastKeySweep is not { } last || Stopwatch.GetElapsedTime(last) >= options.KeySweepInterval)
+            {
+                await SweepExpiredKeysAsync(stoppingToken);
+                lastKeySweep = Stopwatch.GetTimestamp();
+            }
         }
         while (await timer.WaitForNextTickAsync(stoppingToken));
+    }
+
+    private async Task SweepExpiredKeysAsync(CancellationToken stoppingToken)
+    {
+        try
+        {
+            var deleted = await engine.SweepExpiredKeysAsync(stoppingToken);
+            if (deleted > 0)
+            {
+                LogKeysSwept(logger, deleted);
+            }
+        }
+        catch (NpgsqlException e)
+        {
+            LogKeySweepFailed(logger, e);
+        }
     }
 
     private async Task SweepUntilCaughtUpAsync(CancellationToken stoppingToken)
@@ -52,4 +76,10 @@ public sealed partial class CloseWorker(AuctionEngine engine, EngineOptions opti
 
     [LoggerMessage(2, LogLevel.Warning, "Sweep for due auctions failed; retrying on the next tick")]
     private static partial void LogSweepFailed(ILogger logger, Exception exception);
+
+    [LoggerMessage(3, LogLevel.Information, "Deleted {Count} expired idempotency records")]
+    private static partial void LogKeysSwept(ILogger logger, int count);
+
+    [LoggerMessage(4, LogLevel.Warning, "Sweep for expired idempotency records failed; retrying on the next tick")]
+    private static partial void LogKeySweepFailed(ILogger logger, Exception exception);
 }

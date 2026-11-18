@@ -54,6 +54,9 @@ services:
       ConnectionStrings__Engine: Host=postgres;Database=${POSTGRES_DB:-auction};Username=engine;Password=${ENGINE_DB_PASSWORD};Maximum Pool Size=${ENGINE_DB_POOL_SIZE:-50};GSS Encryption Mode=Disable
       Engine__LockTimeout: ${ENGINE_LOCK_TIMEOUT:-00:00:02}
       Engine__Limits__MinDuration: ${AUCTION_MIN_DURATION:-00:01:00}
+      Engine__Limits__AmountCapCents: ${AUCTION_AMOUNT_CAP_CENTS:-1000000000}
+      Engine__CloseWorkerEnabled: ${ENGINE_CLOSE_WORKER_ENABLED:-true}
+      Engine__KeyRetention: ${ENGINE_KEY_RETENTION:-1.00:00:00}
     depends_on:
       migrator:
         condition: service_completed_successfully

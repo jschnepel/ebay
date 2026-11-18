@@ -13,6 +13,7 @@ public sealed class AuctionEngine(NpgsqlDataSource dataSource, EngineOptions opt
     private const string LockNotAvailable = "55P03";
     private const string DeadlockDetected = "40P01";
     private const string UniqueViolation = "23505";
+    private const int KeySweepBatchSize = 1_000;
 
     /// <summary>The result of applying the rules to a locked auction: an outcome, and a change if accepted.</summary>
     private sealed record Decision(CommandOutcome Outcome, AuctionChange? Change);
@@ -93,6 +94,25 @@ public sealed class AuctionEngine(NpgsqlDataSource dataSource, EngineOptions opt
         return advanced;
     }
 
+    /// <summary>
+    /// Deletes idempotency records older than <see cref="EngineOptions.KeyRetention"/>, in batches.
+    /// A key older than that is treated as new. Returns how many were deleted.
+    /// </summary>
+    public async Task<int> SweepExpiredKeysAsync(CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var total = 0;
+        int deleted;
+        do
+        {
+            deleted = await IdempotencyStore.SweepAsync(connection, options.KeyRetention, KeySweepBatchSize, cancellationToken);
+            total += deleted;
+        }
+        while (deleted == KeySweepBatchSize);
+
+        return total;
+    }
+
     private Task<CommandOutcome> RunAsync(
         CommandContext context, AuctionId auctionId, byte[] requestHash, Func<LockedAuction, DateTimeOffset, Decision> decide, CancellationToken cancellationToken)
     {
@@ -103,7 +123,8 @@ public sealed class AuctionEngine(NpgsqlDataSource dataSource, EngineOptions opt
     // A lock timeout or deadlock leaves nothing behind, so the whole command is retried after a short,
     // jittered pause; if every attempt fails, the caller gets Busy and may retry with the same key.
     // A unique violation on the key means a concurrent command with the same key, for another auction,
-    // committed first; the retry then finds its record.
+    // committed first; nothing of this attempt was kept, and the retry finds the record and refuses the
+    // reuse.
     private async Task<CommandOutcome> WithRetriesAsync(
         CommandContext context, Func<Task<CommandOutcome>> attempt, CancellationToken cancellationToken)
     {
@@ -148,7 +169,7 @@ public sealed class AuctionEngine(NpgsqlDataSource dataSource, EngineOptions opt
             return recorded.ReplayFor(requestHash);
         }
 
-        var decision = locked.Auction is { } auction
+        var decision = locked.Auction is { } auction && IsVisibleTo(auction, context.Actor)
             ? decide(auction, locked.Now)
             : Refuse(auctionId, CommandError.NotFound);
 
@@ -236,6 +257,10 @@ public sealed class AuctionEngine(NpgsqlDataSource dataSource, EngineOptions opt
         await transaction.CommitAsync(cancellationToken);
         return true;
     }
+
+    // A draft is private to its seller: to anyone else it is refused exactly like an id that doesn't exist.
+    private static bool IsVisibleTo(LockedAuction auction, UserId actor) =>
+        auction.State.Status != AuctionStatus.Draft || auction.State.SellerId == actor;
 
     private static Decision Accept(LockedAuction before, AuctionChange change)
     {

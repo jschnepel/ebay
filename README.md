@@ -12,7 +12,7 @@ Built bottom-up, one tested layer at a time ([build plan](docs/build-plan.md)).
 | Auction rules: money, proxy and fixed-increment bidding, reserve, deadlines, listing validation, lifecycle | Built and unit-tested (88 tests) |
 | Database: schema, four least-privilege roles, append-only bids, amount and lifecycle constraints, one-shot migrator | Built and tested against PostgreSQL 18 |
 | Engine core: create, edit, publish, cancel and bid, each one locked transaction with idempotency and an outbox event | Built and tested against PostgreSQL 18, including 50-bidder races checked against the reference model |
-| Close worker: starts scheduled auctions and closes ended ones with Sold, Reserve not met or No bids | Built and tested, including two workers sweeping at once |
+| Close worker: starts scheduled auctions, closes ended ones with Sold, Reserve not met or No bids, and deletes idempotency records after 24 hours | Built and tested, including two workers sweeping at once |
 | Engine service: the `auction.v1` gRPC contract, health probe, correlated JSON logs, internal-only in Compose | Built and tested from its container image, including the 50-bidder races over gRPC |
 | API, UI, live updates, simulator | Not started |
 
@@ -52,7 +52,7 @@ dotnet test --no-build -c Release
 
 - **Unit tests** for every auction rule. Each rejection is paired with a control case that must succeed.
 - **Property tests** (CsCheck): each run generates 2,000 random auctions with random terms and bid sequences, and checks the rules against a separate naive reference model.
-- **Planted-bug checks:** deliberate bugs planted during development were each caught by the suite: seven in the rules, three in the database triggers and grants, and five in the engine (no row lock, the clock read before the lock wait, a private amount written to the history, a close worker that skips the lock, and one that closes early), and two in the gRPC mapping.
+- **Planted-bug checks:** deliberate bugs planted during development were each caught by the suite: seven in the rules, three in the database triggers and grants, and five in the engine (no row lock, the clock read before the lock wait, a private amount written to the history, a close worker that skips the lock, and one that closes early), two in the gRPC mapping, and six more for idempotency, draft privacy, event payloads and grants (an idempotency key that ignores a clash on another auction, other users' drafts made visible, a bidder id in an event, a sweep that deletes fresh keys, a worker that never sweeps, and over-granted roles).
 - **Real infrastructure:** database tests run against PostgreSQL 18, never an in-memory provider.
 - **CI** runs a locked restore, a format check, a zero-warning Release build and the full suite, and lints the gRPC contract (with a breaking-change check on pull requests). It fails on any floating-point type in money code.
 - **Independent requirements audits:** the latest one confirms the rules are correct at the unit layer. The requirements stay open until the database and service layers are built and tested.

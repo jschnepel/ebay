@@ -100,6 +100,63 @@ public sealed class IdempotencyTests(MigratedDatabase db)
     }
 
     [Fact]
+    public async Task One_key_raced_across_two_auctions_records_one_bid_and_refuses_the_other()
+    {
+        for (var round = 0; round < 5; round++)
+        {
+            var first = await ActiveAsync(db, _engine);
+            var second = await ActiveAsync(db, _engine);
+            var context = As(UserId.New());
+
+            var outcomes = await Task.WhenAll(
+                _engine.PlaceBidAsync(context, first, new Money(1500), _ct),
+                _engine.PlaceBidAsync(context, second, new Money(1500), _ct));
+
+            Assert.Single(outcomes, o => o.Succeeded);
+            Assert.Single(outcomes, o => o.Error == CommandError.KeyReused);
+            Assert.Equal(1, await CountAsync(db, "bids", first) + await CountAsync(db, "bids", second));
+
+            var winner = outcomes[0].Succeeded ? first : second;
+            var replay = await _engine.PlaceBidAsync(context, winner, new Money(1500), _ct);
+            Assert.Equal((CommandError.None, true), (replay.Error, replay.Replayed));
+        }
+    }
+
+    [Fact]
+    public async Task A_key_used_on_one_auction_is_refused_on_another()
+    {
+        var first = await ActiveAsync(db, _engine);
+        var second = await ActiveAsync(db, _engine);
+        var context = As(UserId.New());
+        await _engine.PlaceBidAsync(context, first, new Money(1500), _ct);
+
+        var reused = await _engine.PlaceBidAsync(context, second, new Money(1500), _ct);
+
+        Assert.Equal(CommandError.KeyReused, reused.Error);
+        Assert.Equal(0, await CountAsync(db, "bids", second));
+    }
+
+    [Fact]
+    public async Task Records_older_than_the_retention_are_swept_and_their_keys_can_be_used_again()
+    {
+        var id = await ActiveAsync(db, _engine);
+        var stale = As(UserId.New());
+        var recent = As(UserId.New());
+        await _engine.PlaceBidAsync(stale, id, new Money(1500), _ct);
+        await _engine.PlaceBidAsync(recent, id, new Money(1600), _ct);
+        await AgeRecordAsync(stale, TimeSpan.FromHours(25));
+        await AgeRecordAsync(recent, TimeSpan.FromHours(23));
+
+        var swept = await _engine.SweepExpiredKeysAsync(_ct);
+        var reused = await _engine.PlaceBidAsync(stale, id, new Money(2500), _ct);
+        var replayed = await _engine.PlaceBidAsync(recent, id, new Money(1600), _ct);
+
+        Assert.True(swept >= 1);
+        Assert.Equal((CommandError.None, false), (reused.Error, reused.Replayed));
+        Assert.True(replayed.Replayed);
+    }
+
+    [Fact]
     public async Task Repeating_a_create_returns_the_same_draft()
     {
         var context = As(UserId.New());
@@ -127,6 +184,14 @@ public sealed class IdempotencyTests(MigratedDatabase db)
 
         Assert.Equal(CommandError.InvalidKey, bid.Error);
     }
+
+    private Task<int> AgeRecordAsync(CommandContext context, TimeSpan age) =>
+        db.ExecuteAsync(
+            MigratedDatabase.Migrator,
+            "UPDATE idempotency_records SET created_at = now() - $3 WHERE actor_id = $1 AND key = $2",
+            context.Actor.Value,
+            context.IdempotencyKey,
+            age);
 
     [Fact]
     public async Task A_key_longer_than_255_characters_is_refused()

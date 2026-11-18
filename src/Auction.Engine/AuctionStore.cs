@@ -185,7 +185,7 @@ internal static class AuctionStore
                 after.Id.Value,
                 version,
                 type,
-                PublicPayload(after, version));
+                PublicPayload(after.Id, version));
         }
     }
 
@@ -219,19 +219,10 @@ internal static class AuctionStore
             version,
             now);
 
-    // Live clients treat an event as a hint and re-fetch, but the payload still carries only public
-    // facts: never a private maximum or the hidden reserve.
-    private static string PublicPayload(AuctionState state, long version) =>
-        JsonSerializer.Serialize(new
-        {
-            version,
-            status = DbNames.Of(state.Status),
-            currentPriceCents = state.CurrentPrice?.Cents,
-            leaderId = state.LeaderId?.Value,
-            acceptedBidCount = state.AcceptedBidCount,
-            reserveMet = state.ReserveMet,
-            endsAt = state.Terms.EndsAt.ToUniversalTime(),
-        });
+    // Every subscriber to an auction receives its events, so they say only which auction changed and its
+    // new version. Clients re-fetch the state, which the API filters for each viewer.
+    private static string PublicPayload(AuctionId id, long version) =>
+        JsonSerializer.Serialize(new { auctionId = id.Value, version });
 
     private static (AuctionState State, long Version)? ReadAuction(NpgsqlDataReader reader)
     {

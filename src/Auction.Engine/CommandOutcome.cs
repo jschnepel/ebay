@@ -81,6 +81,12 @@ public sealed record EngineOptions
     /// <summary>The most auctions one sweep advances before the worker checks again at once.</summary>
     public int SweepBatchSize { get; init; } = 100;
 
+    /// <summary>How long a command's idempotency record is kept; a key older than this is new again.</summary>
+    public TimeSpan KeyRetention { get; init; } = TimeSpan.FromHours(24);
+
+    /// <summary>How often the close worker deletes idempotency records past <see cref="KeyRetention"/>.</summary>
+    public TimeSpan KeySweepInterval { get; init; } = TimeSpan.FromHours(1);
+
     /// <summary>False runs the commands without the close worker (one instance must have it on).</summary>
     public bool CloseWorkerEnabled { get; init; } = true;
 
@@ -90,6 +96,8 @@ public sealed record EngineOptions
         && MaxAttempts >= 1
         && SweepInterval > TimeSpan.Zero
         && SweepBatchSize >= 1
+        && KeyRetention > TimeSpan.Zero
+        && KeySweepInterval > TimeSpan.Zero
         && Limits.AmountCapCents is >= 1 and <= 1_000_000_000
         && Limits.MinDuration > TimeSpan.Zero
         && Limits.MaxDuration >= Limits.MinDuration;

@@ -372,7 +372,7 @@ Status comes from evidence only.
 | LIF-01 | Implied | `src/Auction.Domain/Lifecycle.cs`, `src/Auction.Engine/CloseWorker.cs` | `LifecycleTests`, `CloseWorkerTests` | U, D | U passed; D passed |
 | COR-01 | Engineering | `api` role grants in `src/Auction.Migrator/Schema/InitialSchemaSql.cs` | `RoleGrantTests` | S | API write refusal passed at D; S pending (step 7) |
 | COR-02 | Engineering | one transaction per command in `src/Auction.Engine/AuctionEngine.cs` | `LockingTests` (fault after the bid insert) | D | passed |
-| COR-03 | Engineering | `src/Auction.Engine/IdempotencyStore.cs`, `AuctionEngine.cs` | `IdempotencyTests` | D, S | D passed; S pending (missing key → 400 at the API, step 7) |
+| COR-03 | Engineering | `src/Auction.Engine/IdempotencyStore.cs`, `AuctionEngine.cs`, `CloseWorker.cs` (24 h sweep) | `IdempotencyTests`, `CloseWorkerTests` | D, S | D passed, including one key raced across two auctions and the 24 h sweep; S pending (missing key → 400 at the API, step 7) |
 | COR-04 | Engineering | replay before the rules in `src/Auction.Engine/AuctionEngine.cs` | `IdempotencyTests` | D | passed |
 | COR-05 | Engineering | `bids_append_only` trigger, `(auction_id, seq)` key, `src/Auction.Engine` | `BidHistoryTests`, `BidRaceTests` | D | passed |
 | API-01 | Implied | `src/Auction.Contracts/auction/v1/auction.proto` (Buf lint, format and breaking checks in CI) | `EngineServiceTests` | S | gRPC contract: passed; REST contract and forged-bidder test pending (step 7) |
@@ -380,7 +380,7 @@ Status comes from evidence only.
 | SEC-01 | Implied | | | S | not started |
 | AUTH-01 | Engineering | | | S, B | not started |
 | AUTH-02 | Engineering | | | S, B | not started |
-| SEC-04 | Implied | | | S | not started |
+| SEC-04 | Implied | draft privacy and owner checks in `src/Auction.Engine/AuctionEngine.cs`; event payload in `AuctionStore.cs` | `AuctionCommandTests` | D, S | engine: another user's draft refused exactly like an unknown id, events carry only the auction id and version: D passed; the §7 rows at the API: S pending (steps 7–9) |
 | SEC-05 | Engineering | `deploy/postgres/init-roles.sh`, `src/Auction.Migrator/Schema/InitialSchemaSql.cs` | `RoleGrantTests`, `MigrationTests` | D | passed for the step-3 tables; Identity, session and image tables pending (steps 7, 12, 13) |
 | UI-01 | Core / Stack | | | B | not started |
 | UI-05 | Engineering | | | D, S, B | not started |

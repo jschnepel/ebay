@@ -186,6 +186,32 @@ public sealed class CloseWorkerTests(SweepDatabase sweep) : IClassFixture<SweepD
         Assert.Equal("closed", await StatusAsync(id));
     }
 
+    [Fact]
+    public async Task The_close_worker_deletes_expired_idempotency_records()
+    {
+        var id = await ActiveAsync(_engine, UserId.New(), Terms(await _db.NowAsync()));
+        var context = As(UserId.New());
+        await _engine.PlaceBidAsync(context, id, new Money(1500), _ct);
+        await _db.ExecuteAsync(
+            MigratedDatabase.Migrator,
+            "UPDATE idempotency_records SET created_at = now() - interval '25 hours' WHERE actor_id = $1",
+            context.Actor.Value);
+        using var worker = new CloseWorker(_engine, ShortAuctions with { SweepInterval = TimeSpan.FromMilliseconds(200) }, NullLogger<CloseWorker>.Instance);
+
+        await worker.StartAsync(_ct);
+        var deadline = DateTime.UtcNow.AddSeconds(15);
+        while (await RecordsAsync(context) > 0 && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(100, _ct);
+        }
+
+        await worker.StopAsync(_ct);
+        Assert.Equal(0, await RecordsAsync(context));
+    }
+
+    private Task<long> RecordsAsync(CommandContext context) =>
+        _db.ScalarAsync<long>(MigratedDatabase.Verifier, "SELECT count(*) FROM idempotency_records WHERE actor_id = $1", context.Actor.Value);
+
     private Task<int> SweepAsync() => _engine.AdvanceDueAuctionsAsync(_ct);
 
     private Task<string?> StatusAsync(AuctionId id) =>
