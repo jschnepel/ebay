@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/Auction.Api/Auction.Api.csproj" />
     <Project Path="src/Auction.Domain/Auction.Domain.csproj" />
     <Project Path="src/Auction.Engine/Auction.Engine.csproj" />
     <Project Path="src/Auction.Migrator/Auction.Migrator.csproj" />

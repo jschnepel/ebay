@@ -43,6 +43,8 @@ public sealed class RoleGrantTests(MigratedDatabase db)
         { MigratedDatabase.Verifier, "SELECT 1 FROM notifications" },
         { MigratedDatabase.Verifier, "SELECT 1 FROM admin_audit" },
         { MigratedDatabase.Verifier, "SELECT 1 FROM user_limits" },
+        { MigratedDatabase.Api, "SELECT 1 FROM users" },
+        { MigratedDatabase.Api, "INSERT INTO users (id, email, normalized_email, display_name) SELECT gen_random_uuid(), 'a@b.c', 'A@B.C', 'A' WHERE false" },
     };
 
     public static TheoryData<string, string> Refused => new()
@@ -88,6 +90,12 @@ public sealed class RoleGrantTests(MigratedDatabase db)
         { MigratedDatabase.Engine, "DELETE FROM proxy_maxima WHERE false" },
         { MigratedDatabase.Engine, "SELECT 1 FROM outbox_events" },
         { MigratedDatabase.Engine, "UPDATE notifications SET read_at = now() WHERE false" },
+
+        // Accounts belong to the API alone: nobody else reads emails, and nobody rewrites or deletes an account.
+        { MigratedDatabase.Api, "UPDATE users SET password_hash = NULL WHERE false" },
+        { MigratedDatabase.Api, "DELETE FROM users WHERE false" },
+        { MigratedDatabase.Engine, "SELECT 1 FROM users" },
+        { MigratedDatabase.Verifier, "SELECT 1 FROM users" },
 
         // No runtime role can create objects anywhere.
         { MigratedDatabase.Engine, "CREATE TABLE public.extra (id integer)" },

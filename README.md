@@ -14,9 +14,10 @@ Built bottom-up, one tested layer at a time ([build plan](docs/build-plan.md)).
 | Engine core: create, edit, publish, cancel and bid, each one locked transaction with idempotency and an outbox event | Built and tested against PostgreSQL 18, including 50-bidder races checked against the reference model |
 | Close worker: starts scheduled auctions, closes ended ones with Sold, Reserve not met or No bids, and deletes idempotency records after 24 hours | Built and tested, including two workers sweeping at once |
 | Engine service: the `auction.v1` gRPC contract, health probe, correlated JSON logs, internal-only in Compose | Built and tested from its container image, including the 50-bidder races over gRPC |
-| API, UI, live updates, simulator | Not started |
+| API: sign-up and email sign-in, cookie sessions, auction list, detail and bid history, and create, edit, publish, cancel and bid through the engine, with Problem Details, cross-site checks and an OpenAPI document | Built and tested over HTTP against the engine container |
+| UI, live updates, simulator | Not started |
 
-The application can't be run yet. The one-command `docker compose up` arrives with build step 8.
+The API runs in Compose (`docker compose -f deploy/compose.yaml up -d --wait api`), and [`Auction.Api.http`](src/Auction.Api/Auction.Api.http) walks the journey: a seller lists an item, a second user bids, anyone reads the price. The one-command start with the UI arrives with build step 8.
 
 ## Architecture
 
@@ -52,7 +53,7 @@ dotnet test --no-build -c Release
 
 - **Unit tests** for every auction rule. Each rejection is paired with a control case that must succeed.
 - **Property tests** (CsCheck): each run generates 2,000 random auctions with random terms and bid sequences, and checks the rules against a separate naive reference model.
-- **Planted-bug checks:** deliberate bugs planted during development were each caught by the suite: seven in the rules, three in the database triggers and grants, and five in the engine (no row lock, the clock read before the lock wait, a private amount written to the history, a close worker that skips the lock, and one that closes early), two in the gRPC mapping, and six more for idempotency, draft privacy, event payloads and grants (an idempotency key that ignores a clash on another auction, other users' drafts made visible, a bidder id in an event, a sweep that deletes fresh keys, a worker that never sweeps, and over-granted roles).
+- **Planted-bug checks:** deliberate bugs planted during development were each caught by the suite: seven in the rules, three in the database triggers and grants, and five in the engine (no row lock, the clock read before the lock wait, a private amount written to the history, a close worker that skips the lock, and one that closes early), two in the gRPC mapping, and six more for idempotency, draft privacy, event payloads and grants (an idempotency key that ignores a clash on another auction, other users' drafts made visible, a bidder id in an event, a sweep that deletes fresh keys, a worker that never sweeps, and over-granted roles), and ten in the API (a foreign origin or a form post accepted, the reserve shown to everyone, drafts readable by anyone, email-only sign-in for password accounts, ownership revealed with 403, an uncapped page size, an extra query per page, a `SameSite=Lax` cookie, and an admin allowed to sell).
 - **Real infrastructure:** database tests run against PostgreSQL 18, never an in-memory provider.
 - **CI** runs a locked restore, a format check, a zero-warning Release build and the full suite, and lints the gRPC contract (with a breaking-change check on pull requests). It fails on any floating-point type in money code.
 - **Independent requirements audits:** the latest one confirms the rules are correct at the unit layer. The requirements stay open until the database and service layers are built and tested.
@@ -60,7 +61,7 @@ dotnet test --no-build -c Release
 ## Repository layout
 
 ```
-src/        application code (today: Auction.Domain, Auction.Migrator, Auction.Contracts, Auction.Engine)
+src/        application code (today: Auction.Domain, Auction.Migrator, Auction.Contracts, Auction.Engine, Auction.Api)
 tests/      unit, property and integration tests, and the reference model
 docs/       requirements, architecture, build plan, decision records
 deploy/     Docker Compose and the environment template
@@ -81,6 +82,6 @@ eng/        analyzer thresholds
 ## Known limitations
 
 - Not a real marketplace: no payments, shipping or email.
-- The auction rules, the database and the engine service are built; the API and everything above it are planned in the build plan.
+- The auction rules, the database, the engine service and the API are built; the UI and everything above it are planned in the build plan.
 
 Items deliberately left out are listed in the [requirements](docs/requirements.md) §4 under Should, Could and Won't.

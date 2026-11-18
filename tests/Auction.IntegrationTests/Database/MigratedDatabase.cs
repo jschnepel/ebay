@@ -1,4 +1,5 @@
 using Auction.Engine;
+using Auction.IntegrationTests.Api;
 using Auction.IntegrationTests.EngineService;
 using Auction.Migrator;
 using DotNet.Testcontainers.Builders;
@@ -32,6 +33,7 @@ public sealed class MigratedDatabase : IAsyncLifetime
     private readonly SemaphoreSlim _engineServiceGate = new(1, 1);
     private NpgsqlDataSource? _engineDataSource;
     private EngineServiceContainer? _engineService;
+    private readonly Dictionary<bool, ApiHost> _apis = [];
 
     public MigratedDatabase()
     {
@@ -68,6 +70,11 @@ public sealed class MigratedDatabase : IAsyncLifetime
 
     public async ValueTask DisposeAsync()
     {
+        foreach (var api in _apis.Values)
+        {
+            await api.DisposeAsync();
+        }
+
         if (_engineService is not null)
         {
             await _engineService.DisposeAsync();
@@ -95,6 +102,30 @@ public sealed class MigratedDatabase : IAsyncLifetime
             return _engineService ??= await EngineServiceContainer.StartAsync(
                 Network,
                 $"Host={NetworkAlias};Port=5432;Database=auction;Username={Engine};Password={PasswordFor(Engine)};Maximum Pool Size=30");
+        }
+        finally
+        {
+            _engineServiceGate.Release();
+        }
+    }
+
+    /// <summary>
+    /// The API in process, calling the engine container over gRPC and this database as the api role. One
+    /// host per <paramref name="demoMode"/>, created on first use.
+    /// </summary>
+    public async Task<ApiHost> ApiAsync(bool demoMode = true)
+    {
+        var engine = await EngineServiceAsync();
+        await _engineServiceGate.WaitAsync(TestContext.Current.CancellationToken);
+        try
+        {
+            if (!_apis.TryGetValue(demoMode, out var api))
+            {
+                api = new ApiHost(ConnectionStringFor(Api), engine.Address, demoMode);
+                _apis[demoMode] = api;
+            }
+
+            return api;
         }
         finally
         {

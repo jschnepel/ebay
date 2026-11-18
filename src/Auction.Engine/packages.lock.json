@@ -72,14 +72,6 @@
         "resolved": "2.85.0",
         "contentHash": "cpYu/nw/QhwHcRZMJbYD8lEllKrdwYMiDS4U3oH61nhYPUMNkcCcef4ulv11svHvTBThYV+ju332N9bCrfe7cQ=="
       },
-      "Grpc.Net.ClientFactory": {
-        "type": "Transitive",
-        "resolved": "2.85.0",
-        "contentHash": "JN5nbheButtbUO5kJ/h/JfOnSp5O6/Zf75n019BwC7e1oXfxPPwVolrr98SP4AGYwVDlrR0yn+X/Is2zwAeIzw==",
-        "dependencies": {
-          "Grpc.Net.Client": "2.85.0"
-        }
-      },
       "Grpc.Net.Common": {
         "type": "Transitive",
         "resolved": "2.85.0",
@@ -105,6 +97,15 @@
         "dependencies": {
           "Google.Protobuf": "3.36.2",
           "Grpc.Core.Api": "2.85.0"
+        }
+      },
+      "Grpc.Net.ClientFactory": {
+        "type": "CentralTransitive",
+        "requested": "[2.85.0, )",
+        "resolved": "2.85.0",
+        "contentHash": "JN5nbheButtbUO5kJ/h/JfOnSp5O6/Zf75n019BwC7e1oXfxPPwVolrr98SP4AGYwVDlrR0yn+X/Is2zwAeIzw==",
+        "dependencies": {
+          "Grpc.Net.Client": "2.85.0"
         }
       },
       "Grpc.Tools": {

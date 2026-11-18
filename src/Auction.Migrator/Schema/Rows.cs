@@ -168,3 +168,27 @@ public sealed class UserLimitsRow
 
     public int PublishedCount { get; set; }
 }
+
+/// <summary>
+/// An account. Self-registered accounts have only a display name and an email; seeded, simulator and
+/// admin accounts always have a password hash. The email is unique ignoring letter case.
+/// </summary>
+public sealed class UserRow
+{
+    public Guid Id { get; set; }
+
+    public string Email { get; set; } = "";
+
+    /// <summary>The email in upper case (invariant culture), for the case-insensitive unique index.</summary>
+    public string NormalizedEmail { get; set; } = "";
+
+    public string DisplayName { get; set; } = "";
+
+    public string Kind { get; set; } = "self_registered";
+
+    public string? PasswordHash { get; set; }
+
+    public DateTimeOffset CreatedAt { get; set; }
+
+    public DateTimeOffset? DisabledAt { get; set; }
+}

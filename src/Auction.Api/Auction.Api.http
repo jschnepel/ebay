@@ -1,0 +1,56 @@
+# The whole journey over HTTP: a seller lists an item, a second user bids, anyone reads the new price.
+# Run the requests in order (VS Code REST Client syntax; one cookie jar, so each sign-up switches user).
+# Start the stack first: docker compose -f deploy/compose.yaml up -d --wait api
+
+@api = http://localhost:8080/api/v1
+
+### 1. Sign up the seller (DEMO_MODE: a display name and an email, signed in at once)
+POST {{api}}/account/sign-up
+Content-Type: application/json
+
+{ "displayName": "Seller", "email": "seller-{{$guid}}@example.test" }
+
+### 2. Create a draft: every term, amounts in cents, a hidden reserve of $15.00
+# @name draft
+POST {{api}}/auctions
+Content-Type: application/json
+Idempotency-Key: {{$guid}}
+
+{
+  "title": "Film camera",
+  "description": "A 35 mm rangefinder in working order.",
+  "openingPriceCents": 1000,
+  "incrementCents": 100,
+  "floorType": "reserve",
+  "reserveCents": 1500,
+  "bidEntry": "proxy",
+  "startsAt": "{{$datetime iso8601}}",
+  "endsAt": "{{$datetime iso8601 1 h}}"
+}
+
+### 3. Publish it: the start time has passed, so it opens at once
+POST {{api}}/auctions/{{draft.response.body.$.auctionId}}/publish
+Content-Type: application/json
+Idempotency-Key: {{$guid}}
+
+### 4. Sign up a buyer (this replaces the seller's session cookie)
+POST {{api}}/account/sign-up
+Content-Type: application/json
+
+{ "displayName": "Buyer", "email": "buyer-{{$guid}}@example.test" }
+
+### 5. Bid: a private maximum of $25.00 under proxy bidding
+POST {{api}}/auctions/{{draft.response.body.$.auctionId}}/bids
+Content-Type: application/json
+Idempotency-Key: {{$guid}}
+
+{ "amountCents": 2500 }
+
+### 6. Read the price: $15.00, the reserve, reached because the maximum covers it; the maximum stays private
+GET {{api}}/auctions/{{draft.response.body.$.auctionId}}
+
+### 7. The bid history, with bidders shown only as labels
+GET {{api}}/auctions/{{draft.response.body.$.auctionId}}/bids
+
+### 8. The directory of published auctions, ending soonest first
+GET {{api}}/auctions?pageSize=20

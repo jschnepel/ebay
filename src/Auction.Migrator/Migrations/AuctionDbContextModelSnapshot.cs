@@ -506,6 +506,68 @@ namespace Auction.Migrator.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Auction.Migrator.Schema.UserRow", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<DateTimeOffset?>("DisabledAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("disabled_at");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("display_name");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("email");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text")
+                        .HasDefaultValue("self_registered")
+                        .HasColumnName("kind");
+
+                    b.Property<string>("NormalizedEmail")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("normalized_email");
+
+                    b.Property<string>("PasswordHash")
+                        .HasColumnType("text")
+                        .HasColumnName("password_hash");
+
+                    b.HasKey("Id")
+                        .HasName("pk_users");
+
+                    b.HasIndex("NormalizedEmail")
+                        .IsUnique()
+                        .HasDatabaseName("ix_users_normalized_email");
+
+                    b.ToTable("users", "auction", t =>
+                        {
+                            t.HasCheckConstraint("ck_users_display_name", "char_length(display_name) BETWEEN 1 AND 50");
+
+                            t.HasCheckConstraint("ck_users_email", "char_length(email) BETWEEN 3 AND 254");
+
+                            t.HasCheckConstraint("ck_users_kind", "kind IN ('self_registered', 'seeded', 'simulator', 'admin')");
+
+                            t.HasCheckConstraint("ck_users_password", "kind = 'self_registered' OR password_hash IS NOT NULL");
+                        });
+                });
+
             modelBuilder.Entity("Auction.Migrator.Schema.BidRow", b =>
                 {
                     b.HasOne("Auction.Migrator.Schema.AuctionRow", null)

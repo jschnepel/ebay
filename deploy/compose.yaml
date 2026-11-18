@@ -73,6 +73,34 @@ services:
           cpus: "1.0"
           memory: 512m
 
+  # The public HTTP API: accounts, auction reads (as the read-only api role) and commands forwarded to the
+  # engine. The only application port published, bound to 127.0.0.1 for the reverse proxy in front of it.
+  api:
+    build:
+      context: ..
+      dockerfile: src/Auction.Api/Dockerfile
+    environment:
+      ConnectionStrings__Api: Host=postgres;Database=${POSTGRES_DB:-auction};Username=api;Password=${API_DB_PASSWORD};GSS Encryption Mode=Disable
+      Api__EngineAddress: http://engine:8080
+      Api__DemoMode: ${DEMO_MODE:-true}
+    ports:
+      - "127.0.0.1:${PORT:-8080}:8080"
+    depends_on:
+      engine:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "dotnet", "Auction.Api.dll", "--health-check"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512m
+
   redis:
     image: redis:8@sha256:1f88291b4c57bdf249f02eb085a8669889b2d2954e91d4de5118a5da6b78dd53
     ports:

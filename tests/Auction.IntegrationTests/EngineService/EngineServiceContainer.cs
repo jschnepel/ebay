@@ -26,10 +26,14 @@ public sealed class EngineServiceContainer : IAsyncDisposable
     private EngineServiceContainer(IContainer container)
     {
         _container = container;
-        _channel = GrpcChannel.ForAddress($"http://{container.Hostname}:{container.GetMappedPublicPort(GrpcPort)}");
+        Address = new Uri($"http://{container.Hostname}:{container.GetMappedPublicPort(GrpcPort)}");
+        _channel = GrpcChannel.ForAddress(Address);
         Commands = new AuctionCommandService.AuctionCommandServiceClient(_channel);
         Health = new Health.HealthClient(_channel);
     }
+
+    /// <summary>The engine's gRPC address from the host, for clients such as the API under test.</summary>
+    public Uri Address { get; }
 
     public AuctionCommandService.AuctionCommandServiceClient Commands { get; }
 

@@ -176,3 +176,22 @@ internal sealed class UserLimitsConfiguration : IEntityTypeConfiguration<UserLim
         builder.Property(l => l.PublishedCount).HasDefaultValue(0);
     }
 }
+
+internal sealed class UserConfiguration : IEntityTypeConfiguration<UserRow>
+{
+    public void Configure(EntityTypeBuilder<UserRow> builder)
+    {
+        builder.ToTable("users", table =>
+        {
+            table.HasCheckConstraint("ck_users_kind", "kind IN ('self_registered', 'seeded', 'simulator', 'admin')");
+            table.HasCheckConstraint("ck_users_email", "char_length(email) BETWEEN 3 AND 254");
+            table.HasCheckConstraint("ck_users_display_name", "char_length(display_name) BETWEEN 1 AND 50");
+            // Only self-registered accounts may sign in without a password (and only under DEMO_MODE).
+            table.HasCheckConstraint("ck_users_password", "kind = 'self_registered' OR password_hash IS NOT NULL");
+        });
+        builder.HasKey(u => u.Id);
+        builder.HasIndex(u => u.NormalizedEmail).IsUnique();
+        builder.Property(u => u.Kind).HasDefaultValue("self_registered");
+        builder.Property(u => u.CreatedAt).HasDefaultValueSql("now()");
+    }
+}

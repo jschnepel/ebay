@@ -11,6 +11,7 @@
     <PackageReference Include="Microsoft.Testing.Extensions.TrxReport" />
     <PackageReference Include="Microsoft.Testing.Extensions.CodeCoverage" />
     <PackageReference Include="Testcontainers.PostgreSql" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
     <PackageReference Include="Npgsql" />
     <PackageReference Include="Grpc.Net.Client" />
     <PackageReference Include="Grpc.HealthCheck" />
@@ -21,6 +22,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Auction.Migrator\Auction.Migrator.csproj" />
     <ProjectReference Include="..\..\src\Auction.Engine\Auction.Engine.csproj" />
+    <ProjectReference Include="..\..\src\Auction.Api\Auction.Api.csproj" />
     <ProjectReference Include="..\Auction.ReferenceModel\Auction.ReferenceModel.csproj" />
   </ItemGroup>
 

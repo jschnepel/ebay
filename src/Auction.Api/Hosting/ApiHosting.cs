@@ -1,0 +1,76 @@
+using Auction.Api.Accounts;
+using Auction.Api.Auctions;
+using Auction.Contracts.V1;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.Extensions.Options;
+using Npgsql;
+
+namespace Auction.Api.Hosting;
+
+internal static class ApiHosting
+{
+    public const string SessionCookie = "auction_session";
+
+    public static WebApplicationBuilder AddApi(this WebApplicationBuilder builder)
+    {
+        builder.Logging.ClearProviders().AddJsonConsole(json => json.IncludeScopes = true);
+
+        builder.Services.AddOptions<ApiOptions>()
+            .Bind(builder.Configuration.GetSection("Api"))
+            .Validate(options => options.IsValid(), "Api options are missing or out of range (Api:EngineAddress is required).")
+            .ValidateOnStart();
+        builder.Services.AddSingleton(services => services.GetRequiredService<IOptions<ApiOptions>>().Value);
+
+        builder.Services.AddSingleton(services => NpgsqlDataSource.Create(
+            services.GetRequiredService<IConfiguration>().GetConnectionString("Api")
+            ?? throw new InvalidOperationException("ConnectionStrings:Api is not set.")));
+        builder.Services.AddSingleton<AccountStore>();
+        builder.Services.AddSingleton<AuctionReader>();
+        builder.Services.AddSingleton<IPasswordHasher<Account>, PasswordHasher<Account>>();
+
+        builder.Services.AddGrpcClient<AuctionCommandService.AuctionCommandServiceClient>((services, client) =>
+            client.Address = services.GetRequiredService<ApiOptions>().EngineAddress);
+        builder.Services.AddTransient<EngineGateway>();
+
+        builder.Services.AddProblemDetails();
+        builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme).AddCookie(cookie =>
+        {
+            cookie.Cookie.Name = SessionCookie;
+            cookie.Cookie.HttpOnly = true;
+            cookie.Cookie.SameSite = SameSiteMode.Strict;
+            cookie.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+            cookie.ExpireTimeSpan = TimeSpan.FromDays(7);
+            cookie.SlidingExpiration = true;
+            // An API answers with a status, never a redirect to a sign-in page.
+            cookie.Events.OnRedirectToLogin = context => SetStatusAsync(context.Response, StatusCodes.Status401Unauthorized);
+            cookie.Events.OnRedirectToAccessDenied = context => SetStatusAsync(context.Response, StatusCodes.Status403Forbidden);
+        });
+        builder.Services.AddAuthorization();
+        builder.Services.AddOpenApi();
+        builder.Services.AddHealthChecks();
+        return builder;
+    }
+
+    public static WebApplication MapApi(this WebApplication app)
+    {
+        app.UseExceptionHandler();
+        app.UseStatusCodePages();
+        app.UseMiddleware<SameOriginJsonMiddleware>();
+        app.UseAuthentication();
+        app.UseAuthorization();
+
+        var api = app.MapGroup("/api/v1");
+        api.MapAccounts();
+        api.MapAuctions();
+        app.MapOpenApi();
+        app.MapHealthChecks("/health");
+        return app;
+    }
+
+    private static Task SetStatusAsync(HttpResponse response, int status)
+    {
+        response.StatusCode = status;
+        return Task.CompletedTask;
+    }
+}

@@ -127,6 +127,18 @@ flowchart TD
   store & store2 --> commit([COMMIT])
 ```
 
+## HTTP API
+
+Everything under `/api/v1`, JSON only, documented at `/openapi/v1.json`. Errors are Problem Details with a stable `code`. Commands need an `Idempotency-Key` header; reads are anonymous, except that a draft exists only for its seller.
+
+| Route | What it does |
+|---|---|
+| `POST /account/sign-up`, `POST /account/sign-in`, `POST /account/sign-out`, `GET /account/me` | Accounts and the session cookie (AUTH-01) |
+| `GET /auctions?pageSize&cursor` | Published auctions, ending soonest first, keyset-paginated |
+| `GET /auctions/{id}`, `GET /auctions/{id}/bids` | One auction as the viewer may see it; its bid history with anonymous labels |
+| `POST /auctions`, `PUT /auctions/{id}` | Create or edit a draft (every term required) |
+| `POST /auctions/{id}/publish`, `/cancel`, `/bids` | Publish, cancel, bid: forwarded to the engine with the signed-in user as the actor |
+
 ## Solution layout
 
 ```
@@ -142,12 +154,12 @@ src/
 tests/
   Auction.ReferenceModel/   naive auction rules shared by the verifier and property tests (no engine code)
   Auction.UnitTests/        domain rules + CsCheck property tests
-  Auction.IntegrationTests/ real PostgreSQL / Redis (Testcontainers): engine transactions, roles, relay
-  Auction.ServiceTests/     API + engine together over the real network boundary
+  Auction.IntegrationTests/ real PostgreSQL / Redis (Testcontainers): engine transactions, roles, relay, and the
+                            API in process calling the engine container over gRPC
   Auction.BrowserTests/     Playwright: Buy/Sell/Admin journeys, multi-browser consistency, axe
 ```
 
-Projects are added as each build step needs them; today `Auction.Domain`, `Auction.Migrator`, `Auction.Contracts`, `Auction.Engine` (gRPC service and close worker), the unit and integration tests and the reference model exist.
+Projects are added as each build step needs them; today `Auction.Domain`, `Auction.Migrator`, `Auction.Contracts`, `Auction.Engine` (gRPC service and close worker), `Auction.Api`, the unit and integration tests and the reference model exist.
 
 ## Data model
 
@@ -163,8 +175,9 @@ All tables live in the `auction` schema, owned by the `migrator` role. Money is 
 | `notifications` | Outbid and closing notices per user | The `api` role may only set `read_at` | engine; read state by the API |
 | `admin_audit` | Every admin action with its reason | | engine |
 | `user_limits` | Per-user draft and publish counters, locked `FOR UPDATE` | | engine |
+| `users` | Accounts: display name, email, kind (self-registered, seeded, simulator, admin), password hash | Email unique ignoring letter case; every kind but self-registered must have a password hash. Only the `api` role can read it, so no other role sees an email | api (insert only) |
 
-Identity, session and sign-in tables arrive with the API (steps 7 and 12), and image tables with step 13; each comes with its own grants and tests.
+Session tables arrive with step 12 and image tables with step 13; each comes with its own grants and tests.
 
 ## Engineering rules
 
@@ -194,7 +207,7 @@ The main choices, with the alternatives considered. Requirement IDs refer to [re
 |---|---|---|---|
 | Auction style | Timed, eBay-style auctions with a fixed end time | Live, auctioneer-paced auctions | Fits a multi-user web demo and an automated simulator |
 | Concurrency on one auction | Pessimistic row lock (`SELECT … FOR UPDATE`) under READ COMMITTED, with `SET LOCAL lock_timeout`; one or two jittered retries on deadlock or lock timeout | Optimistic version check; SERIALIZABLE; advisory locks; an in-memory actor per auction | Correct on any number of engine instances, and other auctions are unaffected. Optimistic schemes turn a hot auction into a retry storm. The actor model is the scale-out path, described rather than built |
-| Data access | Raw Npgsql (`NpgsqlBatch`, one per command) on the engine's bid and close paths; EF Core for migrations and ordinary reads | EF Core everywhere; Dapper | The bid transaction stays explicit and holds the lock as briefly as possible. EF Core can't express `FOR UPDATE` or `clock_timestamp()` without raw SQL anyway |
+| Data access | Raw Npgsql everywhere at run time: one `NpgsqlBatch` per engine command, and one fixed query per API read; EF Core only to model the schema and generate migrations | EF Core everywhere; Dapper | The bid transaction stays explicit and holds the lock as briefly as possible. EF Core can't express `FOR UPDATE` or `clock_timestamp()` without raw SQL anyway, and the API's reads are a few hand-written queries whose count a test pins |
 | Database roles | A bootstrap script creates four login roles; the unprivileged migrator owns the schema and issues grants. The API has no write grant on auctions or bids; bids are INSERT-only with a trigger blocking UPDATE and DELETE | One application role | The database itself enforces the single-writer rule and append-only history (SEC-05) |
 | Idempotency | Key stored in the engine's transaction, keyed by `(actor, key)` with a request hash and the recorded outcome, rejections included. Missing key: 400; same key, different payload: 422. Checked after the auction lock, so a racing duplicate waits and replays | 409 on a concurrent duplicate | Follows the IETF Idempotency-Key draft; a timeout after commit is always safe to retry |
 | Outbox relay | The engine writes outbox rows in the bid transaction. One relay in the API reads only rows below the current snapshot's `xmin`, in `(xid8, id)` order; `LISTEN/NOTIFY` is only a wake-up | Multi-worker `SKIP LOCKED`; Debezium; a messaging library | A plain sequence can be skipped when a lower id commits late; the snapshot rule prevents that. Multi-worker claims lose per-auction ordering |
