@@ -80,4 +80,17 @@ public sealed record EngineOptions
 
     /// <summary>The most auctions one sweep advances before the worker checks again at once.</summary>
     public int SweepBatchSize { get; init; } = 100;
+
+    /// <summary>False runs the commands without the close worker (one instance must have it on).</summary>
+    public bool CloseWorkerEnabled { get; init; } = true;
+
+    /// <summary>Checked at startup, so a bad setting stops the service instead of failing later.</summary>
+    public bool IsValid() =>
+        LockTimeout > TimeSpan.Zero
+        && MaxAttempts >= 1
+        && SweepInterval > TimeSpan.Zero
+        && SweepBatchSize >= 1
+        && Limits.AmountCapCents is >= 1 and <= 1_000_000_000
+        && Limits.MinDuration > TimeSpan.Zero
+        && Limits.MaxDuration >= Limits.MinDuration;
 }

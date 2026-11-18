@@ -1,0 +1,10 @@
+# Buf module for the engine contract. CI lints it and, on pull requests, rejects breaking changes.
+version: v2
+modules:
+  - path: .
+lint:
+  use:
+    - STANDARD
+breaking:
+  use:
+    - FILE

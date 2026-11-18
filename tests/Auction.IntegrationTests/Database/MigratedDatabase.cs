@@ -1,6 +1,8 @@
 using Auction.Engine;
+using Auction.IntegrationTests.EngineService;
 using Auction.Migrator;
 using DotNet.Testcontainers.Builders;
+using DotNet.Testcontainers.Networks;
 using Npgsql;
 using Testcontainers.PostgreSql;
 
@@ -19,22 +21,35 @@ public sealed class MigratedDatabase : IAsyncLifetime
     public const string Api = "api";
     public const string Verifier = "verifier";
 
+    /// <summary>The network alias other containers (the engine service) use to reach this database.</summary>
+    public const string NetworkAlias = "postgres";
+
     // Same digest-pinned image as deploy/compose.yaml.
     private const string PostgresImage =
         "postgres:18@sha256:2ea8630df176ad090ec92136dee850397c5af8781e4bcf2e4162593691c61bbc";
 
-    private readonly PostgreSqlContainer _postgres = new PostgreSqlBuilder(PostgresImage)
-        .WithDatabase("auction")
-        .WithEnvironment("MIGRATOR_DB_PASSWORD", PasswordFor(Migrator))
-        .WithEnvironment("ENGINE_DB_PASSWORD", PasswordFor(Engine))
-        .WithEnvironment("API_DB_PASSWORD", PasswordFor(Api))
-        .WithEnvironment("VERIFIER_DB_PASSWORD", PasswordFor(Verifier))
-        .WithResourceMapping(
-            File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "init-roles.sh")),
-            FilePath.Of("/docker-entrypoint-initdb.d/10-init-roles.sh"))
-        .Build();
-
+    private readonly PostgreSqlContainer _postgres;
+    private readonly SemaphoreSlim _engineServiceGate = new(1, 1);
     private NpgsqlDataSource? _engineDataSource;
+    private EngineServiceContainer? _engineService;
+
+    public MigratedDatabase()
+    {
+        _postgres = new PostgreSqlBuilder(PostgresImage)
+            .WithNetwork(Network)
+            .WithNetworkAliases(NetworkAlias)
+            .WithDatabase("auction")
+            .WithEnvironment("MIGRATOR_DB_PASSWORD", PasswordFor(Migrator))
+            .WithEnvironment("ENGINE_DB_PASSWORD", PasswordFor(Engine))
+            .WithEnvironment("API_DB_PASSWORD", PasswordFor(Api))
+            .WithEnvironment("VERIFIER_DB_PASSWORD", PasswordFor(Verifier))
+            .WithResourceMapping(
+                File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "init-roles.sh")),
+                FilePath.Of("/docker-entrypoint-initdb.d/10-init-roles.sh"))
+            .Build();
+    }
+
+    public INetwork Network { get; } = new NetworkBuilder().Build();
 
     /// <summary>The engine's connection pool, kept below the server's connection limit for the race tests.</summary>
     public NpgsqlDataSource EngineDataSource =>
@@ -42,6 +57,7 @@ public sealed class MigratedDatabase : IAsyncLifetime
 
     public async ValueTask InitializeAsync()
     {
+        await Network.CreateAsync();
         await _postgres.StartAsync();
         await DatabaseMigrator.MigrateAsync(ConnectionStringFor(Migrator), null, CancellationToken.None);
         _engineDataSource = NpgsqlDataSource.Create(
@@ -50,12 +66,38 @@ public sealed class MigratedDatabase : IAsyncLifetime
 
     public async ValueTask DisposeAsync()
     {
+        if (_engineService is not null)
+        {
+            await _engineService.DisposeAsync();
+        }
+
         if (_engineDataSource is not null)
         {
             await _engineDataSource.DisposeAsync();
         }
 
         await _postgres.DisposeAsync();
+        await Network.DisposeAsync();
+        _engineServiceGate.Dispose();
+    }
+
+    /// <summary>
+    /// The engine as a container built from its Dockerfile, on this database's network, started on first
+    /// use. Its close worker is off, so it never advances the short auctions other tests rely on.
+    /// </summary>
+    public async Task<EngineServiceContainer> EngineServiceAsync()
+    {
+        await _engineServiceGate.WaitAsync(TestContext.Current.CancellationToken);
+        try
+        {
+            return _engineService ??= await EngineServiceContainer.StartAsync(
+                Network,
+                $"Host={NetworkAlias};Port=5432;Database=auction;Username={Engine};Password={PasswordFor(Engine)};Maximum Pool Size=30");
+        }
+        finally
+        {
+            _engineServiceGate.Release();
+        }
     }
 
     public AuctionEngine CreateEngine(EngineOptions? options = null) => new(EngineDataSource, options ?? new EngineOptions());

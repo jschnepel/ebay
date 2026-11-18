@@ -9,21 +9,27 @@ namespace Auction.IntegrationTests.Engine;
 /// <summary>
 /// Fifty bidders race on one auction. Afterwards the accepted bids, replayed in the order the engine
 /// accepted them, must agree with the naive reference model, and the sequences must have no gaps.
+/// Runs against the engine in-process and, through <see cref="EngineService.GrpcBidRaceTests"/>, over gRPC.
 /// </summary>
-public sealed class BidRaceTests(MigratedDatabase db)
+public abstract class BidRaceScenarios(MigratedDatabase db)
 {
     private const int Bidders = 50;
 
-    private readonly AuctionEngine _engine = db.CreateEngine(new EngineOptions { LockTimeout = TimeSpan.FromSeconds(10) });
-
     private sealed record Attempt(UserId Bidder, long Cents, CommandOutcome Outcome);
+
+    protected MigratedDatabase Db { get; } = db;
+
+    /// <summary>Creates and publishes an auction; it must succeed.</summary>
+    protected abstract Task<AuctionId> ActiveAsync(UserId seller, AuctionTerms terms);
+
+    protected abstract Task<CommandOutcome> BidAsync(UserId bidder, AuctionId auction, long cents);
 
     [Fact]
     public async Task Fifty_proxy_bidders_racing_agree_with_the_reference_model()
     {
         var seller = UserId.New();
-        var terms = Terms(await db.NowAsync(), BidEntry.Proxy);
-        var id = await ActiveAsync(_engine, seller, terms);
+        var terms = Terms(await Db.NowAsync(), BidEntry.Proxy);
+        var id = await ActiveAsync(seller, terms);
         var random = new Random(20261118);
         var plans = Enumerable.Range(0, Bidders)
             .Select(_ => (Bidder: UserId.New(), Maxima: Enumerable.Range(0, 3).Select(_ => (long)random.Next(900, 60_000)).ToArray()))
@@ -34,7 +40,7 @@ public sealed class BidRaceTests(MigratedDatabase db)
             var mine = new List<Attempt>();
             foreach (var cents in plan.Maxima)
             {
-                mine.Add(new Attempt(plan.Bidder, cents, await BidAsync(_engine, plan.Bidder, id, cents)));
+                mine.Add(new Attempt(plan.Bidder, cents, await BidAsync(plan.Bidder, id, cents)));
             }
 
             return mine;
@@ -60,8 +66,8 @@ public sealed class BidRaceTests(MigratedDatabase db)
     public async Task Fifty_fixed_increment_bidders_racing_for_the_next_step_agree_with_the_reference_model()
     {
         var seller = UserId.New();
-        var terms = Terms(await db.NowAsync(), BidEntry.FixedIncrement);
-        var id = await ActiveAsync(_engine, seller, terms);
+        var terms = Terms(await Db.NowAsync(), BidEntry.FixedIncrement);
+        var id = await ActiveAsync(seller, terms);
 
         // Every bidder repeatedly reads the price and bids exactly the next step, so most bids collide.
         var attempts = (await Task.WhenAll(Enumerable.Range(0, Bidders).Select(async _ =>
@@ -70,9 +76,9 @@ public sealed class BidRaceTests(MigratedDatabase db)
             var mine = new List<Attempt>();
             for (var i = 0; i < 4; i++)
             {
-                var price = await db.ScalarAsync<long?>(MigratedDatabase.Api, "SELECT current_price_cents FROM auctions WHERE id = $1", id.Value);
+                var price = await Db.ScalarAsync<long?>(MigratedDatabase.Api, "SELECT current_price_cents FROM auctions WHERE id = $1", id.Value);
                 var cents = price is { } p ? p + terms.Increment.Cents : terms.OpeningPrice.Cents;
-                mine.Add(new Attempt(bidder, cents, await BidAsync(_engine, bidder, id, cents)));
+                mine.Add(new Attempt(bidder, cents, await BidAsync(bidder, id, cents)));
             }
 
             return mine;
@@ -106,24 +112,36 @@ public sealed class BidRaceTests(MigratedDatabase db)
 
     private async Task AssertFinalStateAsync(AuctionId id, RefResult replay, int acceptedCount)
     {
-        var leader = await db.ScalarAsync<Guid>(MigratedDatabase.Verifier, "SELECT leader_id FROM auctions WHERE id = $1", id.Value);
-        var price = await db.ScalarAsync<long>(MigratedDatabase.Verifier, "SELECT current_price_cents FROM auctions WHERE id = $1", id.Value);
-        var count = await db.ScalarAsync<long>(MigratedDatabase.Verifier, "SELECT accepted_bid_count FROM auctions WHERE id = $1", id.Value);
-        var version = await db.ScalarAsync<long>(MigratedDatabase.Verifier, "SELECT version FROM auctions WHERE id = $1", id.Value);
+        var leader = await Db.ScalarAsync<Guid>(MigratedDatabase.Verifier, "SELECT leader_id FROM auctions WHERE id = $1", id.Value);
+        var price = await Db.ScalarAsync<long>(MigratedDatabase.Verifier, "SELECT current_price_cents FROM auctions WHERE id = $1", id.Value);
+        var count = await Db.ScalarAsync<long>(MigratedDatabase.Verifier, "SELECT accepted_bid_count FROM auctions WHERE id = $1", id.Value);
+        var version = await Db.ScalarAsync<long>(MigratedDatabase.Verifier, "SELECT version FROM auctions WHERE id = $1", id.Value);
         Assert.Equal((replay.Leader, replay.PriceCents), (leader, price));
         Assert.Equal((acceptedCount, acceptedCount + 1L), (count, version));
 
         // History and events have no gaps: bid steps 1..n, and one event per version 1..v.
-        var bidGaps = await db.ScalarAsync<long>(
+        var bidGaps = await Db.ScalarAsync<long>(
             MigratedDatabase.Verifier,
             "SELECT count(*) - max(seq) FROM bids WHERE auction_id = $1",
             id.Value);
-        var eventVersions = await db.ScalarAsync<long>(
+        var eventVersions = await Db.ScalarAsync<long>(
             MigratedDatabase.Verifier,
             "SELECT count(DISTINCT auction_version) FROM outbox_events WHERE auction_id = $1 AND auction_version BETWEEN 1 AND $2",
             id.Value,
             version);
         Assert.Equal((0L, version), (bidGaps, eventVersions));
-        Assert.Equal(version, await CountAsync(db, "outbox_events", id));
+        Assert.Equal(version, await CountAsync(Db, "outbox_events", id));
     }
+}
+
+/// <summary>The races against the engine called in-process.</summary>
+public sealed class BidRaceTests(MigratedDatabase db) : BidRaceScenarios(db)
+{
+    private readonly AuctionEngine _engine = db.CreateEngine(new EngineOptions { LockTimeout = TimeSpan.FromSeconds(10) });
+
+    protected override Task<AuctionId> ActiveAsync(UserId seller, AuctionTerms terms) =>
+        EngineScenario.ActiveAsync(_engine, seller, terms);
+
+    protected override Task<CommandOutcome> BidAsync(UserId bidder, AuctionId auction, long cents) =>
+        EngineScenario.BidAsync(_engine, bidder, auction, cents);
 }

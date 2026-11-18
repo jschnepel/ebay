@@ -12,6 +12,11 @@ public sealed partial class CloseWorker(AuctionEngine engine, EngineOptions opti
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        if (!options.CloseWorkerEnabled)
+        {
+            return;
+        }
+
         using var timer = new PeriodicTimer(options.SweepInterval);
         do
         {

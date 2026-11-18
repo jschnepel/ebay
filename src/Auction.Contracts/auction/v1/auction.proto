@@ -1,0 +1,146 @@
+syntax = "proto3";
+
+package auction.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option csharp_namespace = "Auction.Contracts.V1";
+
+// The auction engine's commands. The engine is the only writer of auction state; the API is its only
+// caller, on the internal network. Every request carries:
+// - request_id: the client's Idempotency-Key. A repeat with the same key and payload returns the
+//   recorded result; the same key with a different payload returns COMMAND_ERROR_KEY_REUSED.
+// - actor_id: the signed-in user, set by the API from its authenticated principal, never from the browser.
+// Callers set a deadline on every call. Business refusals are results, not gRPC errors; INVALID_ARGUMENT
+// means a malformed request (an id that is not a UUID, missing terms).
+service AuctionCommandService {
+  rpc CreateDraft(CreateDraftRequest) returns (CreateDraftResponse);
+  rpc EditDraft(EditDraftRequest) returns (EditDraftResponse);
+  rpc Publish(PublishRequest) returns (PublishResponse);
+  rpc Cancel(CancelRequest) returns (CancelResponse);
+  rpc PlaceBid(PlaceBidRequest) returns (PlaceBidResponse);
+}
+
+message CreateDraftRequest {
+  string request_id = 1;
+  string actor_id = 2;
+  AuctionTerms terms = 3;
+}
+
+message CreateDraftResponse {
+  CommandResult result = 1;
+}
+
+message EditDraftRequest {
+  string request_id = 1;
+  string actor_id = 2;
+  string auction_id = 3;
+  AuctionTerms terms = 4;
+}
+
+message EditDraftResponse {
+  CommandResult result = 1;
+}
+
+message PublishRequest {
+  string request_id = 1;
+  string actor_id = 2;
+  string auction_id = 3;
+}
+
+message PublishResponse {
+  CommandResult result = 1;
+}
+
+message CancelRequest {
+  string request_id = 1;
+  string actor_id = 2;
+  string auction_id = 3;
+}
+
+message CancelResponse {
+  CommandResult result = 1;
+}
+
+message PlaceBidRequest {
+  string request_id = 1;
+  string actor_id = 2;
+  string auction_id = 3;
+  // A fixed-increment bid, or a private maximum under proxy bidding. US cents.
+  int64 amount_cents = 4;
+}
+
+message PlaceBidResponse {
+  CommandResult result = 1;
+}
+
+// A seller's terms. Editable while the auction is a draft; frozen at publish. Amounts are US cents.
+message AuctionTerms {
+  string title = 1;
+  string description = 2;
+  int64 opening_price_cents = 3;
+  int64 increment_cents = 4;
+  FloorType floor_type = 5;
+  // Required for FLOOR_TYPE_RESERVE, absent otherwise.
+  optional int64 reserve_cents = 6;
+  BidEntry bid_entry = 7;
+  google.protobuf.Timestamp starts_at = 8;
+  google.protobuf.Timestamp ends_at = 9;
+}
+
+enum FloorType {
+  FLOOR_TYPE_UNSPECIFIED = 0;
+  FLOOR_TYPE_RESERVE = 1;
+  FLOOR_TYPE_MINIMUM_BID = 2;
+  FLOOR_TYPE_ABSOLUTE = 3;
+}
+
+enum BidEntry {
+  BID_ENTRY_UNSPECIFIED = 0;
+  BID_ENTRY_PROXY = 1;
+  BID_ENTRY_FIXED_INCREMENT = 2;
+}
+
+// The recorded outcome of a command.
+message CommandResult {
+  bool succeeded = 1;
+  // COMMAND_ERROR_UNSPECIFIED when the command succeeded.
+  CommandError error = 2;
+  // Empty when the command didn't reach an auction (for example, a refused draft).
+  string auction_id = 3;
+  // The auction's version after the command, for ordering live updates.
+  optional int64 version = 4;
+  // For an accepted bid: its place among accepted bids (1, 2, 3, ...).
+  optional int64 bid_sequence = 5;
+  // For an accepted bid: the leader and the current price after it.
+  string leader_id = 6;
+  optional int64 current_price_cents = 7;
+  repeated FieldError field_errors = 8;
+  // True when this is the recorded result of an earlier request with the same key.
+  bool replayed = 9;
+}
+
+message FieldError {
+  string field = 1;
+  string code = 2;
+}
+
+enum CommandError {
+  COMMAND_ERROR_UNSPECIFIED = 0;
+  COMMAND_ERROR_INVALID_KEY = 1;
+  COMMAND_ERROR_KEY_REUSED = 2;
+  // The auction stayed locked too long. Nothing was recorded; retry with the same key.
+  COMMAND_ERROR_BUSY = 3;
+  COMMAND_ERROR_NOT_FOUND = 4;
+  COMMAND_ERROR_NOT_OWNER = 5;
+  COMMAND_ERROR_INVALID_STATE = 6;
+  COMMAND_ERROR_VALIDATION_FAILED = 7;
+  COMMAND_ERROR_HAS_BIDS = 8;
+  COMMAND_ERROR_AUCTION_NOT_ACTIVE = 9;
+  COMMAND_ERROR_AUCTION_ENDED = 10;
+  COMMAND_ERROR_SELF_BID = 11;
+  COMMAND_ERROR_ABOVE_CAP = 12;
+  COMMAND_ERROR_BELOW_MINIMUM = 13;
+  COMMAND_ERROR_WRONG_INCREMENT_AMOUNT = 14;
+  COMMAND_ERROR_MAXIMUM_LOWERED = 15;
+}

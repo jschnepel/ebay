@@ -12,6 +12,10 @@
     <PackageReference Include="Microsoft.Testing.Extensions.CodeCoverage" />
     <PackageReference Include="Testcontainers.PostgreSql" />
     <PackageReference Include="Npgsql" />
+    <PackageReference Include="Grpc.Net.Client" />
+    <PackageReference Include="Grpc.HealthCheck" />
+    <PackageReference Include="Google.Protobuf" />
+    <PackageReference Include="Grpc.Tools" PrivateAssets="all" IncludeAssets="runtime; build; native; contentfiles; analyzers; buildtransitive" />
   </ItemGroup>
 
   <ItemGroup>
@@ -23,6 +27,11 @@
   <ItemGroup>
     <!-- The same bootstrap script Compose runs, so the tests exercise the real roles. -->
     <None Include="..\..\deploy\postgres\init-roles.sh" Link="init-roles.sh" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- A client generated from the same contract the engine serves. -->
+    <Protobuf Include="..\..\src\Auction.Contracts\auction\v1\auction.proto" ProtoRoot="..\..\src\Auction.Contracts" GrpcServices="Client" Link="Protos\auction.proto" />
   </ItemGroup>
 
   <ItemGroup>

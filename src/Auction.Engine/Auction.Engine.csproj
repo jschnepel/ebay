@@ -1,8 +1,13 @@
-<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk.Web">
 
-  <!-- The single writer of auction state: each command is one locked transaction over raw Npgsql. -->
+  <!--
+    The auction engine service: the single writer of auction state. Serves the auction.v1 gRPC contract
+    and runs the close worker; each command is one locked transaction over raw Npgsql.
+  -->
   <PropertyGroup>
     <IsPackable>false</IsPackable>
+    <!-- The chiseled runtime image has no ICU; nothing here needs culture-specific behaviour. -->
+    <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
 
   <ItemGroup>
@@ -10,8 +15,14 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Protobuf Include="..\Auction.Contracts\auction\v1\auction.proto" ProtoRoot="..\Auction.Contracts" GrpcServices="Server" Access="Internal" Link="Protos\auction.proto" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Npgsql" />
-    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
+    <PackageReference Include="Grpc.AspNetCore" />
+    <PackageReference Include="Grpc.AspNetCore.HealthChecks" />
+    <PackageReference Include="Grpc.Net.Client" />
   </ItemGroup>
 
 </Project>
