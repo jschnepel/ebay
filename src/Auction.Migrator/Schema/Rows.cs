@@ -3,7 +3,7 @@ namespace Auction.Migrator.Schema;
 // One class per table. Money is integer cents, times are UTC timestamptz, and enum-like columns hold
 // snake_case text guarded by CHECK constraints (see TableConfigurations).
 
-/// <summary>An auction from draft to close. A draft may be incomplete; publishing freezes its terms.</summary>
+/// <summary>An auction from draft to close. A draft may break the listing rules; publishing checks them and freezes its terms.</summary>
 public sealed class AuctionRow
 {
     public Guid Id { get; set; }

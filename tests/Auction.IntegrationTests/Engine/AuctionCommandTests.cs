@@ -25,15 +25,17 @@ public sealed class AuctionCommandTests(MigratedDatabase db)
     }
 
     [Fact]
-    public async Task A_draft_with_amounts_out_of_range_is_refused_with_field_errors()
+    public async Task A_draft_with_values_that_cannot_be_stored_is_refused_with_field_errors()
     {
-        var terms = Terms(await db.NowAsync()) with { OpeningPrice = new Money(0), Increment = new Money(1_000_000_001) };
+        var now = await db.NowAsync();
+        var terms = Terms(now) with { OpeningPrice = new Money(0), Increment = new Money(1_000_000_001), EndsAt = now.AddMinutes(-1) };
 
         var created = await _engine.CreateDraftAsync(As(_seller), terms, _ct);
 
         Assert.Equal(CommandError.ValidationFailed, created.Error);
         Assert.Contains(new FieldError("openingPrice", "out_of_range"), created.FieldErrors);
         Assert.Contains(new FieldError("increment", "out_of_range"), created.FieldErrors);
+        Assert.Contains(new FieldError("endsAt", "not_after_start"), created.FieldErrors);
         Assert.Null(created.AuctionId);
     }
 
@@ -107,14 +109,15 @@ public sealed class AuctionCommandTests(MigratedDatabase db)
     }
 
     [Fact]
-    public async Task An_invalid_listing_cannot_be_published()
+    public async Task A_draft_that_breaks_the_listing_rules_saves_but_cannot_be_published()
     {
-        var id = await DraftAsync(_engine, _seller, Terms(await db.NowAsync()) with { Title = "ab" });
+        var id = await DraftAsync(_engine, _seller, Terms(await db.NowAsync()) with { Title = "ab", Reserve = null });
 
         var published = await _engine.PublishAsync(As(_seller), id, _ct);
 
         Assert.Equal(CommandError.ValidationFailed, published.Error);
         Assert.Contains(new FieldError("title", "too_short"), published.FieldErrors);
+        Assert.Contains(new FieldError("reserve", "required"), published.FieldErrors);
         Assert.Equal("draft", await db.ScalarAsync<string>(MigratedDatabase.Verifier, "SELECT status FROM auctions WHERE id = $1", id.Value));
     }
 

@@ -155,7 +155,7 @@ All tables live in the `auction` schema, owned by the `migrator` role. Money is 
 
 | Table | Holds | Integrity in the database | Written by |
 |---|---|---|---|
-| `auctions` | Terms, status, current price, leader, bid count, version, outcome | Drafts may be incomplete; anything past draft must be a complete listing with a valid reserve. Terms are frozen after publish and only drafts can be deleted (triggers). A leader exists exactly when a bid has been accepted, and is never the seller | engine |
+| `auctions` | Terms, status, current price, leader, bid count, version, outcome | A draft has every term but may still break the listing rules (a short title, a missing reserve); anything past draft must be a valid listing with a valid reserve. Terms are frozen after publish and only drafts can be deleted (triggers). A leader exists exactly when a bid has been accepted, and is never the seller | engine |
 | `proxy_maxima` | Each bidder's private maximum and when it was accepted | Not readable by the `api` role, so a maximum can't leak through a read | engine |
 | `bids` | The public accepted history, keyed `(auction_id, seq)`; an outbid-at-once step has no amount | Append-only: a trigger refuses UPDATE and DELETE, even for the owner. Rejected bids are recorded only as idempotency outcomes | engine |
 | `idempotency_records` | Outcome per `(actor, key)` with a SHA-256 request hash; the close worker deletes records older than 24 hours, hourly | | engine |

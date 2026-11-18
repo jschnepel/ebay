@@ -27,7 +27,7 @@ internal sealed class AuctionConfiguration : IEntityTypeConfiguration<AuctionRow
             table.HasCheckConstraint("ck_auctions_dates", "ends_at > starts_at");
             table.HasCheckConstraint("ck_auctions_counters", "accepted_bid_count >= 0 AND version >= 0");
 
-            // Drafts may be saved incomplete; everything past draft must be a complete, valid listing.
+            // A draft may break the listing rules; everything past draft must be a complete, valid listing.
             table.HasCheckConstraint("ck_auctions_published_complete",
                 "status = 'draft' OR (char_length(title) >= 3 AND opening_price_cents IS NOT NULL " +
                 "AND starts_at IS NOT NULL AND ends_at IS NOT NULL AND published_at IS NOT NULL)");
