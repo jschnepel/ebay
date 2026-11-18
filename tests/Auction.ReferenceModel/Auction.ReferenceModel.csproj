@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Deliberately naive auction rules (SIM-03). Shared by the property tests and the verifier.
+       Must never reference Auction.Domain or any engine code. -->
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+</Project>

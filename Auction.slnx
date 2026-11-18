@@ -1,5 +1,10 @@
 <Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Auction.Domain/Auction.Domain.csproj" />
+  </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Auction.IntegrationTests/Auction.IntegrationTests.csproj" />
+    <Project Path="tests/Auction.ReferenceModel/Auction.ReferenceModel.csproj" />
+    <Project Path="tests/Auction.UnitTests/Auction.UnitTests.csproj" />
   </Folder>
 </Solution>
