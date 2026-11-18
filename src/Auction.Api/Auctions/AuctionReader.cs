@@ -12,7 +12,7 @@ internal sealed class AuctionReader(NpgsqlDataSource dataSource)
 {
     private const string SummaryColumns =
         "id, title, status, opening_price_cents, current_price_cents, accepted_bid_count, floor_type, bid_entry, " +
-        "reserve_cents, starts_at, ends_at";
+        "reserve_cents, starts_at, ends_at, version";
 
     private const string ListSql = $"""
         SELECT {SummaryColumns}
@@ -40,7 +40,7 @@ internal sealed class AuctionReader(NpgsqlDataSource dataSource)
         """;
 
     private const string DetailSql = $"""
-        SELECT {SummaryColumns}, description, increment_cents, outcome, version, seller_id, leader_id, published_at, closed_at
+        SELECT {SummaryColumns}, description, increment_cents, outcome, seller_id, leader_id, published_at, closed_at
         FROM auction.auctions
         WHERE id = $1 AND (status <> 'draft' OR seller_id = $2::uuid)
         """;
@@ -78,7 +78,7 @@ internal sealed class AuctionReader(NpgsqlDataSource dataSource)
             bidder,
             after,
             pageSize,
-            reader => BiddingSummary.From(ReadSummary(reader), Nullable<Guid>(reader, 11) == bidder.Value),
+            reader => BiddingSummary.From(ReadSummary(reader), Nullable<Guid>(reader, 12) == bidder.Value),
             cancellationToken);
 
     public async Task<AuctionDetail?> DetailAsync(Guid id, UserId? viewer, CancellationToken cancellationToken)
@@ -107,12 +107,12 @@ internal sealed class AuctionReader(NpgsqlDataSource dataSource)
             ReserveMet = summary.ReserveMet,
             StartsAt = summary.StartsAt,
             EndsAt = summary.EndsAt,
-            Description = reader.GetString(11),
-            IncrementCents = reader.GetInt64(12),
-            MinimumNextBidCents = summary.CurrentPriceCents is { } price ? price + reader.GetInt64(12) : summary.OpeningPriceCents,
+            Version = summary.Version,
+            Description = reader.GetString(12),
+            IncrementCents = reader.GetInt64(13),
+            MinimumNextBidCents = summary.CurrentPriceCents is { } price ? price + reader.GetInt64(13) : summary.OpeningPriceCents,
             ReserveCents = isSeller ? Nullable<long>(reader, 8) : null,
-            Outcome = Text(reader, 13),
-            Version = reader.GetInt64(14),
+            Outcome = Text(reader, 14),
             YouAreSeller = isSeller,
             YouLead = viewer is { } leader && Nullable<Guid>(reader, 16) == leader.Value,
             PublishedAt = Nullable<DateTimeOffset>(reader, 17),
@@ -216,6 +216,7 @@ internal sealed class AuctionReader(NpgsqlDataSource dataSource)
             ReserveMet = floorType == "reserve" ? current >= reserve : null,
             StartsAt = Nullable<DateTimeOffset>(reader, 9) ?? default,
             EndsAt = Nullable<DateTimeOffset>(reader, 10) ?? default,
+            Version = reader.GetInt64(11),
         };
     }
 

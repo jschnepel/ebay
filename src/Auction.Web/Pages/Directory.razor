@@ -1,18 +1,21 @@
 @page "/"
+@implements IAsyncDisposable
 @inject AuctionApi Api
+@inject LiveUpdates Live
+@inject ViewRefresher Refresher
 
 <PageTitle>Auctions</PageTitle>
 <MudText Typo="Typo.h4" HtmlTag="h1" Class="mb-4">Auctions</MudText>
 
-@if (_error is not null)
+@if (_list.Error is not null && _list.Items is null)
 {
-    <MudAlert Severity="Severity.Error">@_error</MudAlert>
+    <MudAlert Severity="Severity.Error">@_list.Error</MudAlert>
 }
-else if (_items is null)
+else if (_list.Items is null)
 {
     <MudProgressCircular Indeterminate="true" aria-label="Loading auctions" />
 }
-else if (_items.Count == 0)
+else if (_list.Items.Count == 0)
 {
     <MudText>No auctions are listed yet.</MudText>
 }
@@ -23,7 +26,7 @@ else
             <tr><th>Item</th><th>Price</th><th>Bids</th><th>Status</th><th>Ends</th></tr>
         </thead>
         <tbody>
-            @foreach (var auction in _items)
+            @foreach (var auction in _list.Items)
             {
                 <tr data-testid="auction-row">
                     <td><MudLink Href="@($"/auctions/{auction.Id}")">@auction.Title</MudLink></td>
@@ -35,29 +38,37 @@ else
             }
         </tbody>
     </MudSimpleTable>
-    @if (_next is not null)
+    @if (_list.NextCursor is not null)
     {
-        <MudButton Class="mt-2" Variant="Variant.Outlined" OnClick="MoreAsync">Show more</MudButton>
+        <MudButton Class="mt-2" Variant="Variant.Outlined" OnClick="_list.MoreAsync">Show more</MudButton>
     }
 }
 
 @code {
-    private List<AuctionSummary>? _items;
-    private string? _next;
-    private string? _error;
+    private LiveList<AuctionSummary> _list = null!;
 
-    protected override Task OnInitializedAsync() => MoreAsync();
-
-    private async Task MoreAsync()
+    protected override async Task OnInitializedAsync()
     {
-        var page = await Api.ListAsync(_next);
-        if (!page.Succeeded)
-        {
-            _error = page.Message;
-            return;
-        }
+        _list = new LiveList<AuctionSummary>(Api.ListAsync);
+        Live.Changed += OnChangedAsync;
+        await _list.MoreAsync();
+        await Live.WatchDirectoryAsync();
+        await Refresher.StartAsync(RefreshAsync);
+    }
 
-        (_items ??= []).AddRange(page.Value!.Items);
-        _next = page.Value.NextCursor;
+    private Task OnChangedAsync(AuctionChanged hint) =>
+        _list.Items?.Find(item => item.Id == hint.AuctionId) is { } shown && hint.Version > shown.Version ? RefreshAsync() : Task.CompletedTask;
+
+    private async Task RefreshAsync()
+    {
+        await _list.ReloadAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        Live.Changed -= OnChangedAsync;
+        await Live.UnwatchDirectoryAsync();
+        await Refresher.DisposeAsync();
     }
 }

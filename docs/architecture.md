@@ -139,6 +139,9 @@ Everything under `/api/v1`, JSON only, documented at `/openapi/v1.json`. Errors 
 | `POST /auctions`, `PUT /auctions/{id}` | Create or edit a draft (every term required) |
 | `POST /auctions/{id}/publish`, `/cancel`, `/bids` | Publish, cancel, bid: forwarded to the engine with the signed-in user as the actor |
 | `GET /me/auctions`, `GET /me/bids` | The signed-in user's own auctions (drafts included), and the auctions they bid on with whether they lead |
+| `/hubs/auctions` (SignalR) | Live change hints `{auctionId, version}`: `Watch(id)` for one auction, `WatchDirectory()` for every published change |
+
+**Live updates.** The engine writes an outbox row in each command's transaction; a statement trigger sends a `NOTIFY` at commit, purely as a wake-up. One relay runs across all API instances (it holds a PostgreSQL advisory lock): it reads unpublished rows below the current snapshot's `xmin`, ordered by `(xid, id)`, so a transaction that commits late holds back later events instead of being skipped; sends each as a hint through the Redis backplane; then stamps `published_at`. A send that fails leaves the row for the next try, and duplicates are harmless. Hints carry no private data and drafts produce none. The client re-fetches over REST on a newer hint, every 10 s, when the tab becomes visible and after a reconnect, and never replaces a version it shows with an older one. The hub's `Origin` is checked on every method, since its WebSocket handshake is a GET.
 
 The same host serves the Blazor WebAssembly client: its files through static assets, and its page for every other non-API path, so a deep link such as `/auctions/{id}` loads the app. An unknown `/api` path is a 404 problem, never the page. Every response carries a content security policy (scripts from this origin only, with `'wasm-unsafe-eval'` for WebAssembly; `connect-src 'self'`; no framing), `nosniff` and `Referrer-Policy: same-origin`.
 

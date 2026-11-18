@@ -87,12 +87,17 @@ services:
     environment:
       ConnectionStrings__Api: Host=postgres;Database=${POSTGRES_DB:-auction};Username=api;Password=${API_DB_PASSWORD};GSS Encryption Mode=Disable
       Api__EngineAddress: http://engine:8080
+      # The SignalR backplane (and, later, caches and rate limits). The API starts and bids work without it.
+      ConnectionStrings__Redis: redis:6379,abortConnect=false
       Api__DemoMode: ${DEMO_MODE:-true}
     ports:
       - "127.0.0.1:${PORT:-8080}:8080"
     depends_on:
       engine:
         condition: service_healthy
+      # Started first, but not required to be healthy: the API runs without Redis.
+      redis:
+        condition: service_started
     healthcheck:
       test: ["CMD", "dotnet", "Auction.Api.dll", "--health-check"]
       interval: 10s

@@ -23,9 +23,17 @@ public sealed class ApiOptions
     /// <summary>Origins accepted on unsafe requests besides the API's own scheme, host and port.</summary>
     public IReadOnlyList<string> AllowedOrigins { get; init; } = [];
 
+    /// <summary>How often the outbox relay looks for events when no notification woke it.</summary>
+    public TimeSpan RelayPollInterval { get; init; } = TimeSpan.FromSeconds(1);
+
+    /// <summary>How long the relay waits before trying again after a failure (database or Redis down).</summary>
+    public TimeSpan RelayRetryDelay { get; init; } = TimeSpan.FromSeconds(2);
+
     public bool IsValid() =>
         EngineAddress is { IsAbsoluteUri: true }
         && EngineDeadline > TimeSpan.Zero
         && DefaultPageSize >= 1
-        && MaxPageSize >= DefaultPageSize;
+        && MaxPageSize >= DefaultPageSize
+        && RelayPollInterval > TimeSpan.Zero
+        && RelayRetryDelay > TimeSpan.Zero;
 }

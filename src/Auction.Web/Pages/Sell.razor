@@ -1,7 +1,9 @@
 @page "/sell"
+@implements IAsyncDisposable
 @inject AuctionApi Api
 @inject Session Session
-@inject NavigationManager Navigation
+@inject LiveUpdates Live
+@inject ViewRefresher Refresher
 
 <PageTitle>Sell</PageTitle>
 <MudText Typo="Typo.h4" HtmlTag="h1" Class="mb-4">Sell</MudText>
@@ -23,11 +25,11 @@ else
         <MudAlert Class="mb-2" Severity="@(_failed ? Severity.Error : Severity.Success)" data-testid="sell-result">@_message</MudAlert>
     }
 
-    @if (_items is null)
+    @if (_list.Items is null)
     {
         <MudProgressCircular Indeterminate="true" aria-label="Loading your listings" />
     }
-    else if (_items.Count == 0)
+    else if (_list.Items.Count == 0)
     {
         <MudText>You have no listings yet.</MudText>
     }
@@ -36,7 +38,7 @@ else
         <MudSimpleTable Dense="true">
             <thead><tr><th>Item</th><th>Price</th><th>Bids</th><th>Status</th><th>Ends</th><th>Actions</th></tr></thead>
             <tbody>
-                @foreach (var auction in _items)
+                @foreach (var auction in _list.Items)
                 {
                     <tr data-testid="my-auction-row">
                         <td><MudLink Href="@($"/auctions/{auction.Id}")">@auction.Title</MudLink></td>
@@ -59,16 +61,15 @@ else
                 }
             </tbody>
         </MudSimpleTable>
-        @if (_next is not null)
+        @if (_list.NextCursor is not null)
         {
-            <MudButton Class="mt-2" Variant="Variant.Outlined" OnClick="MoreAsync">Show more</MudButton>
+            <MudButton Class="mt-2" Variant="Variant.Outlined" OnClick="_list.MoreAsync">Show more</MudButton>
         }
     }
 }
 
 @code {
-    private List<AuctionSummary>? _items;
-    private string? _next;
+    private LiveList<AuctionSummary> _list = null!;
     private string? _message;
     private bool _failed;
     private bool _signedOut;
@@ -79,31 +80,43 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        _list = new LiveList<AuctionSummary>(Api.MineAsync);
         await Session.LoadAsync();
         _signedOut = Session.Account is null;
-        if (!_signedOut)
+        if (_signedOut)
         {
-            await ReloadAsync();
-        }
-    }
-
-    private async Task ReloadAsync()
-    {
-        (_items, _next) = (null, null);
-        await MoreAsync();
-    }
-
-    private async Task MoreAsync()
-    {
-        var page = await Api.MineAsync(_next);
-        if (!page.Succeeded)
-        {
-            (_failed, _message) = (true, page.Message);
             return;
         }
 
-        (_items ??= []).AddRange(page.Value!.Items);
-        _next = page.Value.NextCursor;
+        Live.Changed += OnChangedAsync;
+        await _list.MoreAsync();
+        if (_list.Error is not null)
+        {
+            (_failed, _message) = (true, _list.Error);
+        }
+
+        await Live.WatchDirectoryAsync();
+        await Refresher.StartAsync(RefreshAsync);
+    }
+
+    private Task OnChangedAsync(AuctionChanged hint) =>
+        _list.Items?.Find(item => item.Id == hint.AuctionId) is { } shown && hint.Version > shown.Version ? RefreshAsync() : Task.CompletedTask;
+
+    private async Task RefreshAsync()
+    {
+        await _list.ReloadAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        Live.Changed -= OnChangedAsync;
+        if (!_signedOut)
+        {
+            await Live.UnwatchDirectoryAsync();
+        }
+
+        await Refresher.DisposeAsync();
     }
 
     private Task PublishAsync(AuctionSummary auction) =>
@@ -129,6 +142,6 @@ else
         }
 
         (_failed, _message) = result.Succeeded ? (false, done) : (true, result.Message);
-        await ReloadAsync();
+        await _list.ReloadAsync();
     }
 }

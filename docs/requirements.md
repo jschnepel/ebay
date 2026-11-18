@@ -360,7 +360,7 @@ Status comes from evidence only.
 | ID | Type | Implementation | Test(s) | Proving layer | Status |
 |---|---|---|---|---|---|
 | INT-01 | Core | `run.sh`, `deploy/compose.yaml`, `src/Auction.Web`, `src/Auction.Api` | `JourneyTests`, `AuctionApiTests` | S, B | S passed (the HTTP journey); B passed: in a real browser a seller lists and publishes, a buyer bids, and both see the new price after a reload, in process and against the one-command stack |
-| INT-02 | Core | | | B | not started |
+| INT-02 | Core | `src/Auction.Api/Live`, `src/Auction.Web/Client/LiveUpdates.cs`, `VersionGate.cs` | `LiveBrowserTests` | B | passed for buyers and seller: two buyers, the seller and a directory browser each show every new price within 2 s without a reload; the Admin activity view and the running simulator join at steps 10 and 11 |
 | INT-03 | Core | | | S | not started |
 | INT-04 | Core | `run.sh`, `deploy/.env.example`, `src/Auction.Migrator/DemoSeed.cs`, `.github/workflows/ci.yml` | CI: one command on the fresh clone, the full suite, the browser journey against that stack; `DemoSeedTests` | R | passed: the one command creates `.env` with generated secrets, seeds, and starts every service healthy; the full suite passes in the same job |
 | FND-01 | Engineering | `global.json`, `Directory.*.props`, lock files, `.github/workflows/ci.yml` | CI workflow gates | R | implemented; CI green |
@@ -389,11 +389,11 @@ Status comes from evidence only.
 | UI-04 | Engineering (A1) | | | B, S | not started |
 | ADM-01 | Engineering | | | D, S, B | not started |
 | ADM-02 | Engineering | | | S, B | not started |
-| RT-01 | Implied / Engineering | | | S, B | not started |
-| RT-02 | Engineering | | | U, B | not started |
-| OUT-01 | Engineering | | | D, S | not started |
+| RT-01 | Implied / Engineering | `src/Auction.Api/Live`, `src/Auction.Web/Client` | `LiveHintTests`, `LiveBrowserTests`, `RedisOutageTests` | S, B | passed: hints reach auction and directory watchers within 2 s through the Redis backplane; with Redis stopped an open browser shows the new state within the 10 s reconcile, with no reconnect; a browser that went offline and came back shows the bids it missed; the hub refuses a foreign `Origin` on its POST and its WebSocket GET |
+| RT-02 | Engineering | `src/Auction.Web/Client/VersionGate.cs`, `LiveList.cs`, `ViewRefresher.cs` | `ClientVersionGateTests`, `LiveBrowserTests` | U, B | U passed: an older answer after a newer one is ignored, and a reloaded list keeps newer items. B: every view re-fetches through the gate on hints, every 10 s, on tab focus and after reconnect; the browser tests see only rising prices |
+| OUT-01 | Engineering | `src/Auction.Api/Live/OutboxRelay.cs`, `src/Auction.Migrator/Schema/OutboxSchemaSql.cs` | `LiveHintTests` | D, S | passed: an event whose transaction commits last holds back later ones (they stay unpublished) and is then published first, nothing skipped; an event left unpublished is published again; one relay across instances (advisory lock), woken by NOTIFY with a 1 s poll |
 | REL-01 | Engineering | lock timeout and retries in `src/Auction.Engine/AuctionEngine.cs`; pool size and call cancellation in the engine host | `LockingTests`, `EngineServiceTests` | D, S | lock wait: D passed; pool limit and deadlines on engine calls: in place; the API's request deadlines pending (step 7) |
-| REL-02 | Engineering | | | S | not started |
+| REL-02 | Engineering | Redis backplane in `src/Auction.Api/Hosting/ApiHosting.cs` | `RedisOutageTests` | S | backplane part passed: with Redis stopped a bid is accepted, the auction loads from PostgreSQL, and views reconcile; admin health, caches, the ending-soon index and shared rate limits: pending (steps 11, 14) |
 | SIM-01 | Engineering | | | S | not started |
 | SIM-02 | Core / Engineering | | | S | not started |
 | SIM-03 | Engineering | `tests/Auction.ReferenceModel` (reference model only) | `BiddingPropertyTests` | S | reference model built; verifier pending |

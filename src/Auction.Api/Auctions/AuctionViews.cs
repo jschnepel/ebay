@@ -31,6 +31,9 @@ public class AuctionSummary
     public required DateTimeOffset StartsAt { get; init; }
 
     public required DateTimeOffset EndsAt { get; init; }
+
+    /// <summary>Rises with every change; a client applies an update only if it is newer than what it shows.</summary>
+    public required long Version { get; init; }
 }
 
 /// <summary>One auction in full, as the viewer may see it.</summary>
@@ -49,9 +52,6 @@ public sealed class AuctionDetail : AuctionSummary
 
     /// <summary>sold, reserve_not_met or no_bids once closed.</summary>
     public string? Outcome { get; init; }
-
-    /// <summary>Rises with every change; a client applies an update only if it is newer than what it shows.</summary>
-    public required long Version { get; init; }
 
     public required bool YouAreSeller { get; init; }
 
@@ -80,6 +80,7 @@ public sealed class BiddingSummary : AuctionSummary
         ReserveMet = summary.ReserveMet,
         StartsAt = summary.StartsAt,
         EndsAt = summary.EndsAt,
+        Version = summary.Version,
         YouLead = youLead,
     };
 }

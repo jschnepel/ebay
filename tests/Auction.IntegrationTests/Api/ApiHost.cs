@@ -9,9 +9,10 @@ namespace Auction.IntegrationTests.Api;
 /// <summary>
 /// The API in process (production settings, so errors show no developer detail), reached over HTTPS as a
 /// browser would. It calls the real engine container over gRPC and the test database as the api role.
-/// Page sizes are small so pagination is exercised with a handful of auctions.
+/// Page sizes are small so pagination is exercised with a handful of auctions. Every host shares one Redis
+/// backplane, as API instances do, so a live hint from whichever host runs the relay reaches them all.
 /// </summary>
-public sealed class ApiHost(string connectionString, Uri engineAddress, bool demoMode) : WebApplicationFactory<IApiAssembly>
+public sealed class ApiHost(string connectionString, Uri engineAddress, bool demoMode, string redis) : WebApplicationFactory<IApiAssembly>
 {
     public const int DefaultPageSize = 3;
     public const int MaxPageSize = 5;
@@ -20,14 +21,14 @@ public sealed class ApiHost(string connectionString, Uri engineAddress, bool dem
     /// <summary>
     /// The same host on a real local port, for a browser: Kestrel instead of the in-memory test server.
     /// </summary>
-    public static ApiHost OnLocalPort(string connectionString, Uri engineAddress, out Uri address)
+    public static ApiHost OnLocalPort(string connectionString, Uri engineAddress, string redis, out Uri address)
     {
         using var probe = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
         probe.Start();
         var port = ((System.Net.IPEndPoint)probe.LocalEndpoint).Port;
         probe.Stop();
 
-        var host = new ApiHost(connectionString, engineAddress, demoMode: true);
+        var host = new ApiHost(connectionString, engineAddress, demoMode: true, redis);
         host.UseKestrel(port);
         host.StartServer();
         address = new Uri($"http://127.0.0.1:{port}");
@@ -65,6 +66,9 @@ public sealed class ApiHost(string connectionString, Uri engineAddress, bool dem
         builder.UseSetting("ConnectionStrings:Api", connectionString);
         builder.UseSetting("Api:EngineAddress", engineAddress.ToString());
         builder.UseSetting("Api:DemoMode", demoMode ? "true" : "false");
+        builder.UseSetting("ConnectionStrings:Redis", redis);
+        builder.UseSetting("Api:RelayPollInterval", "00:00:00.500");
+        builder.UseSetting("Api:RelayRetryDelay", "00:00:00.500");
         builder.UseSetting("Api:DefaultPageSize", DefaultPageSize.ToString(System.Globalization.CultureInfo.InvariantCulture));
         builder.UseSetting("Api:MaxPageSize", MaxPageSize.ToString(System.Globalization.CultureInfo.InvariantCulture));
     }

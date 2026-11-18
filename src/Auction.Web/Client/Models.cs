@@ -32,6 +32,8 @@ public record AuctionSummary
     public DateTimeOffset StartsAt { get; init; }
 
     public DateTimeOffset EndsAt { get; init; }
+
+    public long Version { get; init; }
 }
 
 public sealed record BiddingSummary : AuctionSummary
@@ -50,8 +52,6 @@ public sealed record AuctionDetail : AuctionSummary
     public long? ReserveCents { get; init; }
 
     public string? Outcome { get; init; }
-
-    public long Version { get; init; }
 
     public bool YouAreSeller { get; init; }
 

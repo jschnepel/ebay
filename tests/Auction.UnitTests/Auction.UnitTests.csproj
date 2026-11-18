@@ -15,6 +15,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Auction.Domain\Auction.Domain.csproj" />
+    <!-- The client's plain classes (version gate, formatting); no browser needed. -->
+    <ProjectReference Include="..\..\src\Auction.Web\Auction.Web.csproj" />
     <ProjectReference Include="..\Auction.ReferenceModel\Auction.ReferenceModel.csproj" />
   </ItemGroup>
 

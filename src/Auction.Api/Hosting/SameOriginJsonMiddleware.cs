@@ -6,13 +6,18 @@ namespace Auction.Api.Hosting;
 /// Cross-site request protection without antiforgery tokens (ADR-0003): an unsafe request is refused if it
 /// comes from a foreign <c>Origin</c> (403) or carries a body that isn't JSON (415). A cross-site form can't
 /// send JSON without a CORS preflight, which the API never approves, and the session cookie is SameSite=Strict.
+/// The live hub's handshake is a GET, so its Origin is checked on every method; its frames are exempt from the
+/// JSON rule because its methods change nothing but which hints a connection receives.
 /// </summary>
 internal sealed class SameOriginJsonMiddleware(RequestDelegate next, ApiOptions options, IProblemDetailsService problems)
 {
     public async Task InvokeAsync(HttpContext context)
     {
         var request = context.Request;
-        if (IsSafe(request.Method))
+        // The live hub's Origin is checked on every method, since its WebSocket handshake is a GET (SEC-04).
+        // Its transport frames aren't JSON, and its methods only choose which hints to receive.
+        var hub = request.Path.StartsWithSegments(Live.AuctionHub.Path, StringComparison.OrdinalIgnoreCase);
+        if (IsSafe(request.Method) && !hub)
         {
             await next(context);
         }
@@ -20,7 +25,7 @@ internal sealed class SameOriginJsonMiddleware(RequestDelegate next, ApiOptions 
         {
             await RefuseAsync(context, StatusCodes.Status403Forbidden, "foreign_origin", "Cross-site requests are not accepted.");
         }
-        else if (!IsJsonOrEmpty(request))
+        else if (!hub && !IsJsonOrEmpty(request))
         {
             await RefuseAsync(context, StatusCodes.Status415UnsupportedMediaType, "json_only", "Send the request body as application/json.");
         }

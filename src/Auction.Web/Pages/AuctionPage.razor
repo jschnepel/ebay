@@ -1,6 +1,9 @@
 @page "/auctions/{Id:guid}"
+@implements IAsyncDisposable
 @inject AuctionApi Api
 @inject Session Session
+@inject LiveUpdates Live
+@inject ViewRefresher Refresher
 
 <PageTitle>@(_auction?.Title ?? "Auction")</PageTitle>
 
@@ -101,24 +104,80 @@ else
     // One key per intended bid: a retry of the same amount reuses it, so it can't be placed twice.
     private (string Amount, string Key)? _pending;
 
+    private Guid? _watching;
+    private bool _started;
+
     protected override async Task OnParametersSetAsync()
     {
         await Session.LoadAsync();
+        if (_watching != Id)
+        {
+            if (_watching is { } previous)
+            {
+                await Live.UnwatchAsync(previous);
+            }
+
+            (_auction, _bids, _error, _watching) = (null, null, null, Id);
+            await Live.WatchAsync(Id);
+        }
+
         await LoadAsync();
+        if (!_started)
+        {
+            _started = true;
+            Live.Changed += OnChangedAsync;
+            await Refresher.StartAsync(RefreshAsync);
+        }
     }
 
+    private Task OnChangedAsync(AuctionChanged hint) =>
+        hint.AuctionId == Id && hint.Version > (_auction?.Version ?? -1) ? RefreshAsync() : Task.CompletedTask;
+
+    private async Task RefreshAsync()
+    {
+        await LoadAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    // Answers may come back out of order (hint, timer, reconnect); an older version never replaces a newer one.
     private async Task LoadAsync()
     {
-        var detail = await Api.DetailAsync(Id);
+        var id = Id;
+        var detail = await Api.DetailAsync(id);
+        if (id != Id)
+        {
+            return;
+        }
+
         if (!detail.Succeeded)
         {
             _error = detail.Problem!.Status == 404 ? "This auction doesn't exist or isn't visible to you." : detail.Message;
             return;
         }
 
-        _auction = detail.Value;
-        var bids = await Api.BidsAsync(Id);
-        _bids = bids.Value?.Items.ToList();
+        var shown = _auction;
+        _auction = VersionGate.Newest(shown, detail.Value!);
+        if (!ReferenceEquals(_auction, detail.Value))
+        {
+            return;
+        }
+
+        var bids = await Api.BidsAsync(id);
+        if (bids.Succeeded && id == Id && _auction.Version == detail.Value!.Version)
+        {
+            _bids = bids.Value!.Items.ToList();
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        Live.Changed -= OnChangedAsync;
+        if (_watching is { } id)
+        {
+            await Live.UnwatchAsync(id);
+        }
+
+        await Refresher.DisposeAsync();
     }
 
     private async Task BidAsync()

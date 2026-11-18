@@ -1,5 +1,6 @@
 using Auction.Api.Accounts;
 using Auction.Api.Auctions;
+using Auction.Api.Live;
 using Auction.Contracts.V1;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Identity;
@@ -48,6 +49,16 @@ internal static class ApiHosting
         });
         builder.Services.AddAuthorization();
         builder.Services.AddOpenApi();
+
+        // Live hints go out through the Redis backplane whenever Redis is configured, even on one instance,
+        // so a Redis outage stops hints (pages then reconcile on their timer) but never bidding.
+        var signalR = builder.Services.AddSignalR();
+        if (builder.Configuration.GetConnectionString("Redis") is { Length: > 0 } redis)
+        {
+            signalR.AddStackExchangeRedis(redis, options => options.Configuration.ChannelPrefix = StackExchange.Redis.RedisChannel.Literal("auction"));
+        }
+
+        builder.Services.AddHostedService<OutboxRelay>();
         builder.Services.AddHealthChecks();
         return builder;
     }
@@ -64,6 +75,7 @@ internal static class ApiHosting
         var api = app.MapGroup("/api/v1");
         api.MapAccounts();
         api.MapAuctions();
+        app.MapHub<AuctionHub>(AuctionHub.Path);
         app.MapOpenApi();
         app.MapHealthChecks("/health");
 

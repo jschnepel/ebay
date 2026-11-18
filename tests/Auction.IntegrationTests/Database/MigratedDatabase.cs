@@ -6,6 +6,7 @@ using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Networks;
 using Npgsql;
 using Testcontainers.PostgreSql;
+using Testcontainers.Redis;
 
 [assembly: AssemblyFixture(typeof(Auction.IntegrationTests.Database.MigratedDatabase))]
 
@@ -29,7 +30,13 @@ public sealed class MigratedDatabase : IAsyncLifetime
     private const string PostgresImage =
         "postgres:18@sha256:2ea8630df176ad090ec92136dee850397c5af8781e4bcf2e4162593691c61bbc";
 
+    // Same digest-pinned image as deploy/compose.yaml.
+    private const string RedisImage =
+        "redis:8@sha256:1f88291b4c57bdf249f02eb085a8669889b2d2954e91d4de5118a5da6b78dd53";
+
     private readonly PostgreSqlContainer _postgres;
+    private readonly RedisContainer _redis;
+    private readonly int _redisPort = FreePort();
     private readonly SemaphoreSlim _engineServiceGate = new(1, 1);
     private NpgsqlDataSource? _engineDataSource;
     private EngineServiceContainer? _engineService;
@@ -52,7 +59,16 @@ public sealed class MigratedDatabase : IAsyncLifetime
                 File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "init-roles.sh")),
                 FilePath.Of("/docker-entrypoint-initdb.d/10-init-roles.sh"))
             .Build();
+
+        // A fixed host port, so the API's connection string still works after a test stops and restarts Redis.
+        _redis = new RedisBuilder(RedisImage).WithPortBinding(_redisPort, 6379).Build();
     }
+
+    /// <summary>The Redis every API host uses, with short timeouts so an outage fails fast.</summary>
+    public string RedisConnectionString => $"127.0.0.1:{_redisPort},abortConnect=false,connectTimeout=2000,syncTimeout=2000";
+
+    /// <summary>The Redis container, for the outage tests that stop and restart it.</summary>
+    public RedisContainer Redis => _redis;
 
     public INetwork Network { get; } = new NetworkBuilder().Build();
 
@@ -63,7 +79,7 @@ public sealed class MigratedDatabase : IAsyncLifetime
     public async ValueTask InitializeAsync()
     {
         await Network.CreateAsync();
-        await _postgres.StartAsync();
+        await Task.WhenAll(_postgres.StartAsync(), _redis.StartAsync());
         await DatabaseMigrator.MigrateAsync(ConnectionStringFor(Migrator), null, CancellationToken.None);
         _engineDataSource = NpgsqlDataSource.Create(
             new NpgsqlConnectionStringBuilder(ConnectionStringFor(Engine)) { MaxPoolSize = 30 }.ConnectionString);
@@ -92,6 +108,7 @@ public sealed class MigratedDatabase : IAsyncLifetime
         }
 
         await _postgres.DisposeAsync();
+        await _redis.DisposeAsync();
         await Network.DisposeAsync();
         _engineServiceGate.Dispose();
     }
@@ -127,7 +144,7 @@ public sealed class MigratedDatabase : IAsyncLifetime
         {
             if (!_apis.TryGetValue(demoMode, out var api))
             {
-                api = new ApiHost(ConnectionStringFor(Api), engine.Address, demoMode);
+                api = new ApiHost(ConnectionStringFor(Api), engine.Address, demoMode, RedisConnectionString);
                 _apis[demoMode] = api;
             }
 
@@ -148,7 +165,7 @@ public sealed class MigratedDatabase : IAsyncLifetime
         {
             if (_site is null)
             {
-                var host = ApiHost.OnLocalPort(ConnectionStringFor(Api), engine.Address, out var address);
+                var host = ApiHost.OnLocalPort(ConnectionStringFor(Api), engine.Address, RedisConnectionString, out var address);
                 _site = (host, address);
             }
 
@@ -158,6 +175,13 @@ public sealed class MigratedDatabase : IAsyncLifetime
         {
             _engineServiceGate.Release();
         }
+    }
+
+    private static int FreePort()
+    {
+        using var probe = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+        probe.Start();
+        return ((System.Net.IPEndPoint)probe.LocalEndpoint).Port;
     }
 
     public AuctionEngine CreateEngine(EngineOptions? options = null) => new(EngineDataSource, options ?? new EngineOptions());
