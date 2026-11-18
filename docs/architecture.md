@@ -147,7 +147,7 @@ tests/
   Auction.BrowserTests/     Playwright: Buy/Sell/Admin journeys, multi-browser consistency, axe
 ```
 
-Projects are added as each build step needs them; today `Auction.Domain`, `Auction.Migrator`, `Auction.Engine` (its commands and the close worker, not yet the gRPC host), the unit and integration tests and the reference model exist.
+Projects are added as each build step needs them; today `Auction.Domain`, `Auction.Migrator`, `Auction.Contracts`, `Auction.Engine` (gRPC service and close worker), the unit and integration tests and the reference model exist.
 
 ## Data model
 
@@ -225,6 +225,9 @@ Each package is pinned in `Directory.Packages.props` and locked by the lock file
 | xunit.v3 | Test framework | Apache-2.0 |
 | CsCheck | Property-based tests | Apache-2.0 |
 | Testcontainers.PostgreSql | Real PostgreSQL in integration tests | MIT |
+| Grpc.AspNetCore, Grpc.AspNetCore.HealthChecks, Grpc.Net.Client, Grpc.HealthCheck, Grpc.Tools | gRPC server, health service, client and code generation | Apache-2.0 |
+| Google.Protobuf | Protocol Buffers runtime | BSD-3-Clause |
+| Buf (CI only, `bufbuild/buf-action`) | Lint, format and breaking-change checks for the `.proto` contract | Apache-2.0 |
 | Microsoft.Testing.Extensions.TrxReport | Test result files for CI | MIT |
 | Microsoft.Testing.Extensions.CodeCoverage | Line coverage for the CI floor | Microsoft .NET Library licence |
 

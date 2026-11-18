@@ -39,6 +39,8 @@ public sealed class MigratedDatabase : IAsyncLifetime
             .WithNetwork(Network)
             .WithNetworkAliases(NetworkAlias)
             .WithDatabase("auction")
+            // Room for both 50-bidder races (in-process and over gRPC) and the helpers running beside them.
+            .WithCommand("-c", "max_connections=300")
             .WithEnvironment("MIGRATOR_DB_PASSWORD", PasswordFor(Migrator))
             .WithEnvironment("ENGINE_DB_PASSWORD", PasswordFor(Engine))
             .WithEnvironment("API_DB_PASSWORD", PasswordFor(Api))

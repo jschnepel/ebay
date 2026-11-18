@@ -44,6 +44,32 @@ services:
         condition: service_healthy
     restart: "no"
 
+  # The auction engine: the only writer of auction state. gRPC on the internal network only (no published
+  # port); the API is its only caller.
+  engine:
+    build:
+      context: ..
+      dockerfile: src/Auction.Engine/Dockerfile
+    environment:
+      ConnectionStrings__Engine: Host=postgres;Database=${POSTGRES_DB:-auction};Username=engine;Password=${ENGINE_DB_PASSWORD};Maximum Pool Size=${ENGINE_DB_POOL_SIZE:-50};GSS Encryption Mode=Disable
+      Engine__LockTimeout: ${ENGINE_LOCK_TIMEOUT:-00:00:02}
+      Engine__Limits__MinDuration: ${AUCTION_MIN_DURATION:-00:01:00}
+    depends_on:
+      migrator:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "dotnet", "Auction.Engine.dll", "--health-check"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512m
+
   redis:
     image: redis:8@sha256:1f88291b4c57bdf249f02eb085a8669889b2d2954e91d4de5118a5da6b78dd53
     ports:

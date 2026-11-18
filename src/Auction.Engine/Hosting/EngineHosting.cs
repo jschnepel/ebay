@@ -33,6 +33,7 @@ internal static class EngineHosting
 
     public static WebApplication MapEngine(this WebApplication app)
     {
+        app.MapGrpcService<AuctionCommandGrpcService>();
         app.MapGrpcHealthChecksService();
         return app;
     }

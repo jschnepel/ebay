@@ -364,7 +364,7 @@ Status comes from evidence only.
 | INT-03 | Core | | | S | not started |
 | INT-04 | Core | | | R | not started |
 | FND-01 | Engineering | `global.json`, `Directory.*.props`, lock files, `.github/workflows/ci.yml` | CI workflow gates | R | implemented; CI green |
-| FND-02 | Stack | | | S | not started |
+| FND-02 | Stack | `src/Auction.Contracts`, `src/Auction.Engine/Hosting`, `engine` service in `deploy/compose.yaml` | `EngineServiceTests`, `GrpcBidRaceTests` | S | engine over gRPC in its container, with correlated logs: passed; the API half pending (step 7) |
 | DOM-01 | Implied | `src/Auction.Domain/Money.cs`; amount CHECK constraints in `src/Auction.Migrator/Schema` | `MoneyTests`, `AmountLimitTests` | U, D | U passed; D passed |
 | DOM-02 | Implied | `src/Auction.Domain/Bidding.cs`; clock read after the lock in `src/Auction.Engine/AuctionStore.cs` | `FixedIncrementAndEligibilityTests`, `LockingTests` | U, D | U passed; D passed |
 | DOM-03 | Implied | `Bidding.cs`, `Lifecycle.cs`, `ListingValidator.cs`, `src/Auction.Engine` | `FixedIncrementAndEligibilityTests`, `LifecycleTests`, `AuctionCommandTests`, `AuctionRowRuleTests` | U, D | U passed; D passed |
@@ -375,7 +375,7 @@ Status comes from evidence only.
 | COR-03 | Engineering | `src/Auction.Engine/IdempotencyStore.cs`, `AuctionEngine.cs` | `IdempotencyTests` | D, S | D passed; S pending (missing key → 400 at the API, step 7) |
 | COR-04 | Engineering | replay before the rules in `src/Auction.Engine/AuctionEngine.cs` | `IdempotencyTests` | D | passed |
 | COR-05 | Engineering | `bids_append_only` trigger, `(auction_id, seq)` key, `src/Auction.Engine` | `BidHistoryTests`, `BidRaceTests` | D | passed |
-| API-01 | Implied | | | S | not started |
+| API-01 | Implied | `src/Auction.Contracts/auction/v1/auction.proto` (Buf lint, format and breaking checks in CI) | `EngineServiceTests` | S | gRPC contract: passed; REST contract and forged-bidder test pending (step 7) |
 | API-03 | Engineering | | | S | not started |
 | SEC-01 | Implied | | | S | not started |
 | AUTH-01 | Engineering | | | S, B | not started |
@@ -392,7 +392,7 @@ Status comes from evidence only.
 | RT-01 | Implied / Engineering | | | S, B | not started |
 | RT-02 | Engineering | | | U, B | not started |
 | OUT-01 | Engineering | | | D, S | not started |
-| REL-01 | Engineering | lock timeout and retries in `src/Auction.Engine/AuctionEngine.cs` | `LockingTests` | D, S | lock wait: D passed; request deadlines and pool limits: S pending (step 6) |
+| REL-01 | Engineering | lock timeout and retries in `src/Auction.Engine/AuctionEngine.cs`; pool size and call cancellation in the engine host | `LockingTests`, `EngineServiceTests` | D, S | lock wait: D passed; pool limit and deadlines on engine calls: in place; the API's request deadlines pending (step 7) |
 | REL-02 | Engineering | | | S | not started |
 | SIM-01 | Engineering | | | S | not started |
 | SIM-02 | Core / Engineering | | | S | not started |

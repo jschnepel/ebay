@@ -73,15 +73,34 @@ jobs:
           path: TestResults/
           retention-days: 14
 
+  # The engine's gRPC contract: lint and format always; on pull requests, no breaking changes against the base.
+  contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: bufbuild/buf-action@37ac33d8960807670a6e9719080e885197b09cc6 # v1.7.0
+        with:
+          version: 1.75.0
+          input: src/Auction.Contracts
+          lint: true
+          format: true
+          breaking: ${{ github.event_name == 'pull_request' }}
+          breaking_against: ${{ github.event.repository.clone_url }}#format=git,commit=${{ github.event.pull_request.base.sha }},subdir=src/Auction.Contracts
+          push: false
+          archive: false
+          pr_comment: false
+
   # Final aggregator: fails on any non-success (failure, skipped, cancelled) of required jobs.
   gate:
     if: always()
-    needs: [build-test]
+    needs: [build-test, contracts]
     runs-on: ubuntu-latest
     steps:
       - name: Require every gate to succeed
         shell: bash
         run: |
-          result="${{ needs.build-test.result }}"
-          echo "build-test: $result"
-          if [ "$result" != "success" ]; then exit 1; fi
+          for result in "${{ needs.build-test.result }}" "${{ needs.contracts.result }}"; do
+            echo "job result: $result"
+            if [ "$result" != "success" ]; then exit 1; fi
+          done

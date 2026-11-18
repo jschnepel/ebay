@@ -73,6 +73,29 @@ public sealed class EngineServiceTests(MigratedDatabase db)
     }
 
     [Theory]
+    [InlineData(FloorType.Reserve, BidEntry.Proxy, "reserve", "proxy")]
+    [InlineData(FloorType.MinimumBid, BidEntry.FixedIncrement, "minimum_bid", "fixed_increment")]
+    [InlineData(FloorType.Absolute, BidEntry.Proxy, "absolute", "proxy")]
+    public async Task Terms_arrive_intact_through_the_contract(FloorType floor, BidEntry entry, string storedFloor, string storedEntry)
+    {
+        var commands = new GrpcCommands((await db.EngineServiceAsync()).Commands);
+        var now = await db.NowAsync();
+        var terms = Terms(now, entry) with
+        {
+            FloorType = floor,
+            Reserve = floor == FloorType.Reserve ? new Money(2000) : null,
+            Increment = new Money(250),
+        };
+
+        var id = (await commands.CreateDraftAsync(As(UserId.New()), terms)).AuctionId!.Value;
+
+        const string sql = "SELECT concat_ws('|', floor_type, bid_entry, coalesce(reserve_cents::text, '-'), increment_cents, " +
+                           "extract(epoch FROM ends_at - $2)::int) FROM auctions WHERE id = $1";
+        var stored = await db.ScalarAsync<string>(MigratedDatabase.Verifier, sql, id.Value, now);
+        Assert.Equal($"{storedFloor}|{storedEntry}|{(floor == FloorType.Reserve ? "2000" : "-")}|250|3600", stored);
+    }
+
+    [Theory]
     [InlineData("not-a-uuid", "8c2f7d2e-7d1a-4c1e-9f3b-2b6f2f9f6a10")]
     [InlineData("8c2f7d2e-7d1a-4c1e-9f3b-2b6f2f9f6a10", "")]
     public async Task A_malformed_id_is_an_invalid_argument(string actorId, string auctionId)

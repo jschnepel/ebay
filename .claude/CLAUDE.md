@@ -22,4 +22,6 @@ Follow the engineering standards in `standards/` (a local, untracked, read-only 
 - Test: `dotnet test --no-build -c Release --report-trx --results-directory TestResults` (needs Docker)
 - Infrastructure: `docker compose -f deploy/compose.yaml up -d postgres redis` (copy `deploy/.env.example` to `deploy/.env` and set the five passwords)
 - Migrate: `docker compose -f deploy/compose.yaml up migrator` (exits 0; safe to repeat)
+- Engine: `docker compose -f deploy/compose.yaml up -d --wait engine` (internal gRPC only; healthy once it reaches PostgreSQL)
+- Contract: `docker run --rm -v "$PWD/src/Auction.Contracts:/workspace" -w /workspace bufbuild/buf:1.75.0 lint` (and `format --diff --exit-code`)
 - New migration: `dotnet tool restore`, then `dotnet ef migrations add <Name> --project src/Auction.Migrator --output-dir Migrations`; triggers and grants go in `Schema/` SQL called from the migration
