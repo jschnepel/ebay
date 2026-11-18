@@ -79,13 +79,15 @@ public sealed class LiveHintTests(MigratedDatabase db)
             Assert.Equal(HttpStatusCode.Created, bid.StatusCode);
         }
 
-        var version = (await watcher.NextForAsync(id, Bound)).Version;
+        // The bid's own version: the publish hint can still arrive after the watcher subscribes.
+        var version = (await api.Anonymous().GetJsonAsync($"/api/v1/auctions/{id}")).GetProperty("version").GetInt64();
+        Assert.Equal(version, (await watcher.NextForAsync(id, Bound, minimumVersion: version)).Version);
 
         // As if the relay had sent nothing and stopped before stamping it.
         await db.ExecuteAsync(
             MigratedDatabase.Api, "UPDATE outbox_events SET published_at = NULL WHERE auction_id = $1 AND auction_version = $2", id, version);
 
-        Assert.Equal(version, (await watcher.NextForAsync(id, Bound)).Version);
+        Assert.Equal(version, (await watcher.NextForAsync(id, Bound, minimumVersion: version)).Version);
 
         // The relay stamps an event just after sending it.
         var deadline = DateTime.UtcNow + Bound;
