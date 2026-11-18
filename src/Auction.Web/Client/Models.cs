@@ -96,3 +96,22 @@ public sealed record Problem
 
     public static Problem Unreachable { get; } = new() { Status = 0, Title = "The server can't be reached. Check the connection and try again." };
 }
+
+// The admin area's shapes.
+
+public sealed record RecentBid(Guid AuctionId, string Title, long? AmountCents, string Source, DateTimeOffset AcceptedAt);
+
+public sealed record Activity(long ActiveAuctions, long BidsLastFiveMinutes, IReadOnlyList<RecentBid> RecentBids, int OnlineUsers);
+
+public sealed record HealthItem(string Name, string State, string? Detail);
+
+public sealed record AdminHealth(IReadOnlyList<HealthItem> Components, long OutboxBacklog);
+
+public sealed record LatencySummary(int Count, long? P50Ms, long? P95Ms);
+
+public sealed record AdminKpis(int WindowSeconds, LatencySummary ApiRequest, LatencySummary Bid, LatencySummary EngineCall, LatencySummary PublishLag);
+
+public sealed record ModeratedAuction(
+    Guid Id, string Title, string Status, Guid SellerId, string SellerName, long? CurrentPriceCents, long BidCount, DateTimeOffset EndsAt, long Version);
+
+public sealed record UserSummary(Guid Id, string DisplayName, string Kind, bool Disabled, DateTimeOffset CreatedAt);

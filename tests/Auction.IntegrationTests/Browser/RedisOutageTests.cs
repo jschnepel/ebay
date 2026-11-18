@@ -40,6 +40,14 @@ public sealed class RedisOutageTests(MigratedDatabase db, Browsers browsers)
 
             Assert.Equal(1200, (await api.Anonymous().GetJsonAsync($"/api/v1/auctions/{id}")).GetProperty("currentPriceCents").GetInt64());
             await Assertions.Expect(watcher.GetByTestId("current-price")).ToHaveTextAsync("$12.00", new() { Timeout = 12_000 });
+
+            // Admin health shows Redis degraded, never the whole system down (REL-02).
+            var adminEmail = await db.InsertPasswordAccountAsync("admin", "outage-admin-password");
+            var (admin, signedIn) = await api.SignInAsync(adminEmail, "outage-admin-password");
+            Assert.Equal(HttpStatusCode.OK, signedIn.StatusCode);
+            var health = (await admin.GetJsonAsync("/api/v1/admin/health")).GetProperty("components").EnumerateArray()
+                .ToDictionary(c => c.GetProperty("name").GetString()!, c => c.GetProperty("state").GetString());
+            Assert.Equal(("degraded", "ok", "ok"), (health["Redis"], health["Engine"], health["PostgreSQL"]));
         }
         finally
         {

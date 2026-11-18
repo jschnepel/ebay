@@ -118,6 +118,30 @@ public static class Lifecycle
             : Ok(state with { Status = AuctionStatus.Cancelled });
     }
 
+    /// <summary>Owner only, and only a draft: it has no bids, so deleting it loses nothing.</summary>
+    public static LifecycleResult DeleteDraft(AuctionState state, UserId actorId)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        if (actorId != state.SellerId)
+        {
+            return Fail(state, LifecycleError.NotOwner);
+        }
+
+        return state.Status == AuctionStatus.Draft ? Ok(state) : Fail(state, LifecycleError.InvalidState);
+    }
+
+    /// <summary>
+    /// Admin moderation: cancels a Scheduled, Active or Suspended auction, even after bids. The history,
+    /// price and leader stay as they were; there is no outcome and no winner.
+    /// </summary>
+    public static LifecycleResult CancelByAdmin(AuctionState state)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        return state.Status is AuctionStatus.Scheduled or AuctionStatus.Active or AuctionStatus.Suspended
+            ? Ok(state with { Status = AuctionStatus.Cancelled })
+            : Fail(state, LifecycleError.InvalidState);
+    }
+
     /// <summary>Admin moderation: Active → Suspended. The end time is not extended.</summary>
     public static LifecycleResult Suspend(AuctionState state)
     {

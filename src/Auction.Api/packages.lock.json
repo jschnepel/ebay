@@ -8,6 +8,16 @@
         "resolved": "3.36.2",
         "contentHash": "Ci1q1iJg74qAE5riTA2FbMS0wPbpruPQI/JQ9DrAsRo2VsSxgt1e/pmxGxgrci+pXJEgrSYg2vPl8rrStZkclQ=="
       },
+      "Grpc.HealthCheck": {
+        "type": "Direct",
+        "requested": "[2.85.0, )",
+        "resolved": "2.85.0",
+        "contentHash": "cuHDmUdXSSR+xeXPJ65lcCOuH5gHCqjaA/jXnTKNpl0jysdOoqGpeyElhaeIyEtJlenLth9VGGpGL7VYWKIsKA==",
+        "dependencies": {
+          "Google.Protobuf": "3.36.2",
+          "Grpc.Core.Api": "2.85.0"
+        }
+      },
       "Grpc.Net.ClientFactory": {
         "type": "Direct",
         "requested": "[2.85.0, )",

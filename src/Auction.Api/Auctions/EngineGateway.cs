@@ -11,7 +11,7 @@ namespace Auction.Api.Auctions;
 /// the engine's recorded outcome instead of running the command twice.
 /// </summary>
 internal sealed partial class EngineGateway(
-    AuctionCommandService.AuctionCommandServiceClient client, ApiOptions options, ILogger<EngineGateway> logger)
+    AuctionCommandService.AuctionCommandServiceClient client, ApiOptions options, Admin.AdminKpis kpis, ILogger<EngineGateway> logger)
 {
     public const string KeyHeader = "Idempotency-Key";
 
@@ -40,6 +40,7 @@ internal sealed partial class EngineGateway(
             deadline: DateTime.UtcNow + options.EngineDeadline,
             cancellationToken: http.RequestAborted);
         CommandResult result;
+        var started = TimeProvider.System.GetTimestamp();
         try
         {
             result = await call(callOptions);
@@ -48,6 +49,10 @@ internal sealed partial class EngineGateway(
         {
             LogEngineUnavailable(logger, e.StatusCode, e);
             return Unavailable(http);
+        }
+        finally
+        {
+            kpis.RecordEngine(TimeProvider.System.GetElapsedTime(started));
         }
 
         return result.Succeeded ? accepted(result) : Refused(http, result);

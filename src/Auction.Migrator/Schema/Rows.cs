@@ -130,6 +130,9 @@ public sealed class NotificationRow
 
     public Guid? AuctionId { get; set; }
 
+    /// <summary>The auction version whose change this reports, so the relay can tell each notified user live.</summary>
+    public long? AuctionVersion { get; set; }
+
     public string Kind { get; set; } = "";
 
     public string? Reason { get; set; }

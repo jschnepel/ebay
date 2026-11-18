@@ -36,6 +36,34 @@ internal sealed class AuctionCommandGrpcService(AuctionEngine engine) : V1.Aucti
         return new V1.CancelResponse { Result = ToResult(outcome) };
     }
 
+    public override async Task<V1.DeleteDraftResponse> DeleteDraft(V1.DeleteDraftRequest request, ServerCallContext context)
+    {
+        var outcome = await engine.DeleteDraftAsync(
+            Context(request.RequestId, request.ActorId), AuctionIdOf(request.AuctionId), context.CancellationToken);
+        return new V1.DeleteDraftResponse { Result = ToResult(outcome) };
+    }
+
+    public override async Task<V1.SuspendResponse> Suspend(V1.SuspendRequest request, ServerCallContext context)
+    {
+        var outcome = await engine.SuspendAsync(
+            Context(request.RequestId, request.ActorId), AuctionIdOf(request.AuctionId), request.Reason, context.CancellationToken);
+        return new V1.SuspendResponse { Result = ToResult(outcome) };
+    }
+
+    public override async Task<V1.ResumeResponse> Resume(V1.ResumeRequest request, ServerCallContext context)
+    {
+        var outcome = await engine.ResumeAsync(
+            Context(request.RequestId, request.ActorId), AuctionIdOf(request.AuctionId), request.Reason, context.CancellationToken);
+        return new V1.ResumeResponse { Result = ToResult(outcome) };
+    }
+
+    public override async Task<V1.AdminCancelResponse> AdminCancel(V1.AdminCancelRequest request, ServerCallContext context)
+    {
+        var outcome = await engine.AdminCancelAsync(
+            Context(request.RequestId, request.ActorId), AuctionIdOf(request.AuctionId), request.Reason, context.CancellationToken);
+        return new V1.AdminCancelResponse { Result = ToResult(outcome) };
+    }
+
     public override async Task<V1.PlaceBidResponse> PlaceBid(V1.PlaceBidRequest request, ServerCallContext context)
     {
         var outcome = await engine.PlaceBidAsync(

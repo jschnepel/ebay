@@ -11,9 +11,19 @@
 <MudLayout>
     <MudAppBar Elevation="0" Dense="true">
         <nav aria-label="Main" class="d-flex align-center flex-wrap">
-            <MudButton Href="/" Color="Color.Inherit">Buy</MudButton>
-            <MudButton Href="/my-bids" Color="Color.Inherit">My bids</MudButton>
-            <MudButton Href="/sell" Color="Color.Inherit">Sell</MudButton>
+            @if (Session.Account?.IsAdmin == true)
+            {
+                @* Admin accounts can't buy or sell, so they see only the admin area. *@
+                <MudButton Href="/admin" Color="Color.Inherit">Activity</MudButton>
+                <MudButton Href="/admin/auctions" Color="Color.Inherit">Auctions</MudButton>
+                <MudButton Href="/admin/users" Color="Color.Inherit">Users</MudButton>
+            }
+            else
+            {
+                <MudButton Href="/" Color="Color.Inherit">Buy</MudButton>
+                <MudButton Href="/my-bids" Color="Color.Inherit">My bids</MudButton>
+                <MudButton Href="/sell" Color="Color.Inherit">Sell</MudButton>
+            }
         </nav>
         <MudSpacer />
         @if (Session.Account is { } account)

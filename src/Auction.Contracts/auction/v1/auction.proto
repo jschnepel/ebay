@@ -19,6 +19,12 @@ service AuctionCommandService {
   rpc Publish(PublishRequest) returns (PublishResponse);
   rpc Cancel(CancelRequest) returns (CancelResponse);
   rpc PlaceBid(PlaceBidRequest) returns (PlaceBidResponse);
+  // Owner only: removes a draft, which has no bids, so nothing is lost.
+  rpc DeleteDraft(DeleteDraftRequest) returns (DeleteDraftResponse);
+  // Admin moderation; the actor is an admin (checked by the API) and the reason is required and audited.
+  rpc Suspend(SuspendRequest) returns (SuspendResponse);
+  rpc Resume(ResumeRequest) returns (ResumeResponse);
+  rpc AdminCancel(AdminCancelRequest) returns (AdminCancelResponse);
 }
 
 message CreateDraftRequest {
@@ -75,6 +81,50 @@ message PlaceBidResponse {
 }
 
 // A seller's terms. Editable while the auction is a draft; frozen at publish. Amounts are US cents.
+message DeleteDraftRequest {
+  string request_id = 1;
+  string actor_id = 2;
+  string auction_id = 3;
+}
+
+message DeleteDraftResponse {
+  CommandResult result = 1;
+}
+
+message SuspendRequest {
+  string request_id = 1;
+  string actor_id = 2;
+  string auction_id = 3;
+  // Shown to the seller and bidders, and kept in the audit log. 1 to 500 characters.
+  string reason = 4;
+}
+
+message SuspendResponse {
+  CommandResult result = 1;
+}
+
+message ResumeRequest {
+  string request_id = 1;
+  string actor_id = 2;
+  string auction_id = 3;
+  string reason = 4;
+}
+
+message ResumeResponse {
+  CommandResult result = 1;
+}
+
+message AdminCancelRequest {
+  string request_id = 1;
+  string actor_id = 2;
+  string auction_id = 3;
+  string reason = 4;
+}
+
+message AdminCancelResponse {
+  CommandResult result = 1;
+}
+
 message AuctionTerms {
   string title = 1;
   string description = 2;

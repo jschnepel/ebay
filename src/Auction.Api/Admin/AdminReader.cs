@@ -1,0 +1,132 @@
+using Auction.Api.Auctions;
+using Npgsql;
+
+namespace Auction.Api.Admin;
+
+public sealed record RecentBid(Guid AuctionId, string Title, long? AmountCents, string Source, DateTimeOffset AcceptedAt);
+
+public sealed record Activity(long ActiveAuctions, long BidsLastFiveMinutes, IReadOnlyList<RecentBid> RecentBids, int OnlineUsers);
+
+/// <summary>A published auction in the moderation list, with its seller (never a draft).</summary>
+public sealed record ModeratedAuction(
+    Guid Id, string Title, string Status, Guid SellerId, string SellerName, long? CurrentPriceCents, long BidCount, DateTimeOffset EndsAt, long Version);
+
+public sealed record UserSummary(Guid Id, string DisplayName, string Kind, bool Disabled, DateTimeOffset CreatedAt);
+
+/// <summary>
+/// The admin area's reads, as the api role. Drafts are never listed: they stay private to their seller
+/// even from admins. Searches take a title or display-name fragment, or an exact id.
+/// </summary>
+internal sealed class AdminReader(NpgsqlDataSource dataSource)
+{
+    private const string ActivitySql = """
+        SELECT (SELECT count(*) FROM auction.auctions WHERE status = 'active'),
+               (SELECT count(*) FROM auction.bids WHERE accepted_at > clock_timestamp() - interval '5 minutes')
+        """;
+
+    private const string RecentBidsSql = """
+        SELECT b.auction_id, a.title, b.amount_cents, b.source, b.accepted_at
+        FROM auction.bids b JOIN auction.auctions a ON a.id = b.auction_id
+        ORDER BY b.accepted_at DESC
+        LIMIT 10
+        """;
+
+    private const string AuctionsSql = """
+        SELECT a.id, a.title, a.status, a.seller_id, u.display_name, a.current_price_cents, a.accepted_bid_count, a.ends_at, a.version
+        FROM auction.auctions a JOIN auction.users u ON u.id = a.seller_id
+        WHERE a.status <> 'draft'
+          AND ($4::text IS NULL OR a.status = $4)
+          AND ($5::text IS NULL OR a.title ILIKE '%' || $5 || '%' OR u.display_name ILIKE '%' || $5 || '%' OR a.seller_id::text = $5 OR a.id::text = $5)
+          AND ($1::timestamptz IS NULL OR (a.ends_at, a.id) > ($1::timestamptz, $2::uuid))
+        ORDER BY a.ends_at, a.id
+        LIMIT $3
+        """;
+
+    private const string UsersSql = """
+        SELECT id, display_name, kind, disabled_at IS NOT NULL, created_at
+        FROM auction.users
+        WHERE ($4::text IS NULL OR display_name ILIKE '%' || $4 || '%' OR id::text = $4)
+          AND ($1::timestamptz IS NULL OR (created_at, id) > ($1::timestamptz, $2::uuid))
+        ORDER BY created_at, id
+        LIMIT $3
+        """;
+
+    public async Task<Activity> ActivityAsync(int onlineUsers, CancellationToken cancellationToken)
+    {
+        long active;
+        long recentCount;
+        await using (var counts = dataSource.CreateCommand(ActivitySql))
+        await using (var reader = await counts.ExecuteReaderAsync(cancellationToken))
+        {
+            await reader.ReadAsync(cancellationToken);
+            (active, recentCount) = (reader.GetInt64(0), reader.GetInt64(1));
+        }
+
+        var recent = new List<RecentBid>();
+        await using (var bids = dataSource.CreateCommand(RecentBidsSql))
+        await using (var reader = await bids.ExecuteReaderAsync(cancellationToken))
+        {
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                recent.Add(ReadRecentBid(reader));
+            }
+        }
+
+        return new Activity(active, recentCount, recent, onlineUsers);
+    }
+
+    public Task<Page<ModeratedAuction>> AuctionsAsync(
+        string? query, string? status, (DateTimeOffset At, Guid Id)? after, int pageSize, CancellationToken cancellationToken) =>
+        PageAsync(new ListQuery<ModeratedAuction>(AuctionsSql, [status, Blank(query)], reader => new ModeratedAuction(
+            reader.GetGuid(0), reader.GetString(1), reader.GetString(2), reader.GetGuid(3), reader.GetString(4),
+            reader.IsDBNull(5) ? null : reader.GetInt64(5), reader.GetInt64(6), reader.GetFieldValue<DateTimeOffset>(7), reader.GetInt64(8)),
+            item => (item.EndsAt, item.Id)), after, pageSize, cancellationToken);
+
+    public Task<Page<UserSummary>> UsersAsync(string? query, (DateTimeOffset At, Guid Id)? after, int pageSize, CancellationToken cancellationToken) =>
+        PageAsync(new ListQuery<UserSummary>(UsersSql, [Blank(query)], reader => new UserSummary(
+            reader.GetGuid(0), reader.GetString(1), reader.GetString(2), reader.GetBoolean(3), reader.GetFieldValue<DateTimeOffset>(4)),
+            item => (item.CreatedAt, item.Id)), after, pageSize, cancellationToken);
+
+    /// <summary>Unpublished events: the live-hint backlog shown in admin health.</summary>
+    public async Task<long> OutboxBacklogAsync(CancellationToken cancellationToken)
+    {
+        await using var command = dataSource.CreateCommand("SELECT count(*) FROM auction.outbox_events WHERE published_at IS NULL");
+        return (long)(await command.ExecuteScalarAsync(cancellationToken))!;
+    }
+
+    private static RecentBid ReadRecentBid(NpgsqlDataReader reader) => new(
+        reader.GetGuid(0), reader.GetString(1), reader.IsDBNull(2) ? null : reader.GetInt64(2), reader.GetString(3),
+        reader.GetFieldValue<DateTimeOffset>(4));
+
+    private static string? Blank(string? text) => string.IsNullOrWhiteSpace(text) ? null : text.Trim();
+
+    /// <summary>A keyset-paged list: its SQL, its text filters ($4 onward), how to read a row and its sort key.</summary>
+    private sealed record ListQuery<T>(string Sql, string?[] Filters, Func<NpgsqlDataReader, T> Read, Func<T, (DateTimeOffset, Guid)> Key);
+
+    private async Task<Page<T>> PageAsync<T>(ListQuery<T> query, (DateTimeOffset At, Guid Id)? after, int pageSize, CancellationToken cancellationToken)
+    {
+        await using var command = dataSource.CreateCommand(query.Sql);
+        command.Parameters.Add(new NpgsqlParameter { Value = (object?)after?.At ?? DBNull.Value, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.TimestampTz });
+        command.Parameters.Add(new NpgsqlParameter { Value = (object?)after?.Id ?? DBNull.Value, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Uuid });
+        command.Parameters.Add(new NpgsqlParameter { Value = pageSize + 1 });
+        foreach (var filter in query.Filters)
+        {
+            command.Parameters.Add(new NpgsqlParameter { Value = (object?)filter ?? DBNull.Value, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Text });
+        }
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var items = new List<T>();
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            items.Add(query.Read(reader));
+        }
+
+        if (items.Count <= pageSize)
+        {
+            return new Page<T>(items, null);
+        }
+
+        var (at, id) = query.Key(items[pageSize - 1]);
+        return new Page<T>(items[..pageSize], Cursors.Encode(at, id));
+    }
+}

@@ -12,8 +12,35 @@ internal sealed record LockedAuction(AuctionState State, long Version, long Last
 /// <summary>What a command found once it held the lock.</summary>
 internal sealed record LockResult(LockedAuction? Auction, DateTimeOffset Now, RecordedOutcome? Recorded);
 
-/// <summary>An accepted change to write: the state after the command, its history steps and its public event.</summary>
-internal sealed record AuctionChange(AuctionState After, IReadOnlyList<BidStep> Steps, string? EventType);
+/// <summary>Who a notification goes to: one user, the seller, or everyone who has bid (optionally but one).</summary>
+internal enum Audience
+{
+    User,
+    Seller,
+    Bidders,
+}
+
+/// <summary>An in-app notification (NOT-01), written in the same transaction as the change it reports.</summary>
+internal sealed record Notice(Audience Audience, string Kind, string? Reason = null, UserId? User = null, UserId? Except = null)
+{
+    public static Notice To(UserId user, string kind) => new(Audience.User, kind, User: user);
+}
+
+/// <summary>An admin's moderation action, kept in the audit log with its reason.</summary>
+internal sealed record AdminAction(UserId AdminId, string Action, string Reason);
+
+/// <summary>
+/// An accepted change to write: the state after the command, its history steps and its public event, plus
+/// any notifications, an audit row for an admin action, or the deletion of a draft.
+/// </summary>
+internal sealed record AuctionChange(AuctionState After, IReadOnlyList<BidStep> Steps, string? EventType)
+{
+    public IReadOnlyList<Notice> Notices { get; init; } = [];
+
+    public AdminAction? Audit { get; init; }
+
+    public bool DeletesDraft { get; init; }
+}
 
 /// <summary>The SQL for one auction command. Every method runs inside the caller's transaction.</summary>
 internal static class AuctionStore
@@ -148,6 +175,13 @@ internal static class AuctionStore
     {
         var after = change.After;
         var version = before.Version + 1;
+        if (change.DeletesDraft)
+        {
+            // A draft has no bids, maxima, events or notifications, so nothing else refers to it.
+            yield return Command("DELETE FROM auctions WHERE id = $1 AND status = 'draft'", after.Id.Value);
+            yield break;
+        }
+
         yield return UpdateCommand(after, version, now);
 
         var seq = before.LastHistorySeq;
@@ -187,7 +221,49 @@ internal static class AuctionStore
                 type,
                 PublicPayload(after.Id, version));
         }
+
+        foreach (var notice in change.Notices)
+        {
+            yield return NoticeCommand(after, version, notice, now);
+        }
+
+        if (change.Audit is { } audit)
+        {
+            yield return Command(
+                "INSERT INTO admin_audit (admin_id, action, target_type, target_id, reason, at) VALUES ($1, $2, 'auction', $3, $4, $5)",
+                audit.AdminId.Value,
+                audit.Action,
+                after.Id.Value,
+                audit.Reason,
+                now);
+        }
     }
+
+    // Bidders are everyone with a row in the history, which includes this change's own new rows.
+    private static NpgsqlBatchCommand NoticeCommand(AuctionState after, long version, Notice notice, DateTimeOffset now) =>
+        notice.Audience switch
+        {
+            Audience.Bidders => Command(
+                """
+                INSERT INTO notifications (user_id, auction_id, auction_version, kind, reason, created_at)
+                SELECT DISTINCT bidder_id, $1::uuid, $2::bigint, $3::text, $4::text, $5::timestamptz FROM bids
+                WHERE auction_id = $1 AND ($6::uuid IS NULL OR bidder_id <> $6)
+                """,
+                after.Id.Value,
+                version,
+                notice.Kind,
+                notice.Reason,
+                now,
+                notice.Except?.Value),
+            _ => Command(
+                "INSERT INTO notifications (user_id, auction_id, auction_version, kind, reason, created_at) VALUES ($1, $2, $3, $4, $5::text, $6)",
+                notice.Audience == Audience.Seller ? after.SellerId.Value : notice.User!.Value.Value,
+                after.Id.Value,
+                version,
+                notice.Kind,
+                notice.Reason,
+                now),
+        };
 
     private static NpgsqlBatchCommand UpdateCommand(AuctionState after, long version, DateTimeOffset now) =>
         Command(

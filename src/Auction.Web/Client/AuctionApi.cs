@@ -52,8 +52,38 @@ public sealed class AuctionApi(HttpClient http)
     public Task<ApiResult<CommandResponse>> BidAsync(Guid id, long amountCents, string key) =>
         SendAsync<CommandResponse>(HttpMethod.Post, $"auctions/{id}/bids", new { amountCents }, key);
 
-    private static string WithCursor(string path, string? cursor) =>
-        cursor is null ? path : $"{path}?cursor={Uri.EscapeDataString(cursor)}";
+    public Task<ApiResult<CommandResponse>> DeleteDraftAsync(Guid id, string key) =>
+        SendAsync<CommandResponse>(HttpMethod.Delete, $"auctions/{id}", key: key);
+
+    public Task<ApiResult<Activity>> AdminActivityAsync() => SendAsync<Activity>(HttpMethod.Get, "admin/activity");
+
+    public Task<ApiResult<AdminHealth>> AdminHealthAsync() => SendAsync<AdminHealth>(HttpMethod.Get, "admin/health");
+
+    public Task<ApiResult<AdminKpis>> AdminKpisAsync() => SendAsync<AdminKpis>(HttpMethod.Get, "admin/kpis");
+
+    public Task<ApiResult<Page<ModeratedAuction>>> AdminAuctionsAsync(string? query, string? status, string? cursor) =>
+        SendAsync<Page<ModeratedAuction>>(HttpMethod.Get, WithCursor($"admin/auctions?q={Uri.EscapeDataString(query ?? "")}&status={Uri.EscapeDataString(status ?? "")}", cursor));
+
+    /// <summary>suspend, resume or cancel, with the reason the seller and bidders are told.</summary>
+    public Task<ApiResult<CommandResponse>> ModerateAsync(Guid id, string action, string reason, string key) =>
+        SendAsync<CommandResponse>(HttpMethod.Post, $"admin/auctions/{id}/{action}", new { reason }, key);
+
+    public Task<ApiResult<Page<UserSummary>>> AdminUsersAsync(string? query, string? cursor) =>
+        SendAsync<Page<UserSummary>>(HttpMethod.Get, WithCursor($"admin/users?q={Uri.EscapeDataString(query ?? "")}", cursor));
+
+    public Task<ApiResult<object>> SetUserDisabledAsync(Guid id, bool disabled, string reason) =>
+        SendAsync<object>(HttpMethod.Post, $"admin/users/{id}/{(disabled ? "disable" : "enable")}", new { reason });
+
+    private static string WithCursor(string path, string? cursor)
+    {
+        if (cursor is null)
+        {
+            return path;
+        }
+
+        var separator = path.Contains('?', StringComparison.Ordinal) ? '&' : '?';
+        return $"{path}{separator}cursor={Uri.EscapeDataString(cursor)}";
+    }
 
     private async Task<ApiResult<T>> SendAsync<T>(HttpMethod method, string path, object? body = null, string? key = null)
     {

@@ -45,6 +45,8 @@ public sealed class RoleGrantTests(MigratedDatabase db)
         { MigratedDatabase.Verifier, "SELECT 1 FROM user_limits" },
         { MigratedDatabase.Api, "SELECT 1 FROM users" },
         { MigratedDatabase.Api, "INSERT INTO users (id, email, normalized_email, display_name) SELECT gen_random_uuid(), 'a@b.c', 'A@B.C', 'A' WHERE false" },
+        { MigratedDatabase.Api, "UPDATE users SET disabled_at = now() WHERE false" },
+        { MigratedDatabase.Api, "INSERT INTO admin_audit (admin_id, action, target_type, target_id, reason) SELECT gen_random_uuid(), 'disable', 'user', gen_random_uuid(), 'r' WHERE false" },
     };
 
     public static TheoryData<string, string> Refused => new()
@@ -93,6 +95,8 @@ public sealed class RoleGrantTests(MigratedDatabase db)
 
         // Accounts belong to the API alone: nobody else reads emails, and nobody rewrites or deletes an account.
         { MigratedDatabase.Api, "UPDATE users SET password_hash = NULL WHERE false" },
+        { MigratedDatabase.Api, "UPDATE users SET kind = 'admin' WHERE false" },
+        { MigratedDatabase.Api, "UPDATE admin_audit SET reason = 'x' WHERE false" },
         { MigratedDatabase.Api, "DELETE FROM users WHERE false" },
         { MigratedDatabase.Engine, "SELECT 1 FROM users" },
         { MigratedDatabase.Verifier, "SELECT 1 FROM users" },

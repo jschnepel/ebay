@@ -212,6 +212,73 @@ public sealed class CloseWorkerTests(SweepDatabase sweep) : IClassFixture<SweepD
     private Task<long> RecordsAsync(CommandContext context) =>
         _db.ScalarAsync<long>(MigratedDatabase.Verifier, "SELECT count(*) FROM idempotency_records WHERE actor_id = $1", context.Actor.Value);
 
+    [Fact]
+    public async Task Notices_go_only_to_the_people_each_change_concerns()
+    {
+        var now = await _db.NowAsync();
+        var (seller, first, second, stranger) = (UserId.New(), UserId.New(), UserId.New(), UserId.New());
+        var terms = Terms(now, BidEntry.FixedIncrement, TimeSpan.FromSeconds(2)) with { FloorType = FloorType.MinimumBid, Reserve = null };
+        var id = await ActiveAsync(_engine, seller, terms);
+        Assert.True((await BidAsync(_engine, first, id, terms.OpeningPrice.Cents)).Succeeded);
+        Assert.True((await BidAsync(_engine, second, id, terms.OpeningPrice.Cents + terms.Increment.Cents)).Succeeded);
+
+        await _db.WaitUntilAsync(now.AddSeconds(2.2));
+        await SweepAsync();
+
+        Assert.Equal("outbid,lost", await NoticesAsync(first, id));
+        Assert.Equal("won", await NoticesAsync(second, id));
+        Assert.Equal("ended_sold", await NoticesAsync(seller, id));
+        Assert.Null(await NoticesAsync(stranger, id)); // control
+    }
+
+    [Fact]
+    public async Task A_reserve_not_met_tells_the_seller_and_every_bidder_and_no_bids_tells_the_seller()
+    {
+        var now = await _db.NowAsync();
+        var (seller, bidder) = (UserId.New(), UserId.New());
+        var terms = Terms(now, BidEntry.FixedIncrement, TimeSpan.FromSeconds(2)) with { FloorType = FloorType.Reserve, Reserve = new Money(5000) };
+        var reserved = await ActiveAsync(_engine, seller, terms);
+        var empty = await ActiveAsync(_engine, seller, Terms(now, duration: TimeSpan.FromSeconds(2)));
+        Assert.True((await BidAsync(_engine, bidder, reserved, terms.OpeningPrice.Cents)).Succeeded);
+
+        await _db.WaitUntilAsync(now.AddSeconds(2.2));
+        await SweepAsync();
+
+        Assert.Equal("reserve_not_met", await NoticesAsync(seller, reserved));
+        Assert.Equal("reserve_not_met", await NoticesAsync(bidder, reserved));
+        Assert.Equal("ended_no_bids", await NoticesAsync(seller, empty));
+    }
+
+    [Fact]
+    public async Task An_admin_suspension_tells_the_seller_and_bidders_its_reason_and_nobody_else()
+    {
+        var now = await _db.NowAsync();
+        var (seller, bidder, stranger, admin) = (UserId.New(), UserId.New(), UserId.New(), UserId.New());
+        var id = await ActiveAsync(_engine, seller, Terms(now));
+        Assert.True((await BidAsync(_engine, bidder, id, 5000)).Succeeded);
+
+        Assert.True((await _engine.SuspendAsync(As(admin), id, "Checking the photos", _ct)).Succeeded);
+
+        foreach (var user in new[] { seller, bidder })
+        {
+            Assert.Equal("suspended:Checking the photos", await _db.ScalarAsync<string>(
+                MigratedDatabase.Migrator,
+                "SELECT string_agg(kind || ':' || reason, ',') FROM notifications WHERE user_id = $1 AND auction_id = $2",
+                user.Value,
+                id.Value));
+        }
+
+        Assert.Null(await NoticesAsync(stranger, id)); // control
+        Assert.Null(await NoticesAsync(admin, id));
+    }
+
+    private Task<string?> NoticesAsync(UserId user, AuctionId auction) =>
+        _db.ScalarAsync<string>(
+            MigratedDatabase.Migrator,
+            "SELECT string_agg(kind, ',' ORDER BY id) FROM notifications WHERE user_id = $1 AND auction_id = $2",
+            user.Value,
+            auction.Value);
+
     private Task<int> SweepAsync() => _engine.AdvanceDueAuctionsAsync(_ct);
 
     private Task<string?> StatusAsync(AuctionId id) =>

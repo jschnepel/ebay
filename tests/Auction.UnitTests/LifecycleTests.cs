@@ -269,6 +269,43 @@ public sealed class LifecycleTests
         Assert.Equal(LifecycleError.InvalidState, Lifecycle.CancelByOwner(state, Seller).Error);
     }
 
+    [Theory]
+    [InlineData(AuctionStatus.Scheduled)]
+    [InlineData(AuctionStatus.Active)]
+    [InlineData(AuctionStatus.Suspended)]
+    public void An_admin_cancels_a_scheduled_active_or_suspended_auction_even_after_bids_and_keeps_its_history(AuctionStatus status)
+    {
+        var state = WithBids(Active(Terms()), (A, 50m)) with { Status = status };
+
+        var result = Lifecycle.CancelByAdmin(state);
+
+        Assert.Equal(AuctionStatus.Cancelled, result.State.Status);
+        Assert.Equal((state.CurrentPrice, state.LeaderId, state.AcceptedBidCount), (result.State.CurrentPrice, result.State.LeaderId, result.State.AcceptedBidCount));
+        Assert.Null(result.State.Outcome);
+    }
+
+    [Theory]
+    [InlineData(AuctionStatus.Draft)]
+    [InlineData(AuctionStatus.Closed)]
+    [InlineData(AuctionStatus.Cancelled)]
+    public void An_admin_cannot_cancel_a_draft_or_a_finished_auction(AuctionStatus status)
+    {
+        var state = Active(Terms()) with { Status = status };
+
+        Assert.Equal(LifecycleError.InvalidState, Lifecycle.CancelByAdmin(state).Error);
+    }
+
+    [Fact]
+    public void Only_the_seller_deletes_a_draft_and_never_a_published_auction()
+    {
+        var draft = Draft(Terms());
+        var published = Active(Terms());
+
+        Assert.True(Lifecycle.DeleteDraft(draft, Seller).Succeeded); // control
+        Assert.Equal(LifecycleError.NotOwner, Lifecycle.DeleteDraft(draft, A).Error);
+        Assert.Equal(LifecycleError.InvalidState, Lifecycle.DeleteDraft(published, Seller).Error);
+    }
+
     [Fact]
     public void Resume_returns_to_active_only_before_the_end()
     {

@@ -15,8 +15,13 @@ public sealed class AuctionEngine(NpgsqlDataSource dataSource, EngineOptions opt
     private const string UniqueViolation = "23505";
     private const int KeySweepBatchSize = 1_000;
 
+    public const int ReasonMaxLength = 500;
+
     /// <summary>The result of applying the rules to a locked auction: an outcome, and a change if accepted.</summary>
     private sealed record Decision(CommandOutcome Outcome, AuctionChange? Change);
+
+    /// <summary>An admin moderation command: its audit name, the reason, the lifecycle rule and its event.</summary>
+    private sealed record Moderation(string Action, string Reason, Func<AuctionState, DateTimeOffset, LifecycleResult> Rule, string EventType);
 
     public Task<CommandOutcome> CreateDraftAsync(CommandContext context, AuctionTerms terms, CancellationToken cancellationToken)
     {
@@ -68,10 +73,63 @@ public sealed class AuctionEngine(NpgsqlDataSource dataSource, EngineOptions opt
         RunAsync(context, auctionId, RequestHash.Of("bid", new { auctionId, amount }), (auction, now) =>
         {
             var decision = Bidding.Place(auction.State, context.Actor, amount, now, options.Limits);
-            return decision.Accepted
-                ? Accept(auction, new AuctionChange(decision.State, decision.Steps, "auction.bid_accepted"))
-                : Refuse(auctionId, Enum.Parse<CommandError>(decision.Rejection.ToString()));
+            if (!decision.Accepted)
+            {
+                return Refuse(auctionId, Enum.Parse<CommandError>(decision.Rejection.ToString()));
+            }
+
+            // Only the bidder who just lost the lead is told; a bid outbid at once changes no leader.
+            var previous = auction.State.LeaderId;
+            Notice[] notices = previous is { } loser && loser != decision.State.LeaderId ? [Notice.To(loser, "outbid")] : [];
+            return Accept(auction, new AuctionChange(decision.State, decision.Steps, "auction.bid_accepted") { Notices = notices });
         }, cancellationToken);
+
+    /// <summary>The owner removes their draft. Anyone else gets "not found", as for any draft.</summary>
+    public Task<CommandOutcome> DeleteDraftAsync(CommandContext context, AuctionId auctionId, CancellationToken cancellationToken) =>
+        RunAsync(context, auctionId, RequestHash.Of("delete", auctionId), (auction, _) =>
+        {
+            var result = Lifecycle.DeleteDraft(auction.State, context.Actor);
+            return result.Succeeded
+                ? Accept(auction, new AuctionChange(result.State, [], EventType: null) { DeletesDraft = true })
+                : Refuse(auctionId, ToError(result.Error));
+        }, cancellationToken);
+
+    /// <summary>Admin: Active to Suspended, with a reason the seller and bidders are told and the audit log keeps.</summary>
+    public Task<CommandOutcome> SuspendAsync(CommandContext context, AuctionId auctionId, string reason, CancellationToken cancellationToken) =>
+        ModerateAsync(context, auctionId, new Moderation("suspend", reason, (state, _) => Lifecycle.Suspend(state), "auction.suspended"), cancellationToken);
+
+    /// <summary>Admin: Suspended back to Active, before the end.</summary>
+    public Task<CommandOutcome> ResumeAsync(CommandContext context, AuctionId auctionId, string reason, CancellationToken cancellationToken) =>
+        ModerateAsync(context, auctionId, new Moderation("resume", reason, Lifecycle.Resume, "auction.resumed"), cancellationToken);
+
+    /// <summary>Admin: cancels a Scheduled, Active or Suspended auction, even after bids; the history stays.</summary>
+    public Task<CommandOutcome> AdminCancelAsync(CommandContext context, AuctionId auctionId, string reason, CancellationToken cancellationToken) =>
+        ModerateAsync(context, auctionId, new Moderation("cancel", reason, (state, _) => Lifecycle.CancelByAdmin(state), "auction.cancelled"), cancellationToken);
+
+    private Task<CommandOutcome> ModerateAsync(CommandContext context, AuctionId auctionId, Moderation moderation, CancellationToken cancellationToken)
+    {
+        var reason = moderation.Reason.Trim();
+        return RunAsync(context, auctionId, RequestHash.Of(moderation.Action, new { auctionId, reason }), (auction, now) =>
+        {
+            if (reason.Length is 0 or > ReasonMaxLength)
+            {
+                return Refuse(auctionId, CommandError.ValidationFailed, [new FieldError("reason", reason.Length == 0 ? "required" : "too_long")]);
+            }
+
+            var result = moderation.Rule(auction.State, now);
+            if (!result.Succeeded)
+            {
+                return Refuse(auctionId, ToError(result.Error));
+            }
+
+            var kind = moderation.Action switch { "suspend" => "suspended", "resume" => "resumed", _ => "cancelled" };
+            return Accept(auction, new AuctionChange(result.State, [], moderation.EventType)
+            {
+                Notices = [new Notice(Audience.Seller, kind, reason), new Notice(Audience.Bidders, kind, reason)],
+                Audit = new AdminAction(context.Actor, moderation.Action, reason),
+            });
+        }, cancellationToken);
+    }
 
     /// <summary>
     /// Activates scheduled auctions whose start has passed and closes auctions whose end has passed.
@@ -245,8 +303,11 @@ public sealed class AuctionEngine(NpgsqlDataSource dataSource, EngineOptions opt
             return false;
         }
 
-        var type = result.State.Status == AuctionStatus.Closed ? "auction.closed" : "auction.activated";
-        var change = new AuctionChange(result.State, [], type);
+        var closed = result.State.Status == AuctionStatus.Closed;
+        var change = new AuctionChange(result.State, [], closed ? "auction.closed" : "auction.activated")
+        {
+            Notices = closed ? ClosingNotices(result.State) : [],
+        };
         await using var batch = new NpgsqlBatch(connection, transaction);
         foreach (var command in AuctionStore.ChangeCommands(auction, change, claimed.Now, Guid.CreateVersion7()))
         {
@@ -257,6 +318,19 @@ public sealed class AuctionEngine(NpgsqlDataSource dataSource, EngineOptions opt
         await transaction.CommitAsync(cancellationToken);
         return true;
     }
+
+    // NOT-01 at close: the winner, the other bidders and the seller each hear their own outcome.
+    private static Notice[] ClosingNotices(AuctionState closed) => closed.Outcome switch
+    {
+        CloseOutcome.Sold =>
+        [
+            Notice.To(closed.LeaderId!.Value, "won"),
+            new Notice(Audience.Bidders, "lost", Except: closed.LeaderId),
+            new Notice(Audience.Seller, "ended_sold"),
+        ],
+        CloseOutcome.ReserveNotMet => [new Notice(Audience.Seller, "reserve_not_met"), new Notice(Audience.Bidders, "reserve_not_met")],
+        _ => [new Notice(Audience.Seller, "ended_no_bids")],
+    };
 
     // A draft is private to its seller: to anyone else it is refused exactly like an id that doesn't exist.
     private static bool IsVisibleTo(LockedAuction auction, UserId actor) =>

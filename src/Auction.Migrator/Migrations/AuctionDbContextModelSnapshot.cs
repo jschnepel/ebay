@@ -339,6 +339,10 @@ namespace Auction.Migrator.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("auction_id");
 
+                    b.Property<long?>("AuctionVersion")
+                        .HasColumnType("bigint")
+                        .HasColumnName("auction_version");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("timestamp with time zone")

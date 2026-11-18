@@ -1,0 +1,138 @@
+@page "/admin"
+@implements IDisposable
+@inject AuctionApi Api
+@inject Session Session
+
+<PageTitle>Admin activity</PageTitle>
+<MudText Typo="Typo.h4" HtmlTag="h1" Class="mb-4">Activity</MudText>
+
+@if (_forbidden)
+{
+    <MudText>Page not found.</MudText>
+}
+else
+{
+    <MudGrid>
+        <MudItem xs="12" md="6">
+            <MudPaper Class="pa-4" Outlined="true">
+                <MudText Typo="Typo.h6" HtmlTag="h2">Live activity</MudText>
+                @if (_activity is { } activity)
+                {
+                    <MudSimpleTable Dense="true" Class="mb-2">
+                        <tbody>
+                            <tr><th scope="row">Active auctions</th><td data-testid="active-auctions">@activity.ActiveAuctions</td></tr>
+                            <tr><th scope="row">Bids in the last 5 minutes</th><td>@activity.BidsLastFiveMinutes</td></tr>
+                            <tr><th scope="row">Signed-in users online</th><td>@activity.OnlineUsers</td></tr>
+                        </tbody>
+                    </MudSimpleTable>
+                    <MudText Typo="Typo.subtitle2" HtmlTag="h3">Recent bids</MudText>
+                    <MudSimpleTable Dense="true">
+                        <thead><tr><th>Item</th><th>Amount</th><th>When</th></tr></thead>
+                        <tbody>
+                            @foreach (var bid in activity.RecentBids)
+                            {
+                                <tr data-testid="recent-bid">
+                                    <td><MudLink Href="@($"/auctions/{bid.AuctionId}")">@bid.Title</MudLink></td>
+                                    <td>@(bid.AmountCents is { } cents ? Format.Dollars(cents) : "outbid at once")</td>
+                                    <td>@Format.Time(bid.AcceptedAt)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </MudSimpleTable>
+                }
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" md="6">
+            <MudPaper Class="pa-4 mb-4" Outlined="true">
+                <MudText Typo="Typo.h6" HtmlTag="h2">System health</MudText>
+                @if (_health is { } health)
+                {
+                    <MudSimpleTable Dense="true">
+                        <tbody>
+                            @foreach (var item in health.Components)
+                            {
+                                <tr data-testid="health-row"><th scope="row">@item.Name</th><td>@item.State</td></tr>
+                            }
+                            <tr><th scope="row">Live-update backlog</th><td data-testid="outbox-backlog">@health.OutboxBacklog</td></tr>
+                        </tbody>
+                    </MudSimpleTable>
+                }
+            </MudPaper>
+            <MudPaper Class="pa-4" Outlined="true">
+                <MudText Typo="Typo.h6" HtmlTag="h2">Latency, last 5 minutes</MudText>
+                @if (_kpis is { } kpis)
+                {
+                    <MudSimpleTable Dense="true">
+                        <thead><tr><th>Measure</th><th>p50</th><th>p95</th><th>Samples</th></tr></thead>
+                        <tbody>
+                            @foreach (var (name, summary) in new[] { ("API request", kpis.ApiRequest), ("Bid", kpis.Bid), ("Engine call", kpis.EngineCall), ("Publish lag", kpis.PublishLag) })
+                            {
+                                <tr data-testid="kpi-row">
+                                    <th scope="row">@name</th>
+                                    <td>@Ms(summary.P50Ms)</td>
+                                    <td>@Ms(summary.P95Ms)</td>
+                                    <td>@summary.Count</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </MudSimpleTable>
+                }
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+}
+
+@code {
+    // The panels refresh on their own every second; an admin never needs to reload.
+    private readonly CancellationTokenSource _stop = new();
+    private Activity? _activity;
+    private AdminHealth? _health;
+    private AdminKpis? _kpis;
+    private bool _forbidden;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Session.LoadAsync();
+        _forbidden = Session.Account?.IsAdmin != true;
+        if (!_forbidden)
+        {
+            await RefreshAsync();
+            _ = PollAsync(_stop.Token);
+        }
+    }
+
+    private static string Ms(long? value) => value is { } ms ? $"{ms} ms" : "not measured";
+
+    private async Task RefreshAsync()
+    {
+        var activity = Api.AdminActivityAsync();
+        var health = Api.AdminHealthAsync();
+        var kpis = Api.AdminKpisAsync();
+        _activity = (await activity).Value ?? _activity;
+        _health = (await health).Value ?? _health;
+        _kpis = (await kpis).Value ?? _kpis;
+    }
+
+    private async Task PollAsync(CancellationToken stop)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(stop))
+            {
+                await RefreshAsync();
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // The page closed.
+        }
+    }
+
+    public void Dispose()
+    {
+        _stop.Cancel();
+        _stop.Dispose();
+    }
+}

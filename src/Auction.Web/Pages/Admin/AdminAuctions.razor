@@ -1,0 +1,141 @@
+@page "/admin/auctions"
+@inject AuctionApi Api
+@inject Session Session
+
+<PageTitle>Moderate auctions</PageTitle>
+<MudText Typo="Typo.h4" HtmlTag="h1" Class="mb-4">Auctions</MudText>
+
+@if (_forbidden)
+{
+    <MudText>Page not found.</MudText>
+}
+else
+{
+    <MudStack Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.End" Class="mb-2">
+        <MudTextField @bind-Value="_query" Label="Title, seller name or id" Immediate="true" />
+        <MudSelect T="string" @bind-Value="_status" Label="Status">
+            <MudSelectItem T="string" Value="@("")">Any</MudSelectItem>
+            <MudSelectItem T="string" Value="@("active")">Active</MudSelectItem>
+            <MudSelectItem T="string" Value="@("scheduled")">Scheduled</MudSelectItem>
+            <MudSelectItem T="string" Value="@("suspended")">Suspended</MudSelectItem>
+            <MudSelectItem T="string" Value="@("closed")">Closed</MudSelectItem>
+            <MudSelectItem T="string" Value="@("cancelled")">Cancelled</MudSelectItem>
+        </MudSelect>
+        <MudButton Variant="Variant.Outlined" OnClick="SearchAsync">Search</MudButton>
+    </MudStack>
+    <MudTextField @bind-Value="_reason" Label="Reason (sent to the seller and bidders, kept in the audit log)" Immediate="true" MaxLength="500" Class="mb-2" />
+
+    @if (_message is not null)
+    {
+        <MudAlert Class="mb-2" Severity="@(_failed ? Severity.Error : Severity.Success)" data-testid="moderation-result">@_message</MudAlert>
+    }
+
+    @if (_items is not null)
+    {
+        <MudSimpleTable Dense="true">
+            <thead><tr><th>Item</th><th>Seller</th><th>Price</th><th>Bids</th><th>Status</th><th>Ends</th><th>Actions</th></tr></thead>
+            <tbody>
+                @foreach (var auction in _items)
+                {
+                    <tr data-testid="moderated-auction">
+                        <td><MudLink Href="@($"/auctions/{auction.Id}")">@auction.Title</MudLink></td>
+                        <td>@auction.SellerName</td>
+                        <td>@(auction.CurrentPriceCents is { } cents ? Format.Dollars(cents) : "no bids")</td>
+                        <td>@auction.BidCount</td>
+                        <td>@Format.Status(auction.Status)</td>
+                        <td>@Format.Time(auction.EndsAt)</td>
+                        <td>
+                            @if (auction.Status == "active")
+                            {
+                                <MudButton Size="Size.Small" OnClick="@(() => ModerateAsync(auction, Suspend))" Disabled="_busy">Suspend</MudButton>
+                            }
+                            @if (auction.Status == "suspended")
+                            {
+                                <MudButton Size="Size.Small" OnClick="@(() => ModerateAsync(auction, Resume))" Disabled="_busy">Resume</MudButton>
+                            }
+                            @if (auction.Status is "scheduled" or "active" or "suspended")
+                            {
+                                <MudButton Size="Size.Small" Color="Color.Error" OnClick="@(() => ModerateAsync(auction, Cancel))" Disabled="_busy">Cancel</MudButton>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+        @if (_next is not null)
+        {
+            <MudButton Class="mt-2" Variant="Variant.Outlined" OnClick="MoreAsync">Show more</MudButton>
+        }
+    }
+}
+
+@code {
+    private string _query = "";
+    private string _status = "";
+    private string _reason = "";
+    private List<ModeratedAuction>? _items;
+    private string? _next;
+    private string? _message;
+    private bool _failed;
+    private bool _busy;
+    private bool _forbidden;
+    private readonly Dictionary<(Guid, string), string> _keys = [];
+    private const string Suspend = "suspend";
+    private const string Resume = "resume";
+    private const string Cancel = "cancel";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Session.LoadAsync();
+        _forbidden = Session.Account?.IsAdmin != true;
+        if (!_forbidden)
+        {
+            await SearchAsync();
+        }
+    }
+
+    private async Task SearchAsync()
+    {
+        (_items, _next) = (null, null);
+        await MoreAsync();
+    }
+
+    private async Task MoreAsync()
+    {
+        var page = await Api.AdminAuctionsAsync(_query, _status, _next);
+        if (!page.Succeeded)
+        {
+            (_failed, _message) = (true, page.Message);
+            return;
+        }
+
+        (_items ??= []).AddRange(page.Value!.Items);
+        _next = page.Value.NextCursor;
+    }
+
+    private async Task ModerateAsync(ModeratedAuction auction, string action)
+    {
+        if (string.IsNullOrWhiteSpace(_reason))
+        {
+            (_failed, _message) = (true, "Give a reason first; the seller and bidders see it.");
+            return;
+        }
+
+        if (!_keys.TryGetValue((auction.Id, action), out var key))
+        {
+            key = Guid.NewGuid().ToString();
+            _keys[(auction.Id, action)] = key;
+        }
+
+        _busy = true;
+        var result = await Api.ModerateAsync(auction.Id, action, _reason, key);
+        _busy = false;
+        if (result.Succeeded || result.Problem!.Status is not (0 or 503))
+        {
+            _keys.Remove((auction.Id, action));
+        }
+
+        (_failed, _message) = result.Succeeded ? (false, $"Done: {action} \"{auction.Title}\".") : (true, result.Message);
+        await SearchAsync();
+    }
+}

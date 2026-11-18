@@ -4,8 +4,11 @@ using Npgsql;
 
 namespace Auction.Api.Live;
 
-/// <summary>One outbox event as the relay publishes it: which auction changed, and its new version.</summary>
-public sealed record OutboxEvent(long Id, Guid AuctionId, long Version, string Type);
+/// <summary>
+/// One outbox event as the relay publishes it: which auction changed, its new version, and how long ago its
+/// transaction wrote it, by the database clock.
+/// </summary>
+public sealed record OutboxEvent(long Id, Guid AuctionId, long Version, string Type, TimeSpan Age);
 
 /// <summary>
 /// The single outbox relay (OUT-01). It publishes the engine's committed events as SignalR hints, in
@@ -16,7 +19,7 @@ public sealed record OutboxEvent(long Id, Guid AuctionId, long Version, string T
 /// A hint that fails to send (Redis down) stays unpublished and is retried.
 /// </summary>
 internal sealed partial class OutboxRelay(
-    NpgsqlDataSource dataSource, IHubContext<AuctionHub> hub, ApiOptions options, ILogger<OutboxRelay> logger) : BackgroundService
+    NpgsqlDataSource dataSource, IHubContext<AuctionHub> hub, ApiOptions options, Admin.AdminKpis kpis, ILogger<OutboxRelay> logger) : BackgroundService
 {
     public const string Channel = "auction_outbox";
     public const int BatchSize = 100;
@@ -25,7 +28,7 @@ internal sealed partial class OutboxRelay(
     private const long RelayLockKey = 7_316_891_420_551_002;
 
     private const string PendingSql = """
-        SELECT id, auction_id, auction_version, type
+        SELECT id, auction_id, auction_version, type, clock_timestamp() - created_at
         FROM auction.outbox_events
         WHERE published_at IS NULL AND xid < pg_snapshot_xmin(pg_current_snapshot())
         ORDER BY xid, id
@@ -43,7 +46,7 @@ internal sealed partial class OutboxRelay(
         var events = new List<OutboxEvent>();
         while (await reader.ReadAsync(cancellationToken))
         {
-            events.Add(new OutboxEvent(reader.GetInt64(0), reader.GetGuid(1), reader.GetInt64(2), reader.GetString(3)));
+            events.Add(new OutboxEvent(reader.GetInt64(0), reader.GetGuid(1), reader.GetInt64(2), reader.GetString(3), reader.GetTimeSpan(4)));
         }
 
         return events;
@@ -53,11 +56,14 @@ internal sealed partial class OutboxRelay(
     public async Task<int> PublishBatchAsync(CancellationToken cancellationToken)
     {
         var events = await ReadPendingAsync(dataSource, BatchSize, cancellationToken);
+        var read = TimeProvider.System.GetTimestamp();
         foreach (var change in events)
         {
             var hint = new AuctionChanged(change.AuctionId, change.Version);
             await hub.Clients.Groups(AuctionHub.GroupFor(change.AuctionId), AuctionHub.DirectoryGroup)
                 .SendAsync(AuctionHub.ChangedMethod, hint, cancellationToken);
+            // Publish lag: the event's age when read, plus the time until its hint went out.
+            kpis.RecordPublish(change.Age + TimeProvider.System.GetElapsedTime(read));
         }
 
         if (events.Count > 0)

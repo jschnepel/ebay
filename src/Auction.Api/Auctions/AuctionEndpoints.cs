@@ -31,6 +31,7 @@ internal static class AuctionEndpoints
         commands.MapPost("/{id:guid}/publish", PublishAsync).Produces<CommandResponse>();
         commands.MapPost("/{id:guid}/cancel", CancelAsync).Produces<CommandResponse>();
         commands.MapPost("/{id:guid}/bids", BidAsync).Produces<CommandResponse>(StatusCodes.Status201Created);
+        commands.MapDelete("/{id:guid}", DeleteDraftAsync).Produces<CommandResponse>();
 
         var me = api.MapGroup("/me").WithTags("Me").RequireAuthorization().ProducesProblem(StatusCodes.Status400BadRequest);
         me.MapGet("/auctions", MineAsync).Produces<Page<AuctionSummary>>();
@@ -56,18 +57,8 @@ internal static class AuctionEndpoints
             ? problem
             : TypedResults.Ok(await reader.BiddingAsync(http.User.UserIdOf()!.Value, after, size, http.RequestAborted));
 
-    /// <summary>A 400 problem for a bad page size or cursor; otherwise null with the parsed values.</summary>
-    private static IResult? TryPaging(int? pageSize, string? cursor, ApiOptions options, out int size, out (DateTimeOffset, Guid)? after)
-    {
-        after = null;
-        size = PageSize(pageSize, options) ?? 0;
-        if (size == 0)
-        {
-            return Problems.BadRequest("invalid_page_size", "pageSize must be at least 1.");
-        }
-
-        return Cursors.TryDecode(cursor, out after) ? null : Problems.BadRequest("invalid_cursor", "The cursor is not one this API returned.");
-    }
+    private static IResult? TryPaging(int? pageSize, string? cursor, ApiOptions options, out int size, out (DateTimeOffset, Guid)? after) =>
+        Paging.TryParse(pageSize, cursor, options, out size, out after, out var problem) ? null : problem;
 
     private static async Task<IResult> DetailAsync(Guid id, HttpContext http, AuctionReader reader, CancellationToken cancellationToken) =>
         await reader.DetailAsync(id, http.User.UserIdOf(), cancellationToken) is { } detail ? TypedResults.Ok(detail) : Problems.NotFound();
@@ -133,6 +124,20 @@ internal static class AuctionEndpoints
             http, async call => (await engine.Client.EditDraftAsync(request, call)).Result, result => Ok(result, actor));
     }
 
+    /// <summary>The owner deletes a draft; a published auction can only be cancelled.</summary>
+    private static async Task<IResult> DeleteDraftAsync(Guid id, HttpContext http, EngineGateway engine)
+    {
+        if (!EngineGateway.TryGetKey(http.Request, out var key))
+        {
+            return EngineGateway.MissingKey();
+        }
+
+        var actor = EngineGateway.Actor(http);
+        var request = new DeleteDraftRequest { RequestId = key, ActorId = actor, AuctionId = id.ToString() };
+        return await engine.SendAsync(
+            http, async call => (await engine.Client.DeleteDraftAsync(request, call)).Result, result => Ok(result, actor));
+    }
+
     private static async Task<IResult> PublishAsync(Guid id, HttpContext http, EngineGateway engine)
     {
         if (!EngineGateway.TryGetKey(http.Request, out var key))
@@ -161,6 +166,14 @@ internal static class AuctionEndpoints
 
     // The bidder is always the signed-in user; any bidder or actor id in the body is ignored.
     private static async Task<IResult> BidAsync(Guid id, BidRequest body, HttpContext http, EngineGateway engine, AuctionReader reader)
+    {
+        var started = TimeProvider.System.GetTimestamp();
+        var result = await PlaceBidAsync(id, body, http, engine, reader);
+        http.RequestServices.GetRequiredService<Admin.AdminKpis>().RecordBid(TimeProvider.System.GetElapsedTime(started));
+        return result;
+    }
+
+    private static async Task<IResult> PlaceBidAsync(Guid id, BidRequest body, HttpContext http, EngineGateway engine, AuctionReader reader)
     {
         if (http.User.IsAdmin())
         {

@@ -51,6 +51,7 @@ else
                             {
                                 <MudButton Size="Size.Small" Href="@($"/sell/{auction.Id}/edit")">Edit</MudButton>
                                 <MudButton Size="Size.Small" Color="Color.Primary" OnClick="() => PublishAsync(auction)" Disabled="_busy">Publish</MudButton>
+                                <MudButton Size="Size.Small" Color="Color.Error" OnClick="() => DeleteAsync(auction)" Disabled="_busy">Delete</MudButton>
                             }
                             else if (auction.BidCount == 0 && auction.Status is "active" or "scheduled")
                             {
@@ -121,6 +122,9 @@ else
 
     private Task PublishAsync(AuctionSummary auction) =>
         RunAsync(auction.Id, "publish", key => Api.PublishAsync(auction.Id, key), $"Published \"{auction.Title}\".");
+
+    private Task DeleteAsync(AuctionSummary auction) =>
+        RunAsync(auction.Id, "delete", key => Api.DeleteDraftAsync(auction.Id, key), $"Deleted the draft \"{auction.Title}\".");
 
     private Task CancelAsync(AuctionSummary auction) =>
         RunAsync(auction.Id, "cancel", key => Api.CancelAsync(auction.Id, key), $"Cancelled \"{auction.Title}\".");

@@ -1,7 +1,9 @@
 using Auction.Api.Accounts;
+using Auction.Api.Admin;
 using Auction.Api.Auctions;
 using Auction.Api.Live;
 using Auction.Contracts.V1;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Options;
@@ -33,6 +35,15 @@ internal static class ApiHosting
         builder.Services.AddGrpcClient<AuctionCommandService.AuctionCommandServiceClient>((services, client) =>
             client.Address = services.GetRequiredService<ApiOptions>().EngineAddress);
         builder.Services.AddTransient<EngineGateway>();
+        builder.Services.AddGrpcClient<Grpc.Health.V1.Health.HealthClient>((services, client) =>
+            client.Address = services.GetRequiredService<ApiOptions>().EngineAddress);
+
+        builder.Services.AddSingleton(TimeProvider.System);
+        builder.Services.AddMetrics();
+        builder.Services.AddSingleton<AdminKpis>();
+        builder.Services.AddSingleton<AdminReader>();
+        builder.Services.AddSingleton<RedisHealth>();
+        builder.Services.AddSingleton<Presence>();
 
         builder.Services.AddProblemDetails();
         builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme).AddCookie(cookie =>
@@ -46,6 +57,16 @@ internal static class ApiHosting
             // An API answers with a status, never a redirect to a sign-in page.
             cookie.Events.OnRedirectToLogin = context => SetStatusAsync(context.Response, StatusCodes.Status401Unauthorized);
             cookie.Events.OnRedirectToAccessDenied = context => SetStatusAsync(context.Response, StatusCodes.Status403Forbidden);
+            // A disabled (or deleted) account loses its session on its next request.
+            cookie.Events.OnValidatePrincipal = async context =>
+            {
+                var accounts = context.HttpContext.RequestServices.GetRequiredService<AccountStore>();
+                if (context.Principal?.UserIdOf() is not { } user || !await accounts.IsActiveAsync(user, context.HttpContext.RequestAborted))
+                {
+                    context.RejectPrincipal();
+                    await context.HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+                }
+            };
         });
         builder.Services.AddAuthorization();
         builder.Services.AddOpenApi();
@@ -66,6 +87,25 @@ internal static class ApiHosting
     public static WebApplication MapApi(this WebApplication app)
     {
         app.UseExceptionHandler();
+        app.Use(async (context, next) =>
+        {
+            // API request latency for the admin KPIs; the client's static files aren't counted.
+            if (!context.Request.Path.StartsWithSegments("/api", StringComparison.Ordinal))
+            {
+                await next(context);
+                return;
+            }
+
+            var started = TimeProvider.System.GetTimestamp();
+            try
+            {
+                await next(context);
+            }
+            finally
+            {
+                context.RequestServices.GetRequiredService<AdminKpis>().RecordApi(TimeProvider.System.GetElapsedTime(started));
+            }
+        });
         app.UseStatusCodePages();
         app.Use(SecurityHeaders.AddAsync);
         app.UseMiddleware<SameOriginJsonMiddleware>();
@@ -75,6 +115,7 @@ internal static class ApiHosting
         var api = app.MapGroup("/api/v1");
         api.MapAccounts();
         api.MapAuctions();
+        api.MapAdmin();
         app.MapHub<AuctionHub>(AuctionHub.Path);
         app.MapOpenApi();
         app.MapHealthChecks("/health");

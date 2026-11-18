@@ -1,3 +1,4 @@
+using Auction.Api.Accounts;
 using Microsoft.AspNetCore.SignalR;
 
 namespace Auction.Api.Live;
@@ -12,13 +13,33 @@ public sealed record AuctionChanged(Guid AuctionId, long Version);
 /// Live hints (RT-01). A browser watches the auctions it shows, or the directory for every published
 /// change. Anyone may watch: hints carry only public facts, and drafts never produce events.
 /// </summary>
-internal sealed class AuctionHub : Hub
+internal sealed class AuctionHub(Presence presence) : Hub
 {
     public const string Path = "/hubs/auctions";
     public const string ChangedMethod = "changed";
     public const string DirectoryGroup = "directory";
 
     public static string GroupFor(Guid auctionId) => $"auction:{auctionId:N}";
+
+    public override Task OnConnectedAsync()
+    {
+        if (Context.User?.UserIdOf() is { } user)
+        {
+            presence.Connected(user.Value);
+        }
+
+        return base.OnConnectedAsync();
+    }
+
+    public override Task OnDisconnectedAsync(Exception? exception)
+    {
+        if (Context.User?.UserIdOf() is { } user)
+        {
+            presence.Disconnected(user.Value);
+        }
+
+        return base.OnDisconnectedAsync(exception);
+    }
 
     [HubMethodName("Watch")]
     public Task WatchAsync(Guid auctionId) => Groups.AddToGroupAsync(Context.ConnectionId, GroupFor(auctionId));

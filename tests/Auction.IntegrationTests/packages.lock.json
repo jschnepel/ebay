@@ -931,6 +931,7 @@
           "Auction.Domain": "[1.0.0, )",
           "Auction.Web": "[1.0.0, )",
           "Google.Protobuf": "[3.36.2, )",
+          "Grpc.HealthCheck": "[2.85.0, )",
           "Grpc.Net.ClientFactory": "[2.85.0, )",
           "Microsoft.AspNetCore.OpenApi": "[10.0.15, )",
           "Microsoft.AspNetCore.SignalR.StackExchangeRedis": "[10.0.15, )",
