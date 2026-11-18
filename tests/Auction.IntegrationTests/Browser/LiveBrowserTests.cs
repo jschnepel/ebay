@@ -35,7 +35,7 @@ public sealed class LiveBrowserTests(MigratedDatabase db, Browsers browsers)
             await Assertions.Expect(page.GetByTestId("current-price")).ToHaveTextAsync("$12.00", WithinBound);
         }
 
-        await Assertions.Expect(row.GetByRole(AriaRole.Cell).Nth(1)).ToHaveTextAsync("$12.00", WithinBound);
+        await Assertions.Expect(row.GetByTestId("price")).ToHaveTextAsync("$12.00", WithinBound);
 
         await second.BidAsync("30.00");
         foreach (var page in new[] { seller, first })
@@ -43,7 +43,7 @@ public sealed class LiveBrowserTests(MigratedDatabase db, Browsers browsers)
             await Assertions.Expect(page.GetByTestId("current-price")).ToHaveTextAsync("$21.00", WithinBound);
         }
 
-        await Assertions.Expect(row.GetByRole(AriaRole.Cell).Nth(1)).ToHaveTextAsync("$21.00", WithinBound);
+        await Assertions.Expect(row.GetByTestId("price")).ToHaveTextAsync("$21.00", WithinBound);
     }
 
     [Fact]

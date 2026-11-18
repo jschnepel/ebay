@@ -30,6 +30,15 @@ public enum CommandError
     BelowMinimum,
     WrongIncrementAmount,
     MaximumLowered,
+
+    /// <summary>The seller already has the most open drafts allowed.</summary>
+    DraftLimit,
+
+    /// <summary>The seller already published the most auctions allowed today (UTC, by the database clock).</summary>
+    PublishLimit,
+
+    /// <summary>The draft already has the most images allowed.</summary>
+    ImageLimit,
 }
 
 /// <summary>
@@ -87,6 +96,15 @@ public sealed record EngineOptions
     /// <summary>How often the close worker deletes idempotency records past <see cref="KeyRetention"/>.</summary>
     public TimeSpan KeySweepInterval { get; init; } = TimeSpan.FromHours(1);
 
+    /// <summary>Open drafts per seller (UI-05).</summary>
+    public int MaxOpenDrafts { get; init; } = 10;
+
+    /// <summary>Auctions one seller may publish per UTC day (UI-05).</summary>
+    public int MaxPublishesPerDay { get; init; } = 20;
+
+    /// <summary>Images per auction (UI-05).</summary>
+    public int MaxImages { get; init; } = 4;
+
     /// <summary>False runs the commands without the close worker (one instance must have it on).</summary>
     public bool CloseWorkerEnabled { get; init; } = true;
 
@@ -98,6 +116,9 @@ public sealed record EngineOptions
         && SweepBatchSize >= 1
         && KeyRetention > TimeSpan.Zero
         && KeySweepInterval > TimeSpan.Zero
+        && MaxOpenDrafts >= 1
+        && MaxPublishesPerDay >= 1
+        && MaxImages >= 1
         && Limits.AmountCapCents is >= 1 and <= 1_000_000_000
         && Limits.MinDuration > TimeSpan.Zero
         && Limits.MaxDuration >= Limits.MinDuration;

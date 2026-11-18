@@ -13,6 +13,8 @@ public sealed class AuctionEngine(NpgsqlDataSource dataSource, EngineOptions opt
     private const string LockNotAvailable = "55P03";
     private const string DeadlockDetected = "40P01";
     private const string UniqueViolation = "23505";
+    private const string ForeignKeyViolation = "23503";
+    private const string SweptImage = "fk_auction_images_image_blobs_blob_id";
     private const int KeySweepBatchSize = 1_000;
 
     public const int ReasonMaxLength = 500;
@@ -51,13 +53,58 @@ public sealed class AuctionEngine(NpgsqlDataSource dataSource, EngineOptions opt
     }
 
     public Task<CommandOutcome> PublishAsync(CommandContext context, AuctionId auctionId, CancellationToken cancellationToken) =>
-        RunAsync(context, auctionId, RequestHash.Of("publish", auctionId), (auction, now) =>
+        RunLoadedAsync(context, auctionId, RequestHash.Of("publish", auctionId), async (db, auction, now, ct) =>
         {
             var result = Lifecycle.Publish(auction.State, context.Actor, now, options.Limits);
-            return result.Succeeded
-                ? Accept(auction, new AuctionChange(result.State, [], "auction.published"))
-                : Refuse(auctionId, ToError(result.Error), result.FieldErrors);
+            if (!result.Succeeded)
+            {
+                return Refuse(auctionId, ToError(result.Error), result.FieldErrors);
+            }
+
+            var today = DateOnly.FromDateTime(now.UtcDateTime);
+            var publishedToday = await SellerLimits.PublishedOnAsync(db, auction.State.SellerId, today, ct);
+            return publishedToday >= options.MaxPublishesPerDay
+                ? Refuse(auctionId, CommandError.PublishLimit)
+                : Accept(auction, new AuctionChange(result.State, [], "auction.published") { Extra = [SellerLimits.CountPublish(auction.State.SellerId, today)] });
         }, cancellationToken);
+
+    /// <summary>Links an image the seller uploaded to their draft, under the auction lock (UI-05).</summary>
+    public Task<CommandOutcome> AttachImageAsync(CommandContext context, AuctionId auctionId, Guid blobId, CancellationToken cancellationToken) =>
+        ImageCommandAsync(context, auctionId, RequestHash.Of("attach", new { auctionId, blobId }), async (db, images, ct) =>
+        {
+            if (images.Exists(i => i.BlobId == blobId))
+            {
+                return (CommandError.InvalidState, null);
+            }
+
+            if (await AuctionImages.OwnerOfAsync(db, blobId, ct) != context.Actor.Value)
+            {
+                return (CommandError.NotFound, null);
+            }
+
+            return images.Count >= options.MaxImages
+                ? (CommandError.ImageLimit, null)
+                : (CommandError.None, AuctionImages.Attach(auctionId, blobId, images.Count, isCover: images.Count == 0));
+        }, cancellationToken);
+
+    public Task<CommandOutcome> RemoveImageAsync(CommandContext context, AuctionId auctionId, Guid blobId, CancellationToken cancellationToken) =>
+        ImageCommandAsync(context, auctionId, RequestHash.Of("detach", new { auctionId, blobId }), (_, images, _) =>
+            Task.FromResult(images.Exists(i => i.BlobId == blobId)
+                ? (CommandError.None, AuctionImages.Remove(auctionId, blobId))
+                : (CommandError.NotFound, (IReadOnlyList<NpgsqlBatchCommand>?)null)), cancellationToken);
+
+    /// <summary>Puts the draft's images in the given order; the list must name exactly its images.</summary>
+    public Task<CommandOutcome> ReorderImagesAsync(CommandContext context, AuctionId auctionId, IReadOnlyList<Guid> order, CancellationToken cancellationToken) =>
+        ImageCommandAsync(context, auctionId, RequestHash.Of("reorder", new { auctionId, order }), (_, images, _) =>
+            Task.FromResult(order.Count == images.Count && order.Distinct().Count() == order.Count && order.All(id => images.Exists(i => i.BlobId == id))
+                ? (CommandError.None, AuctionImages.Reorder(auctionId, order))
+                : (CommandError.ValidationFailed, (IReadOnlyList<NpgsqlBatchCommand>?)null)), cancellationToken);
+
+    public Task<CommandOutcome> SetCoverAsync(CommandContext context, AuctionId auctionId, Guid blobId, CancellationToken cancellationToken) =>
+        ImageCommandAsync(context, auctionId, RequestHash.Of("cover", new { auctionId, blobId }), (_, images, _) =>
+            Task.FromResult(images.Exists(i => i.BlobId == blobId)
+                ? (CommandError.None, AuctionImages.SetCover(auctionId, blobId))
+                : (CommandError.NotFound, (IReadOnlyList<NpgsqlBatchCommand>?)null)), cancellationToken);
 
     public Task<CommandOutcome> CancelAsync(CommandContext context, AuctionId auctionId, CancellationToken cancellationToken) =>
         RunAsync(context, auctionId, RequestHash.Of("cancel", auctionId), (auction, _) =>
@@ -131,6 +178,34 @@ public sealed class AuctionEngine(NpgsqlDataSource dataSource, EngineOptions opt
         }, cancellationToken);
     }
 
+    // Image changes: the owner's draft only (anyone else gets "not found", like any owner-only action on
+    // someone else's auction), with the current links read under the lock, so a cap or a publish can't race.
+    private Task<CommandOutcome> ImageCommandAsync(
+        CommandContext context, AuctionId auctionId, byte[] requestHash,
+        Func<NpgsqlBatchFactory, List<AuctionImage>, CancellationToken, Task<(CommandError Error, IReadOnlyList<NpgsqlBatchCommand>? Writes)>> decide,
+        CancellationToken cancellationToken) =>
+        RunLoadedAsync(context, auctionId, requestHash, async (db, auction, _, ct) =>
+        {
+            if (auction.State.SellerId != context.Actor)
+            {
+                return Refuse(auctionId, CommandError.NotFound);
+            }
+
+            if (auction.State.Status != AuctionStatus.Draft)
+            {
+                return Refuse(auctionId, CommandError.InvalidState);
+            }
+
+            var (error, writes) = await decide(db, await AuctionImages.ListAsync(db, auctionId, ct), ct);
+            if (writes is not null)
+            {
+                return Accept(auction, new AuctionChange(auction.State, [], EventType: null) { Extra = writes });
+            }
+
+            IReadOnlyList<FieldError> fields = error == CommandError.ValidationFailed ? [new FieldError("images", "must_list_each_image_once")] : [];
+            return Refuse(auctionId, error, fields);
+        }, cancellationToken);
+
     /// <summary>
     /// Activates scheduled auctions whose start has passed and closes auctions whose end has passed.
     /// Returns how many changed.
@@ -172,7 +247,13 @@ public sealed class AuctionEngine(NpgsqlDataSource dataSource, EngineOptions opt
     }
 
     private Task<CommandOutcome> RunAsync(
-        CommandContext context, AuctionId auctionId, byte[] requestHash, Func<LockedAuction, DateTimeOffset, Decision> decide, CancellationToken cancellationToken)
+        CommandContext context, AuctionId auctionId, byte[] requestHash, Func<LockedAuction, DateTimeOffset, Decision> decide, CancellationToken cancellationToken) =>
+        RunLoadedAsync(context, auctionId, requestHash, (_, auction, now, _) => Task.FromResult(decide(auction, now)), cancellationToken);
+
+    /// <summary>A command that reads more under the auction lock (images, the seller's limits) before it decides.</summary>
+    private Task<CommandOutcome> RunLoadedAsync(
+        CommandContext context, AuctionId auctionId, byte[] requestHash, Func<NpgsqlBatchFactory, LockedAuction, DateTimeOffset, CancellationToken, Task<Decision>> decide,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);
         return WithRetriesAsync(context, () => RunOnceAsync(context, auctionId, requestHash, decide, cancellationToken), cancellationToken);
@@ -207,6 +288,11 @@ public sealed class AuctionEngine(NpgsqlDataSource dataSource, EngineOptions opt
             {
                 return new CommandOutcome { Error = CommandError.Busy };
             }
+            catch (PostgresException e) when (e.SqlState == ForeignKeyViolation && e.ConstraintName == SweptImage)
+            {
+                // The image was swept between the owner check and the link: it no longer exists.
+                return new CommandOutcome { Error = CommandError.NotFound };
+            }
         }
     }
 
@@ -215,7 +301,8 @@ public sealed class AuctionEngine(NpgsqlDataSource dataSource, EngineOptions opt
         || (e.SqlState == UniqueViolation && e.ConstraintName == "pk_idempotency_records");
 
     private async Task<CommandOutcome> RunOnceAsync(
-        CommandContext context, AuctionId auctionId, byte[] requestHash, Func<LockedAuction, DateTimeOffset, Decision> decide, CancellationToken cancellationToken)
+        CommandContext context, AuctionId auctionId, byte[] requestHash, Func<NpgsqlBatchFactory, LockedAuction, DateTimeOffset, CancellationToken, Task<Decision>> decide,
+        CancellationToken cancellationToken)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
@@ -228,7 +315,7 @@ public sealed class AuctionEngine(NpgsqlDataSource dataSource, EngineOptions opt
         }
 
         var decision = locked.Auction is { } auction && IsVisibleTo(auction, context.Actor)
-            ? decide(auction, locked.Now)
+            ? await decide(new NpgsqlBatchFactory(connection, transaction), auction, locked.Now, cancellationToken)
             : Refuse(auctionId, CommandError.NotFound);
 
         await using var batch = new NpgsqlBatch(connection, transaction);
@@ -260,9 +347,14 @@ public sealed class AuctionEngine(NpgsqlDataSource dataSource, EngineOptions opt
 
         var errors = DraftBounds.Check(terms, options.Limits);
         var id = AuctionId.New();
-        var outcome = errors.Count > 0
-            ? new CommandOutcome { Error = CommandError.ValidationFailed, FieldErrors = errors }
-            : new CommandOutcome { AuctionId = id, Version = 0 };
+        var full = errors.Count == 0
+            && await SellerLimits.OpenDraftsAsync(new NpgsqlBatchFactory(connection, transaction), context.Actor, cancellationToken) >= options.MaxOpenDrafts;
+        var outcome = (errors.Count > 0, full) switch
+        {
+            (true, _) => new CommandOutcome { Error = CommandError.ValidationFailed, FieldErrors = errors },
+            (_, true) => new CommandOutcome { Error = CommandError.DraftLimit },
+            _ => new CommandOutcome { AuctionId = id, Version = 0 },
+        };
 
         if (!await IdempotencyStore.TryInsertAsync(connection, transaction, context, requestHash, outcome, cancellationToken))
         {

@@ -34,6 +34,8 @@ public record AuctionSummary
     public DateTimeOffset EndsAt { get; init; }
 
     public long Version { get; init; }
+
+    public Guid? CoverImageId { get; init; }
 }
 
 public sealed record BiddingSummary : AuctionSummary
@@ -48,6 +50,8 @@ public sealed record AuctionDetail : AuctionSummary
     public long IncrementCents { get; init; }
 
     public long MinimumNextBidCents { get; init; }
+
+    public IReadOnlyList<Guid> ImageIds { get; init; } = [];
 
     public long? ReserveCents { get; init; }
 
@@ -119,3 +123,5 @@ public sealed record UserSummary(Guid Id, string DisplayName, string Kind, bool 
 public sealed record NotificationView(long Id, Guid? AuctionId, string? AuctionTitle, string Kind, string? Reason, DateTimeOffset CreatedAt, bool Read);
 
 public sealed record NotificationPage(IReadOnlyList<NotificationView> Items, string? NextCursor, long Unread);
+
+public sealed record UploadedImage(Guid Id, string ContentType, int Width, int Height);

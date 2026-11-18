@@ -12,11 +12,12 @@ internal sealed class AuctionReader(NpgsqlDataSource dataSource)
 {
     private const string SummaryColumns =
         "id, title, status, opening_price_cents, current_price_cents, accepted_bid_count, floor_type, bid_entry, " +
-        "reserve_cents, starts_at, ends_at, version";
+        "reserve_cents, starts_at, ends_at, version, " +
+        "(SELECT i.blob_id FROM auction.auction_images i WHERE i.auction_id = a.id AND i.is_cover) AS cover_image_id";
 
     private const string ListSql = $"""
         SELECT {SummaryColumns}
-        FROM auction.auctions
+        FROM auction.auctions a
         WHERE status <> 'draft' AND ($1::timestamptz IS NULL OR (ends_at, id) > ($1::timestamptz, $2::uuid))
         ORDER BY ends_at, id
         LIMIT $3
@@ -24,7 +25,7 @@ internal sealed class AuctionReader(NpgsqlDataSource dataSource)
 
     private const string MineSql = $"""
         SELECT {SummaryColumns}
-        FROM auction.auctions
+        FROM auction.auctions a
         WHERE seller_id = $4 AND ($1::timestamptz IS NULL OR (ends_at, id) > ($1::timestamptz, $2::uuid))
         ORDER BY ends_at, id
         LIMIT $3
@@ -40,9 +41,10 @@ internal sealed class AuctionReader(NpgsqlDataSource dataSource)
         """;
 
     private const string DetailSql = $"""
-        SELECT {SummaryColumns}, description, increment_cents, outcome, seller_id, leader_id, published_at, closed_at
-        FROM auction.auctions
-        WHERE id = $1 AND (status <> 'draft' OR seller_id = $2::uuid)
+        SELECT {SummaryColumns}, description, increment_cents, outcome, seller_id, leader_id, published_at, closed_at,
+               ARRAY(SELECT i.blob_id FROM auction.auction_images i WHERE i.auction_id = a.id ORDER BY i.position)
+        FROM auction.auctions a
+        WHERE a.id = $1 AND (status <> 'draft' OR seller_id = $2::uuid)
         """;
 
     private const string VisibleSql =
@@ -78,7 +80,7 @@ internal sealed class AuctionReader(NpgsqlDataSource dataSource)
             bidder,
             after,
             pageSize,
-            reader => BiddingSummary.From(ReadSummary(reader), Nullable<Guid>(reader, 12) == bidder.Value),
+            reader => BiddingSummary.From(ReadSummary(reader), Nullable<Guid>(reader, 13) == bidder.Value),
             cancellationToken);
 
     public async Task<AuctionDetail?> DetailAsync(Guid id, UserId? viewer, CancellationToken cancellationToken)
@@ -93,7 +95,8 @@ internal sealed class AuctionReader(NpgsqlDataSource dataSource)
         }
 
         var summary = ReadSummary(reader);
-        var isSeller = viewer is { } v && reader.GetGuid(15) == v.Value;
+        var images = await reader.GetFieldValueAsync<Guid[]>(20, cancellationToken);
+        var isSeller = viewer is { } v && reader.GetGuid(16) == v.Value;
         return new AuctionDetail
         {
             Id = summary.Id,
@@ -108,15 +111,17 @@ internal sealed class AuctionReader(NpgsqlDataSource dataSource)
             StartsAt = summary.StartsAt,
             EndsAt = summary.EndsAt,
             Version = summary.Version,
-            Description = reader.GetString(12),
-            IncrementCents = reader.GetInt64(13),
-            MinimumNextBidCents = summary.CurrentPriceCents is { } price ? price + reader.GetInt64(13) : summary.OpeningPriceCents,
+            Description = reader.GetString(13),
+            IncrementCents = reader.GetInt64(14),
+            MinimumNextBidCents = summary.CurrentPriceCents is { } price ? price + reader.GetInt64(14) : summary.OpeningPriceCents,
             ReserveCents = isSeller ? Nullable<long>(reader, 8) : null,
-            Outcome = Text(reader, 14),
+            Outcome = Text(reader, 15),
             YouAreSeller = isSeller,
-            YouLead = viewer is { } leader && Nullable<Guid>(reader, 16) == leader.Value,
-            PublishedAt = Nullable<DateTimeOffset>(reader, 17),
-            ClosedAt = Nullable<DateTimeOffset>(reader, 18),
+            YouLead = viewer is { } leader && Nullable<Guid>(reader, 17) == leader.Value,
+            PublishedAt = Nullable<DateTimeOffset>(reader, 18),
+            ClosedAt = Nullable<DateTimeOffset>(reader, 19),
+            CoverImageId = summary.CoverImageId,
+            ImageIds = images,
         };
     }
 
@@ -217,6 +222,7 @@ internal sealed class AuctionReader(NpgsqlDataSource dataSource)
             StartsAt = Nullable<DateTimeOffset>(reader, 9) ?? default,
             EndsAt = Nullable<DateTimeOffset>(reader, 10) ?? default,
             Version = reader.GetInt64(11),
+            CoverImageId = Nullable<Guid>(reader, 12),
         };
     }
 

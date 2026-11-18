@@ -1,0 +1,121 @@
+@inject AuctionApi Api
+
+@* A draft's images (UI-05): up to four, uploaded then attached, reordered, one chosen as the cover. *@
+<MudPaper Class="pa-4 mt-4" Outlined="true">
+    <MudText Typo="Typo.h6" HtmlTag="h2">Images</MudText>
+    <MudText Typo="Typo.body2" Class="mb-2">Up to four JPEG, PNG or WebP images, 5 MiB each. They're fixed once you publish.</MudText>
+
+    @if (_images is { Count: > 0 })
+    {
+        <div class="d-flex flex-wrap gap-4 mb-2">
+            @for (var i = 0; i < _images.Count; i++)
+            {
+                var index = i;
+                var id = _images[i];
+                <div class="draft-image" data-testid="draft-image">
+                    <img src="@($"api/v1/images/{id}")" alt="@($"Image {index + 1}")" width="120" height="120" style="object-fit: cover" />
+                    <div>
+                        @if (id == _cover)
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Primary">Cover</MudChip>
+                        }
+                        else
+                        {
+                            <MudButton Size="Size.Small" OnClick="() => SetCoverAsync(id)" Disabled="_busy">Make cover</MudButton>
+                        }
+                    </div>
+                    <div>
+                        <MudButton Size="Size.Small" OnClick="() => MoveAsync(index, -1)" Disabled="@(_busy || index == 0)" aria-label="Move earlier">←</MudButton>
+                        <MudButton Size="Size.Small" OnClick="() => MoveAsync(index, 1)" Disabled="@(_busy || index == _images.Count - 1)" aria-label="Move later">→</MudButton>
+                        <MudButton Size="Size.Small" Color="Color.Error" OnClick="() => RemoveAsync(id)" Disabled="_busy">Remove</MudButton>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+
+    @if ((_images?.Count ?? 0) < 4)
+    {
+        <label class="mud-typography mud-typography-body2" for="image-file">Add an image</label>
+        <InputFile id="image-file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" OnChange="UploadAsync" disabled="@_busy" />
+    }
+
+    @if (_error is not null)
+    {
+        <MudAlert Class="mt-2" Severity="Severity.Error" data-testid="image-error">@_error</MudAlert>
+    }
+</MudPaper>
+
+@code {
+    private const long MaxBytes = 5 * 1024 * 1024;
+
+    [Parameter, EditorRequired]
+    public Guid AuctionId { get; set; }
+
+    private List<Guid>? _images;
+    private Guid? _cover;
+    private string? _error;
+    private bool _busy;
+
+    protected override Task OnParametersSetAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        var detail = await Api.DetailAsync(AuctionId);
+        if (detail.Value is { } draft)
+        {
+            (_images, _cover) = ([.. draft.ImageIds], draft.CoverImageId);
+        }
+    }
+
+    private async Task UploadAsync(InputFileChangeEventArgs change)
+    {
+        _error = null;
+        var file = change.File;
+        if (file.Size > MaxBytes)
+        {
+            _error = "That image is over 5 MiB.";
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            await using var stream = file.OpenReadStream(MaxBytes);
+            using var buffer = new MemoryStream();
+            await stream.CopyToAsync(buffer);
+            var uploaded = await Api.UploadImageAsync(file.ContentType, buffer.ToArray());
+            if (!uploaded.Succeeded)
+            {
+                _error = uploaded.Message;
+                return;
+            }
+
+            await RunAsync(key => Api.AttachImageAsync(AuctionId, uploaded.Value!.Id, key));
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private Task SetCoverAsync(Guid id) => RunAsync(key => Api.SetCoverImageAsync(AuctionId, id, key));
+
+    private Task RemoveAsync(Guid id) => RunAsync(key => Api.RemoveImageAsync(AuctionId, id, key));
+
+    private Task MoveAsync(int index, int by)
+    {
+        var order = new List<Guid>(_images!);
+        (order[index], order[index + by]) = (order[index + by], order[index]);
+        return RunAsync(key => Api.ReorderImagesAsync(AuctionId, order, key));
+    }
+
+    private async Task RunAsync(Func<string, Task<ApiResult<CommandResponse>>> call)
+    {
+        _busy = true;
+        var result = await call(Guid.NewGuid().ToString());
+        _busy = false;
+        _error = result.Succeeded ? null : result.Message;
+        await LoadAsync();
+    }
+}

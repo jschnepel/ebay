@@ -46,6 +46,15 @@ else
     {
         <MudAlert Class="mt-4" Severity="Severity.Error" data-testid="draft-error">@_error</MudAlert>
     }
+
+    @if (Id is { } draftId)
+    {
+        <DraftImages AuctionId="draftId" />
+    }
+    else
+    {
+        <MudText Typo="Typo.body2" Class="mt-4">Save the draft first, then add images from Edit.</MudText>
+    }
 }
 
 @code {

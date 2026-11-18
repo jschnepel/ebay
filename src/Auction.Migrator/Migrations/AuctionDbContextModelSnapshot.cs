@@ -77,6 +77,36 @@ namespace Auction.Migrator.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Auction.Migrator.Schema.AuctionImageRow", b =>
+                {
+                    b.Property<Guid>("AuctionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("auction_id");
+
+                    b.Property<Guid>("BlobId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("blob_id");
+
+                    b.Property<bool>("IsCover")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_cover");
+
+                    b.Property<int>("Position")
+                        .HasColumnType("integer")
+                        .HasColumnName("position");
+
+                    b.HasKey("AuctionId", "BlobId")
+                        .HasName("pk_auction_images");
+
+                    b.HasIndex("BlobId")
+                        .HasDatabaseName("ix_auction_images_blob_id");
+
+                    b.ToTable("auction_images", "auction", t =>
+                        {
+                            t.HasCheckConstraint("ck_auction_images_position", "position BETWEEN 0 AND 3");
+                        });
+                });
+
             modelBuilder.Entity("Auction.Migrator.Schema.AuctionRow", b =>
                 {
                     b.Property<Guid>("Id")
@@ -286,6 +316,34 @@ namespace Auction.Migrator.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Auction.Migrator.Schema.GlobalQuotaRow", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    b.Property<long>("BytesUsed")
+                        .HasColumnType("bigint")
+                        .HasColumnName("bytes_used");
+
+                    b.HasKey("Id")
+                        .HasName("pk_global_quota");
+
+                    b.ToTable("global_quota", "auction", t =>
+                        {
+                            t.HasCheckConstraint("ck_global_quota_bytes", "bytes_used >= 0");
+
+                            t.HasCheckConstraint("ck_global_quota_single_row", "id = 1");
+                        });
+
+                    b.HasData(
+                        new
+                        {
+                            Id = 1,
+                            BytesUsed = 0L
+                        });
+                });
+
             modelBuilder.Entity("Auction.Migrator.Schema.IdempotencyRecordRow", b =>
                 {
                     b.Property<Guid>("ActorId")
@@ -323,6 +381,72 @@ namespace Auction.Migrator.Migrations
                             t.HasCheckConstraint("ck_idempotency_records_key", "char_length(key) BETWEEN 1 AND 255");
 
                             t.HasCheckConstraint("ck_idempotency_records_request_hash", "octet_length(request_hash) = 32");
+                        });
+                });
+
+            modelBuilder.Entity("Auction.Migrator.Schema.ImageBlobRow", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("content_type");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<byte[]>("Data")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("data");
+
+                    b.Property<int>("Height")
+                        .HasColumnType("integer")
+                        .HasColumnName("height");
+
+                    b.Property<Guid>("OwnerId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("owner_id");
+
+                    b.Property<byte[]>("Sha256")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("sha256");
+
+                    b.Property<int>("SizeBytes")
+                        .HasColumnType("integer")
+                        .HasColumnName("size_bytes");
+
+                    b.Property<int>("Width")
+                        .HasColumnType("integer")
+                        .HasColumnName("width");
+
+                    b.HasKey("Id")
+                        .HasName("pk_image_blobs");
+
+                    b.HasIndex("CreatedAt")
+                        .HasDatabaseName("ix_image_blobs_created_at");
+
+                    b.HasIndex("OwnerId", "Sha256")
+                        .IsUnique()
+                        .HasDatabaseName("ix_image_blobs_owner_id_sha256");
+
+                    b.ToTable("image_blobs", "auction", t =>
+                        {
+                            t.HasCheckConstraint("ck_image_blobs_dimensions", "width > 0 AND height > 0");
+
+                            t.HasCheckConstraint("ck_image_blobs_sha256", "octet_length(sha256) = 32");
+
+                            t.HasCheckConstraint("ck_image_blobs_size", "size_bytes BETWEEN 1 AND 5242880 AND size_bytes = octet_length(data)");
+
+                            t.HasCheckConstraint("ck_image_blobs_type", "content_type IN ('image/jpeg', 'image/png', 'image/webp')");
                         });
                 });
 
@@ -509,6 +633,40 @@ namespace Auction.Migrator.Migrations
                     b.ToTable("sessions", "auction");
                 });
 
+            modelBuilder.Entity("Auction.Migrator.Schema.UploadQuotaRow", b =>
+                {
+                    b.Property<Guid>("UserId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<long>("BytesUsed")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(0L)
+                        .HasColumnName("bytes_used");
+
+                    b.Property<int>("UploadsInWindow")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("uploads_in_window");
+
+                    b.Property<DateTimeOffset>("WindowStart")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("window_start")
+                        .HasDefaultValueSql("now()");
+
+                    b.HasKey("UserId")
+                        .HasName("pk_upload_quotas");
+
+                    b.ToTable("upload_quotas", "auction", t =>
+                        {
+                            t.HasCheckConstraint("ck_upload_quotas_counters", "bytes_used >= 0 AND uploads_in_window >= 0");
+                        });
+                });
+
             modelBuilder.Entity("Auction.Migrator.Schema.UserLimitsRow", b =>
                 {
                     b.Property<Guid>("UserId")
@@ -603,6 +761,23 @@ namespace Auction.Migrator.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Auction.Migrator.Schema.AuctionImageRow", b =>
+                {
+                    b.HasOne("Auction.Migrator.Schema.AuctionRow", null)
+                        .WithMany()
+                        .HasForeignKey("AuctionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_auction_images_auctions_auction_id");
+
+                    b.HasOne("Auction.Migrator.Schema.ImageBlobRow", null)
+                        .WithMany()
+                        .HasForeignKey("BlobId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_auction_images_image_blobs_blob_id");
+                });
+
             modelBuilder.Entity("Auction.Migrator.Schema.BidRow", b =>
                 {
                     b.HasOne("Auction.Migrator.Schema.AuctionRow", null)
@@ -611,6 +786,16 @@ namespace Auction.Migrator.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_bids_auctions_auction_id");
+                });
+
+            modelBuilder.Entity("Auction.Migrator.Schema.ImageBlobRow", b =>
+                {
+                    b.HasOne("Auction.Migrator.Schema.UserRow", null)
+                        .WithMany()
+                        .HasForeignKey("OwnerId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_image_blobs_users_owner_id");
                 });
 
             modelBuilder.Entity("Auction.Migrator.Schema.NotificationRow", b =>

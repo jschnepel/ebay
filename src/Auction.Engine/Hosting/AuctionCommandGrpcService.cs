@@ -64,6 +64,35 @@ internal sealed class AuctionCommandGrpcService(AuctionEngine engine) : V1.Aucti
         return new V1.AdminCancelResponse { Result = ToResult(outcome) };
     }
 
+    public override async Task<V1.AttachImageResponse> AttachImage(V1.AttachImageRequest request, ServerCallContext context)
+    {
+        var outcome = await engine.AttachImageAsync(
+            Context(request.RequestId, request.ActorId), AuctionIdOf(request.AuctionId), ParseId(request.ImageId, "image_id"), context.CancellationToken);
+        return new V1.AttachImageResponse { Result = ToResult(outcome) };
+    }
+
+    public override async Task<V1.RemoveImageResponse> RemoveImage(V1.RemoveImageRequest request, ServerCallContext context)
+    {
+        var outcome = await engine.RemoveImageAsync(
+            Context(request.RequestId, request.ActorId), AuctionIdOf(request.AuctionId), ParseId(request.ImageId, "image_id"), context.CancellationToken);
+        return new V1.RemoveImageResponse { Result = ToResult(outcome) };
+    }
+
+    public override async Task<V1.ReorderImagesResponse> ReorderImages(V1.ReorderImagesRequest request, ServerCallContext context)
+    {
+        var order = request.ImageIds.Select(id => ParseId(id, "image_ids")).ToList();
+        var outcome = await engine.ReorderImagesAsync(
+            Context(request.RequestId, request.ActorId), AuctionIdOf(request.AuctionId), order, context.CancellationToken);
+        return new V1.ReorderImagesResponse { Result = ToResult(outcome) };
+    }
+
+    public override async Task<V1.SetCoverImageResponse> SetCoverImage(V1.SetCoverImageRequest request, ServerCallContext context)
+    {
+        var outcome = await engine.SetCoverAsync(
+            Context(request.RequestId, request.ActorId), AuctionIdOf(request.AuctionId), ParseId(request.ImageId, "image_id"), context.CancellationToken);
+        return new V1.SetCoverImageResponse { Result = ToResult(outcome) };
+    }
+
     public override async Task<V1.PlaceBidResponse> PlaceBid(V1.PlaceBidRequest request, ServerCallContext context)
     {
         var outcome = await engine.PlaceBidAsync(

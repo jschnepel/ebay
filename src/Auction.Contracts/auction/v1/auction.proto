@@ -25,6 +25,11 @@ service AuctionCommandService {
   rpc Suspend(SuspendRequest) returns (SuspendResponse);
   rpc Resume(ResumeRequest) returns (ResumeResponse);
   rpc AdminCancel(AdminCancelRequest) returns (AdminCancelResponse);
+  // A draft's images (UI-05): only its seller, only while it is a draft, at most four, under the auction lock.
+  rpc AttachImage(AttachImageRequest) returns (AttachImageResponse);
+  rpc RemoveImage(RemoveImageRequest) returns (RemoveImageResponse);
+  rpc ReorderImages(ReorderImagesRequest) returns (ReorderImagesResponse);
+  rpc SetCoverImage(SetCoverImageRequest) returns (SetCoverImageResponse);
 }
 
 message CreateDraftRequest {
@@ -125,6 +130,52 @@ message AdminCancelResponse {
   CommandResult result = 1;
 }
 
+message AttachImageRequest {
+  string request_id = 1;
+  string actor_id = 2;
+  string auction_id = 3;
+  // An image blob the actor uploaded through the API.
+  string image_id = 4;
+}
+
+message AttachImageResponse {
+  CommandResult result = 1;
+}
+
+message RemoveImageRequest {
+  string request_id = 1;
+  string actor_id = 2;
+  string auction_id = 3;
+  string image_id = 4;
+}
+
+message RemoveImageResponse {
+  CommandResult result = 1;
+}
+
+message ReorderImagesRequest {
+  string request_id = 1;
+  string actor_id = 2;
+  string auction_id = 3;
+  // Every image of the draft exactly once, first to last.
+  repeated string image_ids = 4;
+}
+
+message ReorderImagesResponse {
+  CommandResult result = 1;
+}
+
+message SetCoverImageRequest {
+  string request_id = 1;
+  string actor_id = 2;
+  string auction_id = 3;
+  string image_id = 4;
+}
+
+message SetCoverImageResponse {
+  CommandResult result = 1;
+}
+
 message AuctionTerms {
   string title = 1;
   string description = 2;
@@ -193,4 +244,7 @@ enum CommandError {
   COMMAND_ERROR_BELOW_MINIMUM = 13;
   COMMAND_ERROR_WRONG_INCREMENT_AMOUNT = 14;
   COMMAND_ERROR_MAXIMUM_LOWERED = 15;
+  COMMAND_ERROR_DRAFT_LIMIT = 16;
+  COMMAND_ERROR_PUBLISH_LIMIT = 17;
+  COMMAND_ERROR_IMAGE_LIMIT = 18;
 }

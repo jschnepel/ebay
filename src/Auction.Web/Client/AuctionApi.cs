@@ -58,6 +58,22 @@ public sealed class AuctionApi(HttpClient http)
     public Task<ApiResult<object>> MarkNotificationReadAsync(long id) =>
         SendAsync<object>(HttpMethod.Post, $"me/notifications/{id}/read");
 
+    /// <summary>Uploads an image's bytes as base64 inside JSON; the server checks the real type.</summary>
+    public Task<ApiResult<UploadedImage>> UploadImageAsync(string contentType, byte[] data) =>
+        SendAsync<UploadedImage>(HttpMethod.Post, "images", new { contentType, dataBase64 = Convert.ToBase64String(data) });
+
+    public Task<ApiResult<CommandResponse>> AttachImageAsync(Guid auctionId, Guid imageId, string key) =>
+        SendAsync<CommandResponse>(HttpMethod.Post, $"auctions/{auctionId}/images", new { imageId }, key);
+
+    public Task<ApiResult<CommandResponse>> RemoveImageAsync(Guid auctionId, Guid imageId, string key) =>
+        SendAsync<CommandResponse>(HttpMethod.Delete, $"auctions/{auctionId}/images/{imageId}", key: key);
+
+    public Task<ApiResult<CommandResponse>> SetCoverImageAsync(Guid auctionId, Guid imageId, string key) =>
+        SendAsync<CommandResponse>(HttpMethod.Post, $"auctions/{auctionId}/images/{imageId}/cover", key: key);
+
+    public Task<ApiResult<CommandResponse>> ReorderImagesAsync(Guid auctionId, IReadOnlyList<Guid> imageIds, string key) =>
+        SendAsync<CommandResponse>(HttpMethod.Put, $"auctions/{auctionId}/images", new { imageIds }, key);
+
     public Task<ApiResult<CommandResponse>> DeleteDraftAsync(Guid id, string key) =>
         SendAsync<CommandResponse>(HttpMethod.Delete, $"auctions/{id}", key: key);
 

@@ -86,8 +86,18 @@ public sealed class LiveHintTests(MigratedDatabase db)
             MigratedDatabase.Api, "UPDATE outbox_events SET published_at = NULL WHERE auction_id = $1 AND auction_version = $2", id, version);
 
         Assert.Equal(version, (await watcher.NextForAsync(id, Bound)).Version);
-        Assert.NotNull(await db.ScalarAsync<DateTime?>(
-            MigratedDatabase.Migrator, "SELECT published_at FROM outbox_events WHERE auction_id = $1 AND auction_version = $2", id, version));
+
+        // The relay stamps an event just after sending it.
+        var deadline = DateTime.UtcNow + Bound;
+        DateTime? stamped;
+        do
+        {
+            stamped = await db.ScalarAsync<DateTime?>(
+                MigratedDatabase.Migrator, "SELECT published_at FROM outbox_events WHERE auction_id = $1 AND auction_version = $2", id, version);
+        }
+        while (stamped is null && DateTime.UtcNow < deadline);
+
+        Assert.NotNull(stamped);
     }
 
     [Theory]

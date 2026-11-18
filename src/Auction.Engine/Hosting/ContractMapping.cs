@@ -76,7 +76,7 @@ internal static class ContractMapping
         return result;
     }
 
-    private static Guid ParseId(string value, string field) =>
+    public static Guid ParseId(string value, string field) =>
         Guid.TryParse(value, out var id) ? id : throw Invalid($"{field} must be a UUID");
 
     private static RpcException Invalid(string detail) => new(new Status(StatusCode.InvalidArgument, detail));

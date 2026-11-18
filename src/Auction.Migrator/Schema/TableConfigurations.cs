@@ -208,3 +208,65 @@ internal sealed class SessionConfiguration : IEntityTypeConfiguration<SessionRow
         builder.Property(s => s.CreatedAt).HasDefaultValueSql("now()");
     }
 }
+
+internal sealed class ImageBlobConfiguration : IEntityTypeConfiguration<ImageBlobRow>
+{
+    public void Configure(EntityTypeBuilder<ImageBlobRow> builder)
+    {
+        builder.ToTable("image_blobs", table =>
+        {
+            table.HasCheckConstraint("ck_image_blobs_type", "content_type IN ('image/jpeg', 'image/png', 'image/webp')");
+            table.HasCheckConstraint("ck_image_blobs_size", "size_bytes BETWEEN 1 AND 5242880 AND size_bytes = octet_length(data)");
+            table.HasCheckConstraint("ck_image_blobs_sha256", "octet_length(sha256) = 32");
+            table.HasCheckConstraint("ck_image_blobs_dimensions", "width > 0 AND height > 0");
+        });
+        builder.HasKey(b => b.Id);
+        builder.HasOne<UserRow>().WithMany().HasForeignKey(b => b.OwnerId).OnDelete(DeleteBehavior.Restrict);
+        // The same bytes from the same owner are one blob, so a retried upload returns it.
+        builder.HasIndex(b => new { b.OwnerId, b.Sha256 }).IsUnique();
+        builder.HasIndex(b => b.CreatedAt);
+        builder.Property(b => b.CreatedAt).HasDefaultValueSql("now()");
+    }
+}
+
+internal sealed class AuctionImageConfiguration : IEntityTypeConfiguration<AuctionImageRow>
+{
+    public void Configure(EntityTypeBuilder<AuctionImageRow> builder)
+    {
+        builder.ToTable("auction_images", table => table.HasCheckConstraint("ck_auction_images_position", "position BETWEEN 0 AND 3"));
+        builder.HasKey(i => new { i.AuctionId, i.BlobId });
+        // Deleting a draft takes its links with it; a blob that is still linked can't be deleted (the sweep
+        // and an attach serialize on this key instead of one silently undoing the other).
+        builder.HasOne<AuctionRow>().WithMany().HasForeignKey(i => i.AuctionId).OnDelete(DeleteBehavior.Cascade);
+        builder.HasOne<ImageBlobRow>().WithMany().HasForeignKey(i => i.BlobId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasIndex(i => i.BlobId);
+    }
+}
+
+internal sealed class UploadQuotaConfiguration : IEntityTypeConfiguration<UploadQuotaRow>
+{
+    public void Configure(EntityTypeBuilder<UploadQuotaRow> builder)
+    {
+        builder.ToTable("upload_quotas", table =>
+            table.HasCheckConstraint("ck_upload_quotas_counters", "bytes_used >= 0 AND uploads_in_window >= 0"));
+        builder.HasKey(q => q.UserId);
+        builder.Property(q => q.BytesUsed).HasDefaultValue(0L);
+        builder.Property(q => q.WindowStart).HasDefaultValueSql("now()");
+        builder.Property(q => q.UploadsInWindow).HasDefaultValue(0);
+    }
+}
+
+internal sealed class GlobalQuotaConfiguration : IEntityTypeConfiguration<GlobalQuotaRow>
+{
+    public void Configure(EntityTypeBuilder<GlobalQuotaRow> builder)
+    {
+        builder.ToTable("global_quota", table =>
+        {
+            table.HasCheckConstraint("ck_global_quota_single_row", "id = 1");
+            table.HasCheckConstraint("ck_global_quota_bytes", "bytes_used >= 0");
+        });
+        builder.HasKey(q => q.Id);
+        builder.Property(q => q.Id).ValueGeneratedNever();
+        builder.HasData(new GlobalQuotaRow { Id = 1, BytesUsed = 0 });
+    }
+}

@@ -20,6 +20,15 @@ else if (_auction is not { } auction)
 else
 {
     <MudText Typo="Typo.h4" HtmlTag="h1">@auction.Title</MudText>
+    @if (auction.ImageIds.Count > 0)
+    {
+        <div class="d-flex flex-wrap gap-2 my-2">
+            @for (var i = 0; i < auction.ImageIds.Count; i++)
+            {
+                <img src="@($"api/v1/images/{auction.ImageIds[i]}")" alt="@($"{auction.Title}, picture {i + 1}")" height="200" style="max-width: 100%; object-fit: contain" data-testid="auction-image" />
+            }
+        </div>
+    }
     <MudText Class="mb-2">@auction.Description</MudText>
     <MudSimpleTable Dense="true" Class="mb-4">
         <tbody>

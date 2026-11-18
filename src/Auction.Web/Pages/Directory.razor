@@ -23,14 +23,20 @@ else
 {
     <MudSimpleTable Dense="true" Hover="true">
         <thead>
-            <tr><th>Item</th><th>Price</th><th>Bids</th><th>Status</th><th>Ends</th></tr>
+            <tr><th><span class="sr-only">Picture</span></th><th>Item</th><th>Price</th><th>Bids</th><th>Status</th><th>Ends</th></tr>
         </thead>
         <tbody>
             @foreach (var auction in _list.Items)
             {
                 <tr data-testid="auction-row">
+                    <td>
+                        @if (auction.CoverImageId is { } cover)
+                        {
+                            <img src="@($"api/v1/images/{cover}")" alt="" width="48" height="48" style="object-fit: cover" data-testid="cover" />
+                        }
+                    </td>
                     <td><MudLink Href="@($"/auctions/{auction.Id}")">@auction.Title</MudLink></td>
-                    <td>@Format.Price(auction)</td>
+                    <td data-testid="price">@Format.Price(auction)</td>
                     <td>@auction.BidCount</td>
                     <td>@Format.Status(auction.Status)</td>
                     <td>@Format.Time(auction.EndsAt)</td>

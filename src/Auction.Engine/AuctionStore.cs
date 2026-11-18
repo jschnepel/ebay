@@ -40,6 +40,9 @@ internal sealed record AuctionChange(AuctionState After, IReadOnlyList<BidStep> 
     public AdminAction? Audit { get; init; }
 
     public bool DeletesDraft { get; init; }
+
+    /// <summary>Further writes in the same transaction: image links, the seller's limit counters.</summary>
+    public IReadOnlyList<NpgsqlBatchCommand> Extra { get; init; } = [];
 }
 
 /// <summary>The SQL for one auction command. Every method runs inside the caller's transaction.</summary>
@@ -227,6 +230,11 @@ internal static class AuctionStore
             yield return NoticeCommand(after, version, notice, now);
         }
 
+        foreach (var extra in change.Extra)
+        {
+            yield return extra;
+        }
+
         if (change.Audit is { } audit)
         {
             yield return Command(
@@ -328,7 +336,7 @@ internal static class AuctionStore
         return (state, reader.GetInt64(16));
     }
 
-    private static NpgsqlBatchCommand Command(string sql, params object?[] args)
+    internal static NpgsqlBatchCommand Command(string sql, params object?[] args)
     {
         var command = new NpgsqlBatchCommand(sql);
         foreach (var arg in args)

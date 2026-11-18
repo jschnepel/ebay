@@ -34,6 +34,9 @@ public class AuctionSummary
 
     /// <summary>Rises with every change; a client applies an update only if it is newer than what it shows.</summary>
     public required long Version { get; init; }
+
+    /// <summary>The cover image, served at /api/v1/images/{id}; null without images.</summary>
+    public Guid? CoverImageId { get; init; }
 }
 
 /// <summary>One auction in full, as the viewer may see it.</summary>
@@ -49,6 +52,9 @@ public sealed class AuctionDetail : AuctionSummary
     /// <summary>The hidden reserve: present only for the seller.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public long? ReserveCents { get; init; }
+
+    /// <summary>Every image in display order, the cover among them.</summary>
+    public IReadOnlyList<Guid> ImageIds { get; init; } = [];
 
     /// <summary>sold, reserve_not_met or no_bids once closed.</summary>
     public string? Outcome { get; init; }
@@ -81,6 +87,7 @@ public sealed class BiddingSummary : AuctionSummary
         StartsAt = summary.StartsAt,
         EndsAt = summary.EndsAt,
         Version = summary.Version,
+        CoverImageId = summary.CoverImageId,
         YouLead = youLead,
     };
 }

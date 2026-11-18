@@ -1,3 +1,5 @@
 .boot { font-family: sans-serif; padding: 1rem; }
 #blazor-error-ui { display: none; position: fixed; bottom: 0; left: 0; right: 0; padding: 0.75rem 1rem; background: #ffe7a6; }
 #blazor-error-ui .reload { margin-left: 0.5rem; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+.draft-image { display: flex; flex-direction: column; align-items: flex-start; }

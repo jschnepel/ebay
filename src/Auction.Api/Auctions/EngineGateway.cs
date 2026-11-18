@@ -88,6 +88,9 @@ internal sealed partial class EngineGateway(
         CommandError.BelowMinimum => Problem(422, "below_minimum", "The amount is below the minimum next bid."),
         CommandError.WrongIncrementAmount => Problem(422, "wrong_amount", "A fixed-increment bid must be exactly the next step."),
         CommandError.MaximumLowered => Problem(422, "maximum_lowered", "A maximum can't be lowered."),
+        CommandError.DraftLimit => Problem(409, "draft_limit", "You have the most open drafts allowed; publish or delete one first."),
+        CommandError.PublishLimit => Problem(429, "publish_limit", "You have published the most auctions allowed today; try again tomorrow (UTC)."),
+        CommandError.ImageLimit => Problem(409, "image_limit", "A listing has at most four images."),
         _ => throw new InvalidOperationException($"Unexpected engine result {result.Error}."),
     };
 

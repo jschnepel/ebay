@@ -1,6 +1,7 @@
 using Auction.Api.Accounts;
 using Auction.Api.Admin;
 using Auction.Api.Auctions;
+using Auction.Api.Images;
 using Auction.Api.Live;
 using Auction.Api.Notifications;
 using Auction.Contracts.V1;
@@ -33,6 +34,11 @@ internal static class ApiHosting
         builder.Services.AddSingleton<SessionStore>();
         builder.Services.AddSingleton<NotificationStore>();
         builder.Services.AddApiRateLimits();
+        builder.Services.AddOptions<Images.ImageOptions>().Bind(builder.Configuration.GetSection("Images"))
+            .Validate(options => options.IsValid(), "Images options are out of range.").ValidateOnStart();
+        builder.Services.AddSingleton(services => services.GetRequiredService<IOptions<Images.ImageOptions>>().Value);
+        builder.Services.AddSingleton<Images.ImageStore>();
+        builder.Services.AddHostedService<Images.ImageSweeper>();
         builder.Services.AddSingleton<AuctionReader>();
         builder.Services.AddSingleton<IPasswordHasher<Account>, PasswordHasher<Account>>();
 
@@ -124,6 +130,7 @@ internal static class ApiHosting
         api.MapAuctions();
         api.MapAdmin();
         api.MapNotifications();
+        api.MapImages();
         app.MapHub<AuctionHub>(AuctionHub.Path);
         app.MapOpenApi();
         app.MapHealthChecks("/health");

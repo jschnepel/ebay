@@ -207,3 +207,57 @@ public sealed class SessionRow
 
     public DateTimeOffset? RevokedAt { get; set; }
 }
+
+/// <summary>An uploaded image (UI-05), content-addressed per owner and stored as bytes in the database.</summary>
+public sealed class ImageBlobRow
+{
+    public Guid Id { get; set; }
+
+    public Guid OwnerId { get; set; }
+
+    public byte[] Sha256 { get; set; } = [];
+
+    public string ContentType { get; set; } = "";
+
+    public int SizeBytes { get; set; }
+
+    public int Width { get; set; }
+
+    public int Height { get; set; }
+
+    public byte[] Data { get; set; } = [];
+
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
+/// <summary>An image shown on an auction, in position order; one is the cover. Written only by the engine.</summary>
+public sealed class AuctionImageRow
+{
+    public Guid AuctionId { get; set; }
+
+    public Guid BlobId { get; set; }
+
+    public int Position { get; set; }
+
+    public bool IsCover { get; set; }
+}
+
+/// <summary>A user's image storage and recent uploads, locked FOR UPDATE while an upload is counted.</summary>
+public sealed class UploadQuotaRow
+{
+    public Guid UserId { get; set; }
+
+    public long BytesUsed { get; set; }
+
+    public DateTimeOffset WindowStart { get; set; }
+
+    public int UploadsInWindow { get; set; }
+}
+
+/// <summary>The single row holding all image storage, so the total cap is checked under one lock.</summary>
+public sealed class GlobalQuotaRow
+{
+    public int Id { get; set; }
+
+    public long BytesUsed { get; set; }
+}
