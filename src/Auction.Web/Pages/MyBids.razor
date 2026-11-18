@@ -10,15 +10,15 @@
 
 @if (_signedOut)
 {
-    <MudText><MudLink Href="/sign-in?returnUrl=/my-bids">Sign in</MudLink> to see your bids.</MudText>
+    <PageState State="ViewState.Forbidden" ForbiddenText="Sign in to see your bids." SignInReturn="/my-bids" />
 }
 else if (_list.Error is not null && _list.Items is null)
 {
-    <MudAlert Severity="Severity.Error">@_list.Error</MudAlert>
+    <PageState State="ViewState.Error" Error="@_list.Error" Retry="RefreshAsync" />
 }
 else if (_list.Items is null)
 {
-    <MudProgressCircular Indeterminate="true" aria-label="Loading your bids" />
+    <PageState State="ViewState.Loading" LoadingText="Loading your bids…" />
 }
 else if (_list.Items.Count == 0)
 {
@@ -26,6 +26,7 @@ else if (_list.Items.Count == 0)
 }
 else
 {
+    <div class="table-scroll">
     <MudSimpleTable Dense="true">
         <thead><tr><th>Item</th><th>Price</th><th>You</th><th>Status</th><th>Ends</th></tr></thead>
         <tbody>
@@ -41,6 +42,7 @@ else
             }
         </tbody>
     </MudSimpleTable>
+    </div>
     @if (_list.NextCursor is not null)
     {
         <MudButton Class="mt-2" Variant="Variant.Outlined" OnClick="_list.MoreAsync">Show more</MudButton>

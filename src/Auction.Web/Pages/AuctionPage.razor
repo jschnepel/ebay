@@ -7,25 +7,21 @@
 
 <PageTitle>@(_auction?.Title ?? "Auction")</PageTitle>
 
-@if (_error is not null)
+@if (_error is not null || _auction is null)
 {
     <MudText Typo="Typo.h4" HtmlTag="h1">Auction</MudText>
-    <MudAlert Severity="Severity.Error">@_error</MudAlert>
-}
-else if (_auction is not { } auction)
-{
-    <MudText Typo="Typo.h4" HtmlTag="h1">Auction</MudText>
-    <MudProgressCircular Indeterminate="true" aria-label="Loading the auction" />
+    <PageState State="@(_error is null ? ViewState.Loading : ViewState.Error)" Error="@_error" Retry="RefreshAsync" LoadingText="Loading the auction…" />
 }
 else
 {
+    var auction = _auction;
     <MudText Typo="Typo.h4" HtmlTag="h1">@auction.Title</MudText>
     @if (auction.ImageIds.Count > 0)
     {
-        <div class="d-flex flex-wrap gap-2 my-2">
+        <div class="gallery">
             @for (var i = 0; i < auction.ImageIds.Count; i++)
             {
-                <img src="@($"api/v1/images/{auction.ImageIds[i]}")" alt="@($"{auction.Title}, picture {i + 1}")" height="200" style="max-width: 100%; object-fit: contain" data-testid="auction-image" />
+                <img src="@($"api/v1/images/{auction.ImageIds[i]}")" alt="@($"{auction.Title}, picture {i + 1}")" data-testid="auction-image" />
             }
         </div>
     }
@@ -81,6 +77,7 @@ else
     }
     else
     {
+        <div class="table-scroll">
         <MudSimpleTable Dense="true">
             <thead><tr><th>Bidder</th><th>Amount</th><th>How</th><th>When</th></tr></thead>
             <tbody>
@@ -95,6 +92,7 @@ else
                 }
             </tbody>
         </MudSimpleTable>
+        </div>
     }
 }
 
@@ -164,6 +162,7 @@ else
             return;
         }
 
+        _error = null;
         var shown = _auction;
         _auction = VersionGate.Newest(shown, detail.Value!);
         if (!ReferenceEquals(_auction, detail.Value))

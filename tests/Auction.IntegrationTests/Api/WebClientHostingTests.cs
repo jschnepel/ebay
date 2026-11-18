@@ -34,8 +34,11 @@ public sealed class WebClientHostingTests(MigratedDatabase db)
         var api = await db.ApiAsync();
 
         using var response = await api.Anonymous().GetAsync(new Uri("/_framework/blazor.webassembly.js", UriKind.Relative), Ct);
+        using var styles = await api.Anonymous().GetAsync(new Uri("/app.css", UriKind.Relative), Ct);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, styles.StatusCode);
+        Assert.Contains(".auction-card", await styles.Content.ReadAsStringAsync(Ct), StringComparison.Ordinal);
     }
 
     [Fact]

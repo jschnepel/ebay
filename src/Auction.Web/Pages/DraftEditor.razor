@@ -9,7 +9,7 @@
 
 @if (_signedOut)
 {
-    <MudText><MudLink Href="/sign-in?returnUrl=/sell">Sign in</MudLink> to sell.</MudText>
+    <PageState State="ViewState.Forbidden" ForbiddenText="Sign in to sell." SignInReturn="/sell" />
 }
 else if (_loadError is not null)
 {

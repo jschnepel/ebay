@@ -7,7 +7,7 @@
 
 @if (_forbidden)
 {
-    <MudText>Page not found.</MudText>
+    <PageState State="ViewState.Forbidden" ForbiddenText="Page not found." />
 }
 else
 {
@@ -24,7 +24,7 @@ else
 
     @if (_items is not null)
     {
-        <MudSimpleTable Dense="true">
+        <div class="table-scroll"><MudSimpleTable Dense="true">
             <thead><tr><th>Name</th><th>Kind</th><th>Account id</th><th>State</th><th>Actions</th></tr></thead>
             <tbody>
                 @foreach (var user in _items)
@@ -45,7 +45,7 @@ else
                     </tr>
                 }
             </tbody>
-        </MudSimpleTable>
+        </MudSimpleTable></div>
         @if (_next is not null)
         {
             <MudButton Class="mt-2" Variant="Variant.Outlined" OnClick="MoreAsync">Show more</MudButton>

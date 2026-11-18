@@ -1,0 +1,64 @@
+@* Every view's four non-content states (UI-01), the same everywhere: loading, empty, error with a retry, and
+   permission denied with the way forward. The content shows only when none of them applies. *@
+
+@switch (State)
+{
+    case ViewState.Loading:
+        <div class="page-state" role="status" data-testid="state-loading">
+            <MudProgressCircular Indeterminate="true" Size="Size.Small" aria-hidden="true" />
+            <MudText>@(LoadingText ?? "Loading…")</MudText>
+        </div>
+        break;
+    case ViewState.Error:
+        <MudAlert Severity="Severity.Error" data-testid="state-error" Class="mb-4">
+            <div>@(Error ?? "Something went wrong.")</div>
+            @if (Retry.HasDelegate)
+            {
+                <MudButton Class="mt-2" Variant="Variant.Outlined" Size="Size.Small" OnClick="Retry">Try again</MudButton>
+            }
+        </MudAlert>
+        break;
+    case ViewState.Forbidden:
+        <MudPaper Class="pa-4" Outlined="true" data-testid="state-forbidden">
+            <MudText>@(ForbiddenText ?? "Sign in to see this.")</MudText>
+            @if (SignInReturn is not null)
+            {
+                <MudButton Class="mt-2" Variant="Variant.Filled" Color="Color.Primary" Href="@($"/sign-in?returnUrl={Uri.EscapeDataString(SignInReturn)}")">Sign in</MudButton>
+            }
+        </MudPaper>
+        break;
+    case ViewState.Empty:
+        <MudPaper Class="pa-6 text-center" Outlined="true" data-testid="state-empty">
+            @EmptyContent
+        </MudPaper>
+        break;
+    default:
+        @ChildContent
+        break;
+}
+
+@code {
+    [Parameter, EditorRequired]
+    public ViewState State { get; set; }
+
+    [Parameter]
+    public string? LoadingText { get; set; }
+
+    [Parameter]
+    public string? Error { get; set; }
+
+    [Parameter]
+    public EventCallback Retry { get; set; }
+
+    [Parameter]
+    public string? ForbiddenText { get; set; }
+
+    [Parameter]
+    public string? SignInReturn { get; set; }
+
+    [Parameter]
+    public RenderFragment? EmptyContent { get; set; }
+
+    [Parameter]
+    public RenderFragment? ChildContent { get; set; }
+}

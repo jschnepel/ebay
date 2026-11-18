@@ -10,7 +10,7 @@
 
 @if (_signedOut)
 {
-    <MudText><MudLink Href="/sign-in?returnUrl=/sell">Sign in</MudLink> to sell.</MudText>
+    <PageState State="ViewState.Forbidden" ForbiddenText="Sign in to sell." SignInReturn="/sell" />
 }
 else if (Session.Account?.IsAdmin == true)
 {
@@ -27,7 +27,7 @@ else
 
     @if (_list.Items is null)
     {
-        <MudProgressCircular Indeterminate="true" aria-label="Loading your listings" />
+        <PageState State="ViewState.Loading" LoadingText="Loading your listings…" />
     }
     else if (_list.Items.Count == 0)
     {
@@ -35,7 +35,8 @@ else
     }
     else
     {
-        <MudSimpleTable Dense="true">
+        <div class="table-scroll">
+    <MudSimpleTable Dense="true">
             <thead><tr><th>Item</th><th>Price</th><th>Bids</th><th>Status</th><th>Ends</th><th>Actions</th></tr></thead>
             <tbody>
                 @foreach (var auction in _list.Items)
@@ -62,6 +63,7 @@ else
                 }
             </tbody>
         </MudSimpleTable>
+        </div>
         @if (_list.NextCursor is not null)
         {
             <MudButton Class="mt-2" Variant="Variant.Outlined" OnClick="_list.MoreAsync">Show more</MudButton>

@@ -269,6 +269,8 @@ Each package is pinned in `Directory.Packages.props` and locked by the lock file
 | MudBlazor | Material Design components for the client | MIT |
 | Microsoft.Extensions.Identity.Core | The password hasher, shared by the API and the demo seed | MIT |
 | Microsoft.Playwright | Browser tests in headless Chromium | MIT |
+| Deque.AxeCore.Playwright | Accessibility scans in the browser tests | MPL-2.0 |
+| Microsoft.Extensions.Identity.Core, StackExchange.Redis (through the SignalR Redis package) | Password hashing; the Redis connection | MIT |
 | Buf (CI only, `bufbuild/buf-action`) | Lint, format and breaking-change checks for the `.proto` contract | Apache-2.0 |
 | Microsoft.Testing.Extensions.TrxReport | Test result files for CI | MIT |
 | Microsoft.Testing.Extensions.CodeCoverage | Line coverage for the CI floor | Microsoft .NET Library licence |

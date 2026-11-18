@@ -7,64 +7,88 @@
 <PageTitle>Auctions</PageTitle>
 <MudText Typo="Typo.h4" HtmlTag="h1" Class="mb-4">Auctions</MudText>
 
-<MudStack Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.End" Class="mb-4" role="search">
-    <MudTextField @bind-Value="_query" Label="Search titles" Immediate="true" OnKeyDown="SearchOnEnterAsync" />
-    <MudSelect T="string" @bind-Value="_status" Label="Show">
-        <MudSelectItem T="string" Value="@("")">All</MudSelectItem>
-        <MudSelectItem T="string" Value="@("active")">Active</MudSelectItem>
-        <MudSelectItem T="string" Value="@("ending_soon")">Ending within the hour</MudSelectItem>
-        <MudSelectItem T="string" Value="@("closed")">Closed</MudSelectItem>
-    </MudSelect>
-    <MudButton Variant="Variant.Outlined" OnClick="SearchAsync">Search</MudButton>
-</MudStack>
+<MudPaper Class="pa-3 mb-4" Outlined="true">
+    <MudGrid Spacing="2" Justify="Justify.FlexStart" role="search">
+        <MudItem xs="12" sm="6">
+            <MudTextField @bind-Value="_query" Label="Search titles" Immediate="true" OnKeyDown="SearchOnEnterAsync"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" />
+        </MudItem>
+        <MudItem xs="8" sm="4">
+            <MudSelect T="string" @bind-Value="_status" Label="Show">
+                <MudSelectItem T="string" Value="@("")">All</MudSelectItem>
+                <MudSelectItem T="string" Value="@("active")">Active</MudSelectItem>
+                <MudSelectItem T="string" Value="@("ending_soon")">Ending within the hour</MudSelectItem>
+                <MudSelectItem T="string" Value="@("closed")">Closed</MudSelectItem>
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="4" sm="2" Class="d-flex align-end">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SearchAsync" FullWidth="true">Search</MudButton>
+        </MudItem>
+    </MudGrid>
+</MudPaper>
 
-@if (_list.Error is not null && _list.Items is null)
-{
-    <MudAlert Severity="Severity.Error">@_list.Error</MudAlert>
-}
-else if (_list.Items is null)
-{
-    <MudProgressCircular Indeterminate="true" aria-label="Loading auctions" />
-}
-else if (_list.Items.Count == 0)
-{
-    <MudText>No auctions are listed yet.</MudText>
-}
-else
-{
-    <MudSimpleTable Dense="true" Hover="true">
-        <thead>
-            <tr><th><span class="sr-only">Picture</span></th><th>Item</th><th>Price</th><th>Bids</th><th>Status</th><th>Ends</th></tr>
-        </thead>
-        <tbody>
-            @foreach (var auction in _list.Items)
+<PageState State="State" Error="@_list.Error" Retry="SearchAsync" LoadingText="Loading auctions…">
+    <EmptyContent>
+        @if (_searched)
+        {
+            <MudText>No auctions match. Try another word or show all.</MudText>
+        }
+        else
+        {
+            <MudText>No auctions are listed yet.</MudText>
+            <MudButton Class="mt-2" Href="/sell/new" Variant="Variant.Outlined">List an item</MudButton>
+        }
+    </EmptyContent>
+    <ChildContent>
+        <MudGrid Spacing="3">
+            @foreach (var auction in _list.Items!)
             {
-                <tr data-testid="auction-row">
-                    <td>
-                        @if (auction.CoverImageId is { } cover)
-                        {
-                            <img src="@($"api/v1/images/{cover}")" alt="" width="48" height="48" style="object-fit: cover" data-testid="cover" />
-                        }
-                    </td>
-                    <td><MudLink Href="@($"/auctions/{auction.Id}")">@auction.Title</MudLink></td>
-                    <td data-testid="price">@Format.Price(auction)</td>
-                    <td>@auction.BidCount</td>
-                    <td>@Format.Status(auction.Status)</td>
-                    <td>@Format.Time(auction.EndsAt)</td>
-                </tr>
+                <MudItem xs="12" sm="6" md="4" lg="3">
+                    <MudCard Outlined="true" Class="auction-card" data-testid="auction-row">
+                        <a href="@($"/auctions/{auction.Id}")" class="auction-card-picture" tabindex="-1" aria-hidden="true">
+                            @if (auction.CoverImageId is { } cover)
+                            {
+                                <img src="@($"api/v1/images/{cover}")" alt="" data-testid="cover" />
+                            }
+                            else
+                            {
+                                <MudIcon Icon="@Icons.Material.Outlined.Image" Size="Size.Large" />
+                            }
+                        </a>
+                        <MudCardContent>
+                            <MudLink Href="@($"/auctions/{auction.Id}")" Typo="Typo.subtitle1" Class="auction-card-title">@auction.Title</MudLink>
+                            <MudText Typo="Typo.h6" data-testid="price">@Format.Price(auction)</MudText>
+                            <MudText Typo="Typo.body2">
+                                @auction.BidCount @(auction.BidCount == 1 ? "bid" : "bids") · @Format.Status(auction.Status)
+                            </MudText>
+                            <MudText Typo="Typo.caption">Ends @Format.Time(auction.EndsAt)</MudText>
+                        </MudCardContent>
+                    </MudCard>
+                </MudItem>
             }
-        </tbody>
-    </MudSimpleTable>
-    @if (_list.NextCursor is not null)
-    {
-        <MudButton Class="mt-2" Variant="Variant.Outlined" OnClick="_list.MoreAsync">Show more</MudButton>
-    }
-}
+        </MudGrid>
+        @if (_list.NextCursor is not null)
+        {
+            <div class="d-flex justify-center mt-4">
+                <MudButton Variant="Variant.Outlined" OnClick="_list.MoreAsync">Show more</MudButton>
+            </div>
+        }
+    </ChildContent>
+</PageState>
 
 @code {
     private LiveList<AuctionSummary> _list = null!;
     private string _query = "";
     private string _status = "";
+    private bool _searched;
+
+    private ViewState State => _list switch
+    {
+        { Items: null, Error: not null } => ViewState.Error,
+        { Items: null } => ViewState.Loading,
+        { Items.Count: 0 } => ViewState.Empty,
+        _ => ViewState.Content,
+    };
 
     protected override async Task OnInitializedAsync()
     {
@@ -84,6 +108,7 @@ else
 
     private async Task SearchAsync()
     {
+        _searched = !string.IsNullOrWhiteSpace(_query) || !string.IsNullOrEmpty(_status);
         _list = NewList();
         await _list.MoreAsync();
     }

@@ -5,13 +5,14 @@
 @inject LiveUpdates Live
 @inject NavigationManager Navigation
 
-<MudThemeProvider />
+<MudThemeProvider Theme="Theme" />
 <MudPopoverProvider />
 <MudDialogProvider />
 <MudSnackbarProvider />
 
 <MudLayout>
-    <MudAppBar Elevation="0" Dense="true">
+    <MudAppBar Elevation="1" Dense="true">
+        <a href="/" class="brand d-none d-sm-inline">Auctions</a>
         <nav aria-label="Main" class="d-flex align-center flex-wrap">
             @if (Session.Account?.IsAdmin == true)
             {
@@ -35,7 +36,7 @@
                                aria-label="@($"Notifications, {Notices.Unread} unread")" data-testid="bell" />
             </MudBadge>
             <span hidden data-testid="unread-count">@Notices.Unread</span>
-            <MudText Class="mr-2" data-testid="signed-in-as">@account.DisplayName</MudText>
+            <MudText Class="mr-2 d-none d-sm-flex" data-testid="signed-in-as">@account.DisplayName</MudText>
             <MudButton Color="Color.Inherit" OnClick="SignOutAsync">Sign out</MudButton>
         }
         else
@@ -57,6 +58,21 @@
 </MudLayout>
 
 @code {
+    // A calm palette whose text meets WCAG AA contrast on both the bar and the page.
+    private static readonly MudTheme Theme = new()
+    {
+        PaletteLight = new PaletteLight
+        {
+            Primary = "#4A3F9E",
+            AppbarBackground = "#2F2A5C",
+            Background = "#FAF9FC",
+            Secondary = "#9A3B5B",
+            Success = "#2E7D32",
+            Error = "#B3261E",
+            TextSecondary = "#55505F",
+        },
+    };
+
     private Guid? _connectedAs;
 
     protected override async Task OnInitializedAsync()

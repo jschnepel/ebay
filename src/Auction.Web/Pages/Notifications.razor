@@ -10,11 +10,11 @@
 
 @if (Session.Account is null)
 {
-    <MudText><MudLink Href="/sign-in?returnUrl=/notifications">Sign in</MudLink> to see your notifications.</MudText>
+    <PageState State="ViewState.Forbidden" ForbiddenText="Sign in to see your notifications." SignInReturn="/notifications" />
 }
 else if (_items is null)
 {
-    <MudProgressCircular Indeterminate="true" aria-label="Loading notifications" />
+    <PageState State="ViewState.Loading" LoadingText="Loading notifications…" />
 }
 else if (_items.Count == 0)
 {

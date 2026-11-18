@@ -8,7 +8,7 @@
 
 @if (_forbidden)
 {
-    <MudText>Page not found.</MudText>
+    <PageState State="ViewState.Forbidden" ForbiddenText="Page not found." />
 }
 else
 {
@@ -18,15 +18,15 @@ else
                 <MudText Typo="Typo.h6" HtmlTag="h2">Live activity</MudText>
                 @if (_activity is { } activity)
                 {
-                    <MudSimpleTable Dense="true" Class="mb-2">
+                    <div class="table-scroll"><MudSimpleTable Dense="true" Class="mb-2">
                         <tbody>
                             <tr><th scope="row">Active auctions</th><td data-testid="active-auctions">@activity.ActiveAuctions</td></tr>
                             <tr><th scope="row">Bids in the last 5 minutes</th><td>@activity.BidsLastFiveMinutes</td></tr>
                             <tr><th scope="row">Signed-in users online</th><td>@activity.OnlineUsers</td></tr>
                         </tbody>
-                    </MudSimpleTable>
+                    </MudSimpleTable></div>
                     <MudText Typo="Typo.subtitle2" HtmlTag="h3">Recent bids</MudText>
-                    <MudSimpleTable Dense="true">
+                    <div class="table-scroll"><MudSimpleTable Dense="true">
                         <thead><tr><th>Item</th><th>Amount</th><th>When</th></tr></thead>
                         <tbody>
                             @foreach (var bid in activity.RecentBids)
@@ -38,7 +38,7 @@ else
                                 </tr>
                             }
                         </tbody>
-                    </MudSimpleTable>
+                    </MudSimpleTable></div>
                 }
             </MudPaper>
         </MudItem>
@@ -47,7 +47,7 @@ else
                 <MudText Typo="Typo.h6" HtmlTag="h2">System health</MudText>
                 @if (_health is { } health)
                 {
-                    <MudSimpleTable Dense="true">
+                    <div class="table-scroll"><MudSimpleTable Dense="true">
                         <tbody>
                             @foreach (var item in health.Components)
                             {
@@ -55,14 +55,14 @@ else
                             }
                             <tr><th scope="row">Live-update backlog</th><td data-testid="outbox-backlog">@health.OutboxBacklog</td></tr>
                         </tbody>
-                    </MudSimpleTable>
+                    </MudSimpleTable></div>
                 }
             </MudPaper>
             <MudPaper Class="pa-4" Outlined="true">
                 <MudText Typo="Typo.h6" HtmlTag="h2">Latency, last 5 minutes</MudText>
                 @if (_kpis is { } kpis)
                 {
-                    <MudSimpleTable Dense="true">
+                    <div class="table-scroll"><MudSimpleTable Dense="true">
                         <thead><tr><th>Measure</th><th>p50</th><th>p95</th><th>Samples</th></tr></thead>
                         <tbody>
                             @foreach (var (name, summary) in new[] { ("API request", kpis.ApiRequest), ("Bid", kpis.Bid), ("Engine call", kpis.EngineCall), ("Publish lag", kpis.PublishLag) })
@@ -75,7 +75,7 @@ else
                                 </tr>
                             }
                         </tbody>
-                    </MudSimpleTable>
+                    </MudSimpleTable></div>
                 }
             </MudPaper>
         </MudItem>
