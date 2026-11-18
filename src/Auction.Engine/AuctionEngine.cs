@@ -76,8 +76,22 @@ public sealed class AuctionEngine(NpgsqlDataSource dataSource, EngineOptions opt
     /// Activates scheduled auctions whose start has passed and closes auctions whose end has passed.
     /// Returns how many changed.
     /// </summary>
-    public Task<int> AdvanceDueAuctionsAsync(CancellationToken cancellationToken) =>
-        throw new NotImplementedException($"{dataSource.ConnectionString} {cancellationToken.IsCancellationRequested}");
+    public async Task<int> AdvanceDueAuctionsAsync(CancellationToken cancellationToken)
+    {
+        IReadOnlyList<AuctionId> due;
+        await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
+        {
+            due = await AuctionStore.FindDueAsync(connection, options.SweepBatchSize, cancellationToken);
+        }
+
+        var advanced = 0;
+        foreach (var id in due)
+        {
+            advanced += await AdvanceAsync(id, cancellationToken) ? 1 : 0;
+        }
+
+        return advanced;
+    }
 
     private Task<CommandOutcome> RunAsync(
         CommandContext context, AuctionId auctionId, byte[] requestHash, Func<LockedAuction, DateTimeOffset, Decision> decide, CancellationToken cancellationToken)
@@ -188,6 +202,39 @@ public sealed class AuctionEngine(NpgsqlDataSource dataSource, EngineOptions opt
 
         await transaction.CommitAsync(cancellationToken);
         return outcome;
+    }
+
+    // Status and time are re-checked under the lock, so an auction another worker already advanced, or
+    // one that is not due after all, is left unchanged.
+    private async Task<bool> AdvanceAsync(AuctionId id, CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        var claimed = await AuctionStore.ClaimAsync(connection, transaction, id, cancellationToken);
+        if (claimed.Auction is not { } auction)
+        {
+            return false;
+        }
+
+        var result = auction.State.Status == AuctionStatus.Scheduled
+            ? Lifecycle.Activate(auction.State, claimed.Now)
+            : Lifecycle.Close(auction.State, claimed.Now);
+        if (!result.Succeeded)
+        {
+            return false;
+        }
+
+        var type = result.State.Status == AuctionStatus.Closed ? "auction.closed" : "auction.activated";
+        var change = new AuctionChange(result.State, [], type);
+        await using var batch = new NpgsqlBatch(connection, transaction);
+        foreach (var command in AuctionStore.ChangeCommands(auction, change, claimed.Now, Guid.CreateVersion7()))
+        {
+            batch.BatchCommands.Add(command);
+        }
+
+        await batch.ExecuteNonQueryAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return true;
     }
 
     private static Decision Accept(LockedAuction before, AuctionChange change)

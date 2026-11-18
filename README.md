@@ -12,7 +12,8 @@ Built bottom-up, one tested layer at a time ([build plan](docs/build-plan.md)).
 | Auction rules: money, proxy and fixed-increment bidding, reserve, deadlines, listing validation, lifecycle | Built and unit-tested (88 tests) |
 | Database: schema, four least-privilege roles, append-only bids, amount and lifecycle constraints, one-shot migrator | Built and tested against PostgreSQL 18 |
 | Engine core: create, edit, publish, cancel and bid, each one locked transaction with idempotency and an outbox event | Built and tested against PostgreSQL 18, including 50-bidder races checked against the reference model; not yet a network service |
-| Close worker, engine service, API, UI, live updates, simulator | Not started |
+| Close worker: starts scheduled auctions and closes ended ones with Sold, Reserve not met or No bids | Built and tested, including two workers sweeping at once |
+| Engine service, API, UI, live updates, simulator | Not started |
 
 The application can't be run yet. The one-command `docker compose up` arrives with build step 8.
 
@@ -50,7 +51,7 @@ dotnet test --no-build -c Release
 
 - **Unit tests** for every auction rule. Each rejection is paired with a control case that must succeed.
 - **Property tests** (CsCheck): each run generates 2,000 random auctions with random terms and bid sequences, and checks the rules against a separate naive reference model.
-- **Planted-bug checks:** deliberate bugs planted during development were each caught by the suite: seven in the rules, three in the database triggers and grants, and three in the engine (no row lock, the clock read before the lock wait, a private amount written to the history).
+- **Planted-bug checks:** deliberate bugs planted during development were each caught by the suite: seven in the rules, three in the database triggers and grants, and five in the engine (no row lock, the clock read before the lock wait, a private amount written to the history, a close worker that skips the lock, and one that closes early).
 - **Real infrastructure:** database tests run against PostgreSQL 18, never an in-memory provider.
 - **CI** runs a locked restore, a format check, a zero-warning Release build and the full suite. It fails on any floating-point type in money code.
 - **Independent requirements audits:** the latest one confirms the rules are correct at the unit layer. The requirements stay open until the database and service layers are built and tested.

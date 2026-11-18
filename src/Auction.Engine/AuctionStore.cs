@@ -23,29 +23,79 @@ internal static class AuctionStore
         "bid_entry, starts_at, ends_at, current_price_cents, leader_id, accepted_bid_count, outcome, version";
 
     /// <summary>
-    /// Locks the auction row, then reads the clock, the private maxima, the last history step and any
-    /// recorded outcome for the key. The clock is a separate statement after the lock, so time spent
-    /// waiting for the lock counts against the deadline.
+    /// Locks the auction row, waiting up to <paramref name="lockTimeout"/>, then reads the clock, the
+    /// private maxima, the last history step and any recorded outcome for the key. The clock is a separate
+    /// statement after the lock, so time spent waiting for the lock counts against the deadline.
     /// </summary>
-    public static async Task<LockResult> LockAsync(
+    public static Task<LockResult> LockAsync(
         NpgsqlConnection connection, NpgsqlTransaction transaction, AuctionId id, CommandContext context, TimeSpan lockTimeout, CancellationToken cancellationToken)
     {
         var timeout = ((long)lockTimeout.TotalMilliseconds).ToString(CultureInfo.InvariantCulture) + "ms";
-        await using var batch = new NpgsqlBatch(connection, transaction)
+        return LoadAsync(
+            new NpgsqlBatch(connection, transaction) { BatchCommands = { Command("SELECT set_config('lock_timeout', $1, true)", timeout) } },
+            id,
+            "FOR UPDATE",
+            context,
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// Claims the auction row for the close worker, skipping it if a bid or another worker holds it; the
+    /// next sweep picks it up. No auction is returned when it was skipped.
+    /// </summary>
+    public static Task<LockResult> ClaimAsync(
+        NpgsqlConnection connection, NpgsqlTransaction transaction, AuctionId id, CancellationToken cancellationToken) =>
+        LoadAsync(new NpgsqlBatch(connection, transaction), id, "FOR UPDATE SKIP LOCKED", context: null, cancellationToken);
+
+    /// <summary>Auctions due to start or to end by the database clock, soonest end first.</summary>
+    public static async Task<IReadOnlyList<AuctionId>> FindDueAsync(
+        NpgsqlConnection connection, int limit, CancellationToken cancellationToken)
+    {
+        await using var batch = new NpgsqlBatch(connection)
         {
             BatchCommands =
             {
-                Command("SELECT set_config('lock_timeout', $1, true)", timeout),
-                Command($"SELECT {Columns} FROM auctions WHERE id = $1 FOR UPDATE", id.Value),
-                Command("SELECT clock_timestamp()"),
-                Command("SELECT bidder_id, maximum_cents, sequence FROM proxy_maxima WHERE auction_id = $1", id.Value),
-                Command("SELECT coalesce(max(seq), 0) FROM bids WHERE auction_id = $1", id.Value),
-                IdempotencyStore.SelectCommand(context),
+                Command(
+                    """
+                    SELECT id FROM auctions
+                    WHERE (status = 'scheduled' AND starts_at <= clock_timestamp())
+                       OR (status IN ('scheduled', 'active', 'suspended') AND ends_at <= clock_timestamp())
+                    ORDER BY ends_at
+                    LIMIT $1
+                    """,
+                    limit),
             },
         };
         await using var reader = await batch.ExecuteReaderAsync(cancellationToken);
+        var due = new List<AuctionId>();
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            due.Add(new AuctionId(reader.GetGuid(0)));
+        }
 
-        await reader.NextResultAsync(cancellationToken);
+        return due;
+    }
+
+    private static async Task<LockResult> LoadAsync(
+        NpgsqlBatch batch, AuctionId id, string lockClause, CommandContext? context, CancellationToken cancellationToken)
+    {
+        await using var owned = batch;
+        var leading = batch.BatchCommands.Count;
+        batch.BatchCommands.Add(Command($"SELECT {Columns} FROM auctions WHERE id = $1 {lockClause}", id.Value));
+        batch.BatchCommands.Add(Command("SELECT clock_timestamp()"));
+        batch.BatchCommands.Add(Command("SELECT bidder_id, maximum_cents, sequence FROM proxy_maxima WHERE auction_id = $1", id.Value));
+        batch.BatchCommands.Add(Command("SELECT coalesce(max(seq), 0) FROM bids WHERE auction_id = $1", id.Value));
+        if (context is not null)
+        {
+            batch.BatchCommands.Add(IdempotencyStore.SelectCommand(context));
+        }
+
+        await using var reader = await batch.ExecuteReaderAsync(cancellationToken);
+        for (var i = 0; i < leading; i++)
+        {
+            await reader.NextResultAsync(cancellationToken);
+        }
+
         var row = await reader.ReadAsync(cancellationToken) ? ReadAuction(reader) : null;
         await reader.NextResultAsync(cancellationToken);
         await reader.ReadAsync(cancellationToken);
@@ -60,8 +110,12 @@ internal static class AuctionStore
         await reader.NextResultAsync(cancellationToken);
         await reader.ReadAsync(cancellationToken);
         var lastSeq = reader.GetInt64(0);
-        await reader.NextResultAsync(cancellationToken);
-        var recorded = await IdempotencyStore.ReadAsync(reader, cancellationToken);
+        RecordedOutcome? recorded = null;
+        if (context is not null)
+        {
+            await reader.NextResultAsync(cancellationToken);
+            recorded = await IdempotencyStore.ReadAsync(reader, cancellationToken);
+        }
 
         var auction = row is null
             ? null

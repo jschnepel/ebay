@@ -369,7 +369,7 @@ Status comes from evidence only.
 | DOM-02 | Implied | `src/Auction.Domain/Bidding.cs`; clock read after the lock in `src/Auction.Engine/AuctionStore.cs` | `FixedIncrementAndEligibilityTests`, `LockingTests` | U, D | U passed; D passed |
 | DOM-03 | Implied | `Bidding.cs`, `Lifecycle.cs`, `ListingValidator.cs`, `src/Auction.Engine` | `FixedIncrementAndEligibilityTests`, `LifecycleTests`, `AuctionCommandTests`, `AuctionRowRuleTests` | U, D | U passed; D passed |
 | BID-01 | Engineering | `src/Auction.Domain/Bidding.cs`, `src/Auction.Engine` | `ProxyBiddingTests`, `FixedIncrementAndEligibilityTests`, `BiddingPropertyTests`, `AuctionCommandTests`, `BidRaceTests` | U, D, S | U passed; D passed; S pending (step 7) |
-| LIF-01 | Implied | `src/Auction.Domain/Lifecycle.cs` | `LifecycleTests` | U, D | U passed; D pending |
+| LIF-01 | Implied | `src/Auction.Domain/Lifecycle.cs`, `src/Auction.Engine/CloseWorker.cs` | `LifecycleTests`, `CloseWorkerTests` | U, D | U passed; D passed |
 | COR-01 | Engineering | `api` role grants in `src/Auction.Migrator/Schema/InitialSchemaSql.cs` | `RoleGrantTests` | S | API write refusal passed at D; S pending (step 7) |
 | COR-02 | Engineering | one transaction per command in `src/Auction.Engine/AuctionEngine.cs` | `LockingTests` (fault after the bid insert) | D | passed |
 | COR-03 | Engineering | `src/Auction.Engine/IdempotencyStore.cs`, `AuctionEngine.cs` | `IdempotencyTests` | D, S | D passed; S pending (missing key → 400 at the API, step 7) |
