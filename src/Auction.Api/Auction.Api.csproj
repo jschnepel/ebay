@@ -2,7 +2,8 @@
 
   <!--
     The public HTTP API: accounts and cookie sessions, auction reads straight from PostgreSQL (as the
-    read-only api role), and every auction command forwarded to the engine over gRPC.
+    read-only api role), and every auction command forwarded to the engine over gRPC. It also serves the
+    Blazor WebAssembly client, so the browser and the API share one origin.
   -->
   <PropertyGroup>
     <IsPackable>false</IsPackable>
@@ -12,6 +13,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Auction.Domain\Auction.Domain.csproj" />
+    <!-- The browser client, served from this origin. -->
+    <ProjectReference Include="..\Auction.Web\Auction.Web.csproj" />
   </ItemGroup>
 
   <ItemGroup>

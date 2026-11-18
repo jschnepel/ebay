@@ -31,23 +31,42 @@ internal static class AuctionEndpoints
         commands.MapPost("/{id:guid}/publish", PublishAsync).Produces<CommandResponse>();
         commands.MapPost("/{id:guid}/cancel", CancelAsync).Produces<CommandResponse>();
         commands.MapPost("/{id:guid}/bids", BidAsync).Produces<CommandResponse>(StatusCodes.Status201Created);
+
+        var me = api.MapGroup("/me").WithTags("Me").RequireAuthorization().ProducesProblem(StatusCodes.Status400BadRequest);
+        me.MapGet("/auctions", MineAsync).Produces<Page<AuctionSummary>>();
+        me.MapGet("/bids", BiddingAsync).Produces<Page<BiddingSummary>>();
         return api;
     }
 
     private static async Task<IResult> ListAsync(
-        int? pageSize, string? cursor, AuctionReader reader, ApiOptions options, CancellationToken cancellationToken)
+        int? pageSize, string? cursor, AuctionReader reader, ApiOptions options, CancellationToken cancellationToken) =>
+        TryPaging(pageSize, cursor, options, out var size, out var after) is { } problem
+            ? problem
+            : TypedResults.Ok(await reader.ListAsync(after, size, cancellationToken));
+
+    private static async Task<IResult> MineAsync(
+        int? pageSize, string? cursor, HttpContext http, AuctionReader reader, ApiOptions options) =>
+        TryPaging(pageSize, cursor, options, out var size, out var after) is { } problem
+            ? problem
+            : TypedResults.Ok(await reader.MineAsync(http.User.UserIdOf()!.Value, after, size, http.RequestAborted));
+
+    private static async Task<IResult> BiddingAsync(
+        int? pageSize, string? cursor, HttpContext http, AuctionReader reader, ApiOptions options) =>
+        TryPaging(pageSize, cursor, options, out var size, out var after) is { } problem
+            ? problem
+            : TypedResults.Ok(await reader.BiddingAsync(http.User.UserIdOf()!.Value, after, size, http.RequestAborted));
+
+    /// <summary>A 400 problem for a bad page size or cursor; otherwise null with the parsed values.</summary>
+    private static IResult? TryPaging(int? pageSize, string? cursor, ApiOptions options, out int size, out (DateTimeOffset, Guid)? after)
     {
-        if (PageSize(pageSize, options) is not { } size)
+        after = null;
+        size = PageSize(pageSize, options) ?? 0;
+        if (size == 0)
         {
             return Problems.BadRequest("invalid_page_size", "pageSize must be at least 1.");
         }
 
-        if (!Cursors.TryDecode(cursor, out (DateTimeOffset, Guid)? after))
-        {
-            return Problems.BadRequest("invalid_cursor", "The cursor is not one this API returned.");
-        }
-
-        return TypedResults.Ok(await reader.ListAsync(after, size, cancellationToken));
+        return Cursors.TryDecode(cursor, out after) ? null : Problems.BadRequest("invalid_cursor", "The cursor is not one this API returned.");
     }
 
     private static async Task<IResult> DetailAsync(Guid id, HttpContext http, AuctionReader reader, CancellationToken cancellationToken) =>

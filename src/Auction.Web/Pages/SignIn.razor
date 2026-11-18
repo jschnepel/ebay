@@ -1,0 +1,94 @@
+@page "/sign-in"
+@inject AuctionApi Api
+@inject Session Session
+@inject NavigationManager Navigation
+
+<PageTitle>Sign in</PageTitle>
+<MudText Typo="Typo.h4" HtmlTag="h1" Class="mb-4">Sign in</MudText>
+
+<MudGrid>
+    <MudItem xs="12" md="6">
+        <MudPaper Class="pa-4" Outlined="true">
+            <MudText Typo="Typo.h6" HtmlTag="h2">Create an account</MudText>
+            <MudText Typo="Typo.body2" Class="mb-2">A display name and an email are enough in the demo.</MudText>
+            <MudTextField @bind-Value="_displayName" Label="Display name" Immediate="true" MaxLength="50" />
+            <MudTextField @bind-Value="_signUpEmail" Label="Email for the new account" InputType="InputType.Email" Immediate="true" />
+            <MudButton Class="mt-3" Variant="Variant.Filled" Color="Color.Primary" OnClick="SignUpAsync" Disabled="_busy">Create account</MudButton>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" md="6">
+        <MudPaper Class="pa-4" Outlined="true">
+            <MudText Typo="Typo.h6" HtmlTag="h2">Sign back in</MudText>
+            <MudText Typo="Typo.body2" Class="mb-2">Demo accounts sign in with their email; seeded accounts need their password.</MudText>
+            <MudTextField @bind-Value="_signInEmail" Label="Email" InputType="InputType.Email" Immediate="true" />
+            <MudTextField @bind-Value="_password" Label="Password (seeded accounts only)" InputType="InputType.Password" Immediate="true" />
+            <MudButton Class="mt-3" Variant="Variant.Filled" Color="Color.Primary" OnClick="SignInAsync" Disabled="_busy">Sign in</MudButton>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@if (_error is not null)
+{
+    <MudAlert Class="mt-4" Severity="Severity.Error" data-testid="sign-in-error">@_error</MudAlert>
+}
+
+@if (_existingEmail is not null)
+{
+    @* A retried sign-up whose first attempt succeeded lands here: the account exists, so offer to use it. *@
+    <MudButton Class="mt-2" Variant="Variant.Outlined" OnClick="SignInExistingAsync" Disabled="_busy">Sign in as @_existingEmail</MudButton>
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "returnUrl")]
+    public string? ReturnUrl { get; set; }
+
+    private string _displayName = "";
+    private string _signUpEmail = "";
+    private string _signInEmail = "";
+    private string _password = "";
+    private string? _error;
+    private bool _busy;
+
+    private string? _existingEmail;
+
+    private async Task SignUpAsync()
+    {
+        var email = _signUpEmail.Trim();
+        await RunAsync(() => Api.SignUpAsync(_displayName, email));
+        if (_error is not null && _lastProblem?.Code == "email_taken")
+        {
+            _existingEmail = email;
+        }
+    }
+
+    private Task SignInAsync() => RunAsync(() => Api.SignInAsync(_signInEmail, _password));
+
+    private Task SignInExistingAsync()
+    {
+        var email = _existingEmail!;
+        return RunAsync(() => Api.SignInAsync(email, null));
+    }
+
+    private Problem? _lastProblem;
+
+    private async Task RunAsync(Func<Task<ApiResult<Account>>> call)
+    {
+        _busy = true;
+        (_error, _existingEmail) = (null, null);
+        var result = await call();
+        _busy = false;
+        _lastProblem = result.Problem;
+        if (!result.Succeeded)
+        {
+            _error = result.Message;
+            return;
+        }
+
+        Session.SignedIn(result.Value!);
+        Navigation.NavigateTo(IsLocalPath(ReturnUrl) ? ReturnUrl! : "/");
+    }
+
+    // Only a path on this site: "//host" and "/\host" would leave it.
+    private static bool IsLocalPath(string? url) =>
+        url is { Length: > 0 } && url[0] == '/' && (url.Length == 1 || (url[1] != '/' && url[1] != '\\'));
+}

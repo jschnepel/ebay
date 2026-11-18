@@ -17,6 +17,23 @@ public sealed class ApiHost(string connectionString, Uri engineAddress, bool dem
     public const int MaxPageSize = 5;
     public static readonly Uri BaseAddress = new("https://localhost");
 
+    /// <summary>
+    /// The same host on a real local port, for a browser: Kestrel instead of the in-memory test server.
+    /// </summary>
+    public static ApiHost OnLocalPort(string connectionString, Uri engineAddress, out Uri address)
+    {
+        using var probe = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+        probe.Start();
+        var port = ((System.Net.IPEndPoint)probe.LocalEndpoint).Port;
+        probe.Stop();
+
+        var host = new ApiHost(connectionString, engineAddress, demoMode: true);
+        host.UseKestrel(port);
+        host.StartServer();
+        address = new Uri($"http://127.0.0.1:{port}");
+        return host;
+    }
+
     public HttpClient Anonymous(bool handleCookies = true) =>
         CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = BaseAddress, HandleCookies = handleCookies, AllowAutoRedirect = false });
 
@@ -43,6 +60,8 @@ public sealed class ApiHost(string connectionString, Uri engineAddress, bool dem
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Production");
+        // The client's files come from the build output, as they do in development.
+        builder.UseStaticWebAssets();
         builder.UseSetting("ConnectionStrings:Api", connectionString);
         builder.UseSetting("Api:EngineAddress", engineAddress.ToString());
         builder.UseSetting("Api:DemoMode", demoMode ? "true" : "false");

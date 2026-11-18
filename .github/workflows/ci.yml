@@ -43,8 +43,24 @@ jobs:
       - name: Build (warnings are errors)
         run: dotnet build --no-restore -c Release
 
+      - name: Chromium for the browser tests
+        run: pwsh tests/Auction.IntegrationTests/bin/Release/net10.0/playwright.ps1 install --with-deps chromium
+
+      # The README's one command on this fresh clone: generates deploy/.env, builds and starts the stack.
+      - name: One command (./run.sh)
+        run: ./run.sh
+
       - name: Test (Microsoft.Testing.Platform; Testcontainers uses the runner's Docker)
         run: dotnet test --no-build -c Release --report-trx --results-directory "$GITHUB_WORKSPACE/TestResults" --coverage --coverage-output-format cobertura
+
+      - name: Browser journey against the one-command stack
+        env:
+          AUCTION_BASE_URL: http://localhost:8080
+        run: dotnet test --no-build -c Release --project tests/Auction.IntegrationTests --report-trx --results-directory "$GITHUB_WORKSPACE/TestResults/stack" -- --filter-class "*JourneyTests"
+
+      - name: Stack logs
+        if: failure()
+        run: docker compose -f deploy/compose.yaml logs --no-color --tail 200
 
       - name: Fail on zero discovered tests
         shell: bash

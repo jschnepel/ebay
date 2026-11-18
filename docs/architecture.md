@@ -138,6 +138,9 @@ Everything under `/api/v1`, JSON only, documented at `/openapi/v1.json`. Errors 
 | `GET /auctions/{id}`, `GET /auctions/{id}/bids` | One auction as the viewer may see it; its bid history with anonymous labels |
 | `POST /auctions`, `PUT /auctions/{id}` | Create or edit a draft (every term required) |
 | `POST /auctions/{id}/publish`, `/cancel`, `/bids` | Publish, cancel, bid: forwarded to the engine with the signed-in user as the actor |
+| `GET /me/auctions`, `GET /me/bids` | The signed-in user's own auctions (drafts included), and the auctions they bid on with whether they lead |
+
+The same host serves the Blazor WebAssembly client: its files through static assets, and its page for every other non-API path, so a deep link such as `/auctions/{id}` loads the app. An unknown `/api` path is a 404 problem, never the page. Every response carries a content security policy (scripts from this origin only, with `'wasm-unsafe-eval'` for WebAssembly; `connect-src 'self'`; no framing), `nosniff` and `Referrer-Policy: same-origin`.
 
 ## Solution layout
 
@@ -148,18 +151,19 @@ src/
   Auction.Engine/      gRPC service, close worker, raw Npgsql data access (single writer)
   Auction.Api/         minimal APIs in feature folders, auth + sessions, SignalR hub, outbox relay, Redis jobs; serves the WASM app
   Auction.Web/         Blazor WebAssembly + MudBlazor: Buy, Sell and Admin areas
-  Auction.Migrator/    EF Core schema model and migrations (with triggers and grants), one-shot runner; later seed and reset-demo
+  Auction.Migrator/    EF Core schema model and migrations (with triggers and grants), one-shot runner, demo seed; later reset-demo
   Auction.Simulator/   CLI virtual users over the public API
   Auction.Verifier/    read-only invariant checker using the reference model
 tests/
   Auction.ReferenceModel/   naive auction rules shared by the verifier and property tests (no engine code)
   Auction.UnitTests/        domain rules + CsCheck property tests
-  Auction.IntegrationTests/ real PostgreSQL / Redis (Testcontainers): engine transactions, roles, relay, and the
-                            API in process calling the engine container over gRPC
-  Auction.BrowserTests/     Playwright: Buy/Sell/Admin journeys, multi-browser consistency, axe
+  Auction.IntegrationTests/ real PostgreSQL / Redis (Testcontainers): engine transactions, roles, relay, the
+                            API in process calling the engine container over gRPC, and Playwright browser
+                            journeys (Browser/) against the same fixtures, or against a running stack when
+                            AUCTION_BASE_URL is set
 ```
 
-Projects are added as each build step needs them; today `Auction.Domain`, `Auction.Migrator`, `Auction.Contracts`, `Auction.Engine` (gRPC service and close worker), `Auction.Api`, the unit and integration tests and the reference model exist.
+Projects are added as each build step needs them; today `Auction.Domain`, `Auction.Migrator`, `Auction.Contracts`, `Auction.Engine` (gRPC service and close worker), `Auction.Api`, `Auction.Web`, the unit and integration tests and the reference model exist. The browser tests live in the integration test project so they share its database and engine fixtures.
 
 ## Data model
 
@@ -240,13 +244,20 @@ Each package is pinned in `Directory.Packages.props` and locked by the lock file
 | Testcontainers.PostgreSql | Real PostgreSQL in integration tests | MIT |
 | Grpc.AspNetCore, Grpc.AspNetCore.HealthChecks, Grpc.Net.Client, Grpc.HealthCheck, Grpc.Tools | gRPC server, health service, client and code generation | Apache-2.0 |
 | Google.Protobuf | Protocol Buffers runtime | BSD-3-Clause |
+| Grpc.Net.ClientFactory | The API's typed engine client | Apache-2.0 |
+| Microsoft.AspNetCore.OpenApi | The API's OpenAPI document | MIT |
+| Microsoft.AspNetCore.Mvc.Testing | The API in process for HTTP and browser tests | MIT |
+| Microsoft.AspNetCore.Components.WebAssembly | The Blazor WebAssembly client runtime | MIT |
+| MudBlazor | Material Design components for the client | MIT |
+| Microsoft.Extensions.Identity.Core | The password hasher, shared by the API and the demo seed | MIT |
+| Microsoft.Playwright | Browser tests in headless Chromium | MIT |
 | Buf (CI only, `bufbuild/buf-action`) | Lint, format and breaking-change checks for the `.proto` contract | Apache-2.0 |
 | Microsoft.Testing.Extensions.TrxReport | Test result files for CI | MIT |
 | Microsoft.Testing.Extensions.CodeCoverage | Line coverage for the CI floor | Microsoft .NET Library licence |
 
 ## Deployment view
 
-- **Local / review:** `docker compose -f deploy/compose.yaml up` runs all services on one host. Infrastructure ports bind to 127.0.0.1 only.
+- **Local / review:** `./run.sh` creates `deploy/.env` with generated secrets if it's missing, then runs `docker compose -f deploy/compose.yaml up` for all services on one host and waits until they're healthy. The migrator adds the demo seed (an admin, a demo seller and buyer, six active auctions) once, to an empty database. Every published port binds to 127.0.0.1 only.
 - **Live (HOST-02, Should):** the same containers on a home server behind the portfolio site's reverse proxy; TLS terminates at that proxy.
 
 **Hosting requirements (HOST-01):**

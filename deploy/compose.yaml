@@ -1,4 +1,4 @@
-# Local stack. Application services are added as each build step needs them.
+# The whole stack. ./run.sh creates deploy/.env on the first run and starts it with one command.
 # Infrastructure images are pinned by digest (resolved 2026-11-16 via docker pull).
 # Ports bind to 127.0.0.1 only; nothing infrastructure-level is exposed publicly.
 name: auction
@@ -39,6 +39,10 @@ services:
       dockerfile: src/Auction.Migrator/Dockerfile
     environment:
       MIGRATOR_CONNECTION_STRING: Host=postgres;Database=${POSTGRES_DB:-auction};Username=migrator;Password=${MIGRATOR_DB_PASSWORD};GSS Encryption Mode=Disable
+      # The demo accounts and auctions, added once to an empty database; the passwords come only from here.
+      SEED_DEMO: ${SEED_DEMO:-true}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      DEMO_PASSWORD: ${DEMO_PASSWORD:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -73,8 +77,9 @@ services:
           cpus: "1.0"
           memory: 512m
 
-  # The public HTTP API: accounts, auction reads (as the read-only api role) and commands forwarded to the
-  # engine. The only application port published, bound to 127.0.0.1 for the reverse proxy in front of it.
+  # The public HTTP API and the browser client it serves: accounts, auction reads (as the read-only api
+  # role) and commands forwarded to the engine. The only application port published, bound to 127.0.0.1
+  # for the reverse proxy in front of it.
   api:
     build:
       context: ..

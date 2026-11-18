@@ -359,10 +359,10 @@ Status comes from evidence only.
 
 | ID | Type | Implementation | Test(s) | Proving layer | Status |
 |---|---|---|---|---|---|
-| INT-01 | Core | | | S, B | not started |
+| INT-01 | Core | `run.sh`, `deploy/compose.yaml`, `src/Auction.Web`, `src/Auction.Api` | `JourneyTests`, `AuctionApiTests` | S, B | S passed (the HTTP journey); B passed: in a real browser a seller lists and publishes, a buyer bids, and both see the new price after a reload, in process and against the one-command stack |
 | INT-02 | Core | | | B | not started |
 | INT-03 | Core | | | S | not started |
-| INT-04 | Core | | | R | not started |
+| INT-04 | Core | `run.sh`, `deploy/.env.example`, `src/Auction.Migrator/DemoSeed.cs`, `.github/workflows/ci.yml` | CI: one command on the fresh clone, the full suite, the browser journey against that stack; `DemoSeedTests` | R | passed: the one command creates `.env` with generated secrets, seeds, and starts every service healthy; the full suite passes in the same job |
 | FND-01 | Engineering | `global.json`, `Directory.*.props`, lock files, `.github/workflows/ci.yml` | CI workflow gates | R | implemented; CI green |
 | FND-02 | Stack | `src/Auction.Contracts`, `src/Auction.Engine/Hosting`, `engine` service in `deploy/compose.yaml` | `EngineServiceTests`, `GrpcBidRaceTests` | S | engine over gRPC in its container, with correlated logs: passed; the API half pending (step 7) |
 | DOM-01 | Implied | `src/Auction.Domain/Money.cs`; amount CHECK constraints in `src/Auction.Migrator/Schema` | `MoneyTests`, `AmountLimitTests` | U, D | U passed; D passed |
@@ -378,11 +378,11 @@ Status comes from evidence only.
 | API-01 | Implied | `src/Auction.Contracts/auction/v1/auction.proto` (Buf lint, format and breaking checks in CI); OpenAPI at `/openapi/v1.json` from `src/Auction.Api` | `EngineServiceTests`, `ApiBoundaryTests`, `AuctionApiTests` | S | gRPC contract: passed; the OpenAPI document lists exactly the served routes: passed; a forged bidder id is attributed to the cookie principal: passed |
 | API-03 | Engineering | keyset pagination in `src/Auction.Api/Auctions/AuctionReader.cs`; Problem Details in `src/Auction.Api/Hosting` | `ApiBoundaryTests` | S | passed: default and maximum page sizes, a fixed order across pages, a fixed query count per read, Problem Details without internals |
 | SEC-01 | Implied | `src/Auction.Api/Hosting/SameOriginJsonMiddleware.cs`, cookie settings in `ApiHosting.cs` | `ApiBoundaryTests`, `AccountApiTests` | S | passed: foreign `Origin` 403, form post 415, same-origin JSON accepted; the cookie is `HttpOnly`, `SameSite=Strict` and `Secure` over HTTPS |
-| AUTH-01 | Engineering | `src/Auction.Api/Accounts`; `users` table in `src/Auction.Migrator/Schema` | `AccountApiTests`, `RoleGrantTests` | S, B | S passed: sign-up signs in, email sign-in returns to the account, 409 for an existing email in any letter case, password accounts refuse email-only sign-in, outside `DEMO_MODE` only password accounts sign in; B pending (step 8, the sign-in page) |
+| AUTH-01 | Engineering | `src/Auction.Api/Accounts`, `src/Auction.Web/Pages/SignIn.razor`; `users` table in `src/Auction.Migrator/Schema` | `AccountApiTests`, `RoleGrantTests`, `JourneyTests` | S, B | S passed: sign-up signs in, email sign-in returns to the account, 409 for an existing email in any letter case, password accounts refuse email-only sign-in, outside `DEMO_MODE` only password accounts sign in; B passed (`JourneyTests`): a visitor signs up on the sign-in page and bids and sells, signs out and back in with the email, and a repeated sign-up is told the account exists and offered to sign in to it |
 | AUTH-02 | Engineering | | | S, B | not started |
 | SEC-04 | Implied | draft privacy and owner checks in `src/Auction.Engine/AuctionEngine.cs` and `src/Auction.Api/Auctions`; event payload in `AuctionStore.cs` | `AuctionCommandTests`, `AuctionApiTests`, `AccountApiTests` | D, S | engine: another user's draft refused exactly like an unknown id, events carry only the auction id and version: D passed. API core rows passed: anonymous 401, another user's draft 404 for every action, another user's published auction 404 for edit, publish and cancel, self-bid 409, bid before the start 409, admin sell and bid 403; the image, notification, admin and SignalR rows: pending (steps 9–13) |
 | SEC-05 | Engineering | `deploy/postgres/init-roles.sh`, `src/Auction.Migrator/Schema/InitialSchemaSql.cs` | `RoleGrantTests`, `MigrationTests` | D | passed for the step-3 tables; Identity, session and image tables pending (steps 7, 12, 13) |
-| UI-01 | Core / Stack | | | B | not started |
+| UI-01 | Core / Stack | `src/Auction.Web` | `JourneyTests`, `WebClientHostingTests` | B | basic pages (step 8): directory, detail with bid box and history, sign-in, sell (create, edit, publish, cancel), my bids, and a sign-in prompt when signed out: passed. Draft deletion, the notification bell, every page state, 360 px and axe: pending (steps 12, 15) |
 | UI-05 | Engineering | | | D, S, B | not started |
 | NOT-01 | Engineering | | | D, S, B | not started |
 | UI-03 | Engineering | | | S, B | not started |

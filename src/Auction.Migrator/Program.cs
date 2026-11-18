@@ -23,10 +23,27 @@ Console.CancelKeyPress += (_, e) =>
     cancellation.Cancel();
 };
 
+// SEED_DEMO=true adds the demo accounts and auctions after migrating; their passwords come from the
+// environment only.
+var seed = string.Equals(Environment.GetEnvironmentVariable("SEED_DEMO"), "true", StringComparison.OrdinalIgnoreCase);
+var adminPassword = Environment.GetEnvironmentVariable("ADMIN_PASSWORD");
+var demoPassword = Environment.GetEnvironmentVariable("DEMO_PASSWORD");
+if (seed && (string.IsNullOrWhiteSpace(adminPassword) || string.IsNullOrWhiteSpace(demoPassword)))
+{
+    MigratorLog.SeedPasswordsMissing(logger);
+    return 2;
+}
+
 try
 {
     await DatabaseMigrator.MigrateAsync(connectionString, loggerFactory, cancellation.Token);
     MigratorLog.UpToDate(logger);
+    if (seed)
+    {
+        var result = await DemoSeed.RunAsync(connectionString, new DemoSeedOptions(adminPassword!, demoPassword!), cancellation.Token);
+        MigratorLog.Seeded(logger, result.AccountsAdded, result.AuctionsAdded);
+    }
+
     return 0;
 }
 catch (Exception ex) when (ex is NpgsqlException or InvalidOperationException or OperationCanceledException)

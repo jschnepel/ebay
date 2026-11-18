@@ -22,6 +22,23 @@ internal sealed class AuctionReader(NpgsqlDataSource dataSource)
         LIMIT $3
         """;
 
+    private const string MineSql = $"""
+        SELECT {SummaryColumns}
+        FROM auction.auctions
+        WHERE seller_id = $4 AND ($1::timestamptz IS NULL OR (ends_at, id) > ($1::timestamptz, $2::uuid))
+        ORDER BY ends_at, id
+        LIMIT $3
+        """;
+
+    private const string BiddingSql = $"""
+        SELECT {SummaryColumns}, leader_id
+        FROM auction.auctions a
+        WHERE EXISTS (SELECT 1 FROM auction.bids b WHERE b.auction_id = a.id AND b.bidder_id = $4)
+          AND ($1::timestamptz IS NULL OR (ends_at, id) > ($1::timestamptz, $2::uuid))
+        ORDER BY ends_at, id
+        LIMIT $3
+        """;
+
     private const string DetailSql = $"""
         SELECT {SummaryColumns}, description, increment_cents, outcome, version, seller_id, leader_id, published_at, closed_at
         FROM auction.auctions
@@ -47,23 +64,22 @@ internal sealed class AuctionReader(NpgsqlDataSource dataSource)
         """;
 
     /// <summary>Published auctions by end time, then id; <paramref name="after"/> is the last one already seen.</summary>
-    public async Task<Page<AuctionSummary>> ListAsync((DateTimeOffset EndsAt, Guid Id)? after, int pageSize, CancellationToken cancellationToken)
-    {
-        await using var command = dataSource.CreateCommand(ListSql);
-        command.Parameters.Add(Param(after?.EndsAt));
-        command.Parameters.Add(Param(after?.Id));
-        command.Parameters.Add(Param(pageSize + 1));
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        var items = new List<AuctionSummary>();
-        while (await reader.ReadAsync(cancellationToken))
-        {
-            items.Add(ReadSummary(reader));
-        }
+    public Task<Page<AuctionSummary>> ListAsync((DateTimeOffset EndsAt, Guid Id)? after, int pageSize, CancellationToken cancellationToken) =>
+        PageAsync(ListSql, owner: null, after, pageSize, ReadSummary, cancellationToken);
 
-        return items.Count > pageSize
-            ? new Page<AuctionSummary>(items[..pageSize], Cursors.Encode(items[pageSize - 1].EndsAt, items[pageSize - 1].Id))
-            : new Page<AuctionSummary>(items, null);
-    }
+    /// <summary>The seller's own auctions, drafts included, in the same order as the directory.</summary>
+    public Task<Page<AuctionSummary>> MineAsync(UserId seller, (DateTimeOffset EndsAt, Guid Id)? after, int pageSize, CancellationToken cancellationToken) =>
+        PageAsync(MineSql, seller, after, pageSize, ReadSummary, cancellationToken);
+
+    /// <summary>The auctions the bidder has an accepted bid on, each with whether they lead it now.</summary>
+    public Task<Page<BiddingSummary>> BiddingAsync(UserId bidder, (DateTimeOffset EndsAt, Guid Id)? after, int pageSize, CancellationToken cancellationToken) =>
+        PageAsync(
+            BiddingSql,
+            bidder,
+            after,
+            pageSize,
+            reader => BiddingSummary.From(ReadSummary(reader), Nullable<Guid>(reader, 11) == bidder.Value),
+            cancellationToken);
 
     public async Task<AuctionDetail?> DetailAsync(Guid id, UserId? viewer, CancellationToken cancellationToken)
     {
@@ -93,6 +109,7 @@ internal sealed class AuctionReader(NpgsqlDataSource dataSource)
             EndsAt = summary.EndsAt,
             Description = reader.GetString(11),
             IncrementCents = reader.GetInt64(12),
+            MinimumNextBidCents = summary.CurrentPriceCents is { } price ? price + reader.GetInt64(12) : summary.OpeningPriceCents,
             ReserveCents = isSeller ? Nullable<long>(reader, 8) : null,
             Outcome = Text(reader, 13),
             Version = reader.GetInt64(14),
@@ -101,6 +118,32 @@ internal sealed class AuctionReader(NpgsqlDataSource dataSource)
             PublishedAt = Nullable<DateTimeOffset>(reader, 17),
             ClosedAt = Nullable<DateTimeOffset>(reader, 18),
         };
+    }
+
+    private async Task<Page<T>> PageAsync<T>(
+        string sql, UserId? owner, (DateTimeOffset EndsAt, Guid Id)? after, int pageSize, Func<NpgsqlDataReader, T> read,
+        CancellationToken cancellationToken)
+        where T : AuctionSummary
+    {
+        await using var command = dataSource.CreateCommand(sql);
+        command.Parameters.Add(Param(after?.EndsAt));
+        command.Parameters.Add(Param(after?.Id));
+        command.Parameters.Add(Param(pageSize + 1));
+        if (owner is { } id)
+        {
+            command.Parameters.Add(Param(id.Value));
+        }
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var items = new List<T>();
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            items.Add(read(reader));
+        }
+
+        return items.Count > pageSize
+            ? new Page<T>(items[..pageSize], Cursors.Encode(items[pageSize - 1].EndsAt, items[pageSize - 1].Id))
+            : new Page<T>(items, null);
     }
 
     /// <summary>The auction's status if the viewer may see it, otherwise null.</summary>

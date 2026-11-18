@@ -4,6 +4,7 @@
     <Project Path="src/Auction.Domain/Auction.Domain.csproj" />
     <Project Path="src/Auction.Engine/Auction.Engine.csproj" />
     <Project Path="src/Auction.Migrator/Auction.Migrator.csproj" />
+    <Project Path="src/Auction.Web/Auction.Web.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Auction.IntegrationTests/Auction.IntegrationTests.csproj" />

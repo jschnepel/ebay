@@ -40,6 +40,9 @@ public sealed class AuctionDetail : AuctionSummary
 
     public required long IncrementCents { get; init; }
 
+    /// <summary>The smallest bid (fixed increment) or maximum (proxy) accepted right now.</summary>
+    public required long MinimumNextBidCents { get; init; }
+
     /// <summary>The hidden reserve: present only for the seller.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public long? ReserveCents { get; init; }
@@ -57,6 +60,28 @@ public sealed class AuctionDetail : AuctionSummary
     public DateTimeOffset? PublishedAt { get; init; }
 
     public DateTimeOffset? ClosedAt { get; init; }
+}
+
+/// <summary>An auction the viewer has bid on, and whether they lead it now.</summary>
+public sealed class BiddingSummary : AuctionSummary
+{
+    public required bool YouLead { get; init; }
+
+    public static BiddingSummary From(AuctionSummary summary, bool youLead) => new()
+    {
+        Id = summary.Id,
+        Title = summary.Title,
+        Status = summary.Status,
+        OpeningPriceCents = summary.OpeningPriceCents,
+        CurrentPriceCents = summary.CurrentPriceCents,
+        BidCount = summary.BidCount,
+        FloorType = summary.FloorType,
+        BidEntry = summary.BidEntry,
+        ReserveMet = summary.ReserveMet,
+        StartsAt = summary.StartsAt,
+        EndsAt = summary.EndsAt,
+        YouLead = youLead,
+    };
 }
 
 /// <summary>An accepted bid in the public history, with the bidder shown only as a per-auction label.</summary>

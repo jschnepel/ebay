@@ -63,6 +63,11 @@
           "Grpc.Core.Api": "2.85.0"
         }
       },
+      "Microsoft.JSInterop.WebAssembly": {
+        "type": "Transitive",
+        "resolved": "10.0.15",
+        "contentHash": "/UTg2l5MAipHsPlCXBTfTCCLHUsyVeQM+z+QSStjfbP2b4RCrxl9NoKVZ7Ls9heBUT1/4yRjhMbqojl59A/xew=="
+      },
       "Microsoft.OpenApi": {
         "type": "Transitive",
         "resolved": "2.13.0",
@@ -70,6 +75,14 @@
       },
       "auction.domain": {
         "type": "Project"
+      },
+      "auction.web": {
+        "type": "Project",
+        "dependencies": {
+          "Auction.Domain": "[1.0.0, )",
+          "Microsoft.AspNetCore.Components.WebAssembly": "[10.0.15, )",
+          "MudBlazor": "[9.12.0, )"
+        }
       },
       "Grpc.Net.Client": {
         "type": "CentralTransitive",
@@ -79,6 +92,21 @@
         "dependencies": {
           "Grpc.Net.Common": "2.85.0"
         }
+      },
+      "Microsoft.AspNetCore.Components.WebAssembly": {
+        "type": "CentralTransitive",
+        "requested": "[10.0.15, )",
+        "resolved": "10.0.15",
+        "contentHash": "YWFk0tbTM25BfeJ2kFuUQ9E2HB0t6GK8jWFm2oIJeTVp3CS7CXGPU/TEpwLvtvK/uQGSX7eL4lpoRQGXgyWJZA==",
+        "dependencies": {
+          "Microsoft.JSInterop.WebAssembly": "10.0.15"
+        }
+      },
+      "MudBlazor": {
+        "type": "CentralTransitive",
+        "requested": "[9.12.0, )",
+        "resolved": "9.12.0",
+        "contentHash": "T6PQUCJe60UTSy3u1F8R2nuC06Cox6WEhon5GA2/AZNVI1WstlPSJZdGPyp6pHFpWdjPpla65piLpyJsbW+1rA=="
       }
     }
   }

@@ -1,0 +1,143 @@
+@page "/sell/new"
+@page "/sell/{Id:guid}/edit"
+@inject AuctionApi Api
+@inject Session Session
+@inject NavigationManager Navigation
+
+<PageTitle>@(Id is null ? "New listing" : "Edit draft")</PageTitle>
+<MudText Typo="Typo.h4" HtmlTag="h1" Class="mb-4">@(Id is null ? "New listing" : "Edit draft")</MudText>
+
+@if (_signedOut)
+{
+    <MudText><MudLink Href="/sign-in?returnUrl=/sell">Sign in</MudLink> to sell.</MudText>
+}
+else if (_loadError is not null)
+{
+    <MudAlert Severity="Severity.Error">@_loadError</MudAlert>
+}
+else
+{
+    <MudPaper Class="pa-4" Outlined="true">
+        <MudText Typo="Typo.body2" Class="mb-2">Saving keeps a private draft; nobody else sees it until you publish it from the Sell page.</MudText>
+        <MudTextField @bind-Value="_title" Label="Title" Immediate="true" MaxLength="120" />
+        <MudTextField @bind-Value="_description" Label="Description" Immediate="true" Lines="3" MaxLength="4000" />
+        <MudTextField @bind-Value="_opening" Label="Opening price ($)" Immediate="true" />
+        <MudTextField @bind-Value="_increment" Label="Bid increment ($)" Immediate="true" />
+        <MudSelect T="string" @bind-Value="_floorType" Label="Price floor">
+            <MudSelectItem T="string" Value="@("reserve")">Hidden reserve</MudSelectItem>
+            <MudSelectItem T="string" Value="@("minimum_bid")">Minimum bid (the opening price)</MudSelectItem>
+            <MudSelectItem T="string" Value="@("absolute")">No reserve</MudSelectItem>
+        </MudSelect>
+        @if (_floorType == "reserve")
+        {
+            <MudTextField @bind-Value="_reserve" Label="Reserve ($)" Immediate="true" HelperText="Hidden from bidders; they only see whether it's met." />
+        }
+        <MudSelect T="string" @bind-Value="_bidEntry" Label="Bidding">
+            <MudSelectItem T="string" Value="@("proxy")">Proxy: bidders enter a private maximum</MudSelectItem>
+            <MudSelectItem T="string" Value="@("fixed_increment")">Fixed steps of one increment</MudSelectItem>
+        </MudSelect>
+        <MudTextField @bind-Value="_startsAt" Label="Starts" InputType="InputType.DateTimeLocal" Immediate="true" />
+        <MudTextField @bind-Value="_endsAt" Label="Ends" InputType="InputType.DateTimeLocal" Immediate="true" />
+        <MudButton Class="mt-3" Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveAsync" Disabled="_busy">Save draft</MudButton>
+        <MudButton Class="mt-3 ml-2" Href="/sell">Back</MudButton>
+    </MudPaper>
+
+    @if (_error is not null)
+    {
+        <MudAlert Class="mt-4" Severity="Severity.Error" data-testid="draft-error">@_error</MudAlert>
+    }
+}
+
+@code {
+    [Parameter]
+    public Guid? Id { get; set; }
+
+    private string _title = "";
+    private string _description = "";
+    private string _opening = "";
+    private string _increment = "1.00";
+    private string _floorType = "reserve";
+    private string _reserve = "";
+    private string _bidEntry = "proxy";
+    private string _startsAt = Format.LocalInput(DateTimeOffset.Now);
+    private string _endsAt = Format.LocalInput(DateTimeOffset.Now.AddDays(1));
+    private string? _error;
+    private string? _loadError;
+    private bool _signedOut;
+    private bool _busy;
+
+    // Kept until a save succeeds, so retrying after a lost answer never creates a second draft.
+    private string _key = Guid.NewGuid().ToString();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await Session.LoadAsync();
+        _signedOut = Session.Account is null;
+        if (_signedOut || Id is not { } id)
+        {
+            return;
+        }
+
+        var detail = await Api.DetailAsync(id);
+        if (detail.Value is not { Status: "draft", YouAreSeller: true } draft)
+        {
+            _loadError = "This draft doesn't exist, isn't yours, or is already published.";
+            return;
+        }
+
+        (_title, _description) = (draft.Title, draft.Description);
+        (_opening, _increment, _reserve) = (Format.DollarsInput(draft.OpeningPriceCents), Format.DollarsInput(draft.IncrementCents), Format.DollarsInput(draft.ReserveCents));
+        (_floorType, _bidEntry) = (draft.FloorType, draft.BidEntry);
+        (_startsAt, _endsAt) = (Format.LocalInput(draft.StartsAt), Format.LocalInput(draft.EndsAt));
+    }
+
+    private async Task SaveAsync()
+    {
+        if (Terms() is not { } terms)
+        {
+            return;
+        }
+
+        _busy = true;
+        var result = Id is { } id ? await Api.EditDraftAsync(id, terms, _key) : await Api.CreateDraftAsync(terms, _key);
+        _busy = false;
+        if (result.Succeeded)
+        {
+            Navigation.NavigateTo("/sell");
+            return;
+        }
+
+        if (result.Problem!.Status is not (0 or 503))
+        {
+            _key = Guid.NewGuid().ToString();
+        }
+
+        _error = result.Message;
+    }
+
+    // Amounts must parse exactly; the server checks everything else.
+    private DraftTerms? Terms()
+    {
+        var opening = Format.ParseDollars(_opening);
+        var increment = Format.ParseDollars(_increment);
+        var reserve = _floorType == "reserve" ? Format.ParseDollars(_reserve) : null;
+        if (opening is null || increment is null || (_floorType == "reserve" && reserve is null))
+        {
+            _error = "Enter the amounts in dollars, like 12.50.";
+            return null;
+        }
+
+        return new DraftTerms
+        {
+            Title = _title,
+            Description = _description,
+            OpeningPriceCents = opening,
+            IncrementCents = increment,
+            FloorType = _floorType,
+            ReserveCents = reserve,
+            BidEntry = _bidEntry,
+            StartsAt = Format.ParseLocalInput(_startsAt),
+            EndsAt = Format.ParseLocalInput(_endsAt),
+        };
+    }
+}

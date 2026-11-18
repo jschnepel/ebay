@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk.BlazorWebAssembly">
+
+  <!--
+    The browser client: Blazor WebAssembly with MudBlazor, served by Auction.Api from the same origin. It
+    talks only to the JSON API; the session lives in the API's HttpOnly cookie, never in browser storage.
+  -->
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- Set explicitly: the SDK infers it from the .razor files, which a csproj-only restore (Docker) can't see. -->
+    <RequiresAspNetWebAssets>true</RequiresAspNetWebAssets>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Auction.Domain\Auction.Domain.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" />
+    <PackageReference Include="MudBlazor" />
+  </ItemGroup>
+
+</Project>

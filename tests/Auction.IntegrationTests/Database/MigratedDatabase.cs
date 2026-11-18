@@ -34,6 +34,7 @@ public sealed class MigratedDatabase : IAsyncLifetime
     private NpgsqlDataSource? _engineDataSource;
     private EngineServiceContainer? _engineService;
     private readonly Dictionary<bool, ApiHost> _apis = [];
+    private (ApiHost Host, Uri Address)? _site;
 
     public MigratedDatabase()
     {
@@ -73,6 +74,11 @@ public sealed class MigratedDatabase : IAsyncLifetime
         foreach (var api in _apis.Values)
         {
             await api.DisposeAsync();
+        }
+
+        if (_site is { } site)
+        {
+            await site.Host.DisposeAsync();
         }
 
         if (_engineService is not null)
@@ -126,6 +132,27 @@ public sealed class MigratedDatabase : IAsyncLifetime
             }
 
             return api;
+        }
+        finally
+        {
+            _engineServiceGate.Release();
+        }
+    }
+
+    /// <summary>The whole site on a local port for browser tests (DEMO_MODE), started on first use.</summary>
+    public async Task<Uri> SiteAsync()
+    {
+        var engine = await EngineServiceAsync();
+        await _engineServiceGate.WaitAsync(TestContext.Current.CancellationToken);
+        try
+        {
+            if (_site is null)
+            {
+                var host = ApiHost.OnLocalPort(ConnectionStringFor(Api), engine.Address, out var address);
+                _site = (host, address);
+            }
+
+            return _site.Value.Address;
         }
         finally
         {

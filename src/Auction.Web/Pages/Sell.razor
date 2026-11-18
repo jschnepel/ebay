@@ -1,0 +1,134 @@
+@page "/sell"
+@inject AuctionApi Api
+@inject Session Session
+@inject NavigationManager Navigation
+
+<PageTitle>Sell</PageTitle>
+<MudText Typo="Typo.h4" HtmlTag="h1" Class="mb-4">Sell</MudText>
+
+@if (_signedOut)
+{
+    <MudText><MudLink Href="/sign-in?returnUrl=/sell">Sign in</MudLink> to sell.</MudText>
+}
+else if (Session.Account?.IsAdmin == true)
+{
+    <MudAlert Severity="Severity.Info">Admin accounts can't sell or bid.</MudAlert>
+}
+else
+{
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" Href="/sell/new" Class="mb-4">New listing</MudButton>
+
+    @if (_message is not null)
+    {
+        <MudAlert Class="mb-2" Severity="@(_failed ? Severity.Error : Severity.Success)" data-testid="sell-result">@_message</MudAlert>
+    }
+
+    @if (_items is null)
+    {
+        <MudProgressCircular Indeterminate="true" aria-label="Loading your listings" />
+    }
+    else if (_items.Count == 0)
+    {
+        <MudText>You have no listings yet.</MudText>
+    }
+    else
+    {
+        <MudSimpleTable Dense="true">
+            <thead><tr><th>Item</th><th>Price</th><th>Bids</th><th>Status</th><th>Ends</th><th>Actions</th></tr></thead>
+            <tbody>
+                @foreach (var auction in _items)
+                {
+                    <tr data-testid="my-auction-row">
+                        <td><MudLink Href="@($"/auctions/{auction.Id}")">@auction.Title</MudLink></td>
+                        <td>@Format.Price(auction)</td>
+                        <td>@auction.BidCount</td>
+                        <td>@Format.Status(auction.Status)</td>
+                        <td>@Format.Time(auction.EndsAt)</td>
+                        <td>
+                            @if (auction.Status == "draft")
+                            {
+                                <MudButton Size="Size.Small" Href="@($"/sell/{auction.Id}/edit")">Edit</MudButton>
+                                <MudButton Size="Size.Small" Color="Color.Primary" OnClick="() => PublishAsync(auction)" Disabled="_busy">Publish</MudButton>
+                            }
+                            else if (auction.BidCount == 0 && auction.Status is "active" or "scheduled")
+                            {
+                                <MudButton Size="Size.Small" Color="Color.Error" OnClick="() => CancelAsync(auction)" Disabled="_busy">Cancel</MudButton>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+        @if (_next is not null)
+        {
+            <MudButton Class="mt-2" Variant="Variant.Outlined" OnClick="MoreAsync">Show more</MudButton>
+        }
+    }
+}
+
+@code {
+    private List<AuctionSummary>? _items;
+    private string? _next;
+    private string? _message;
+    private bool _failed;
+    private bool _signedOut;
+    private bool _busy;
+
+    // One key per action on each auction, kept until it succeeds, so a retry never repeats it.
+    private readonly Dictionary<(Guid, string), string> _keys = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Session.LoadAsync();
+        _signedOut = Session.Account is null;
+        if (!_signedOut)
+        {
+            await ReloadAsync();
+        }
+    }
+
+    private async Task ReloadAsync()
+    {
+        (_items, _next) = (null, null);
+        await MoreAsync();
+    }
+
+    private async Task MoreAsync()
+    {
+        var page = await Api.MineAsync(_next);
+        if (!page.Succeeded)
+        {
+            (_failed, _message) = (true, page.Message);
+            return;
+        }
+
+        (_items ??= []).AddRange(page.Value!.Items);
+        _next = page.Value.NextCursor;
+    }
+
+    private Task PublishAsync(AuctionSummary auction) =>
+        RunAsync(auction.Id, "publish", key => Api.PublishAsync(auction.Id, key), $"Published \"{auction.Title}\".");
+
+    private Task CancelAsync(AuctionSummary auction) =>
+        RunAsync(auction.Id, "cancel", key => Api.CancelAsync(auction.Id, key), $"Cancelled \"{auction.Title}\".");
+
+    private async Task RunAsync(Guid id, string action, Func<string, Task<ApiResult<CommandResponse>>> call, string done)
+    {
+        if (!_keys.TryGetValue((id, action), out var key))
+        {
+            key = Guid.NewGuid().ToString();
+            _keys[(id, action)] = key;
+        }
+
+        _busy = true;
+        var result = await call(key);
+        _busy = false;
+        if (result.Succeeded || result.Problem!.Status is not (0 or 503))
+        {
+            _keys.Remove((id, action));
+        }
+
+        (_failed, _message) = result.Succeeded ? (false, done) : (true, result.Message);
+        await ReloadAsync();
+    }
+}

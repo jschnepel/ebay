@@ -1,0 +1,52 @@
+@inherits LayoutComponentBase
+@implements IDisposable
+@inject Session Session
+@inject NavigationManager Navigation
+
+<MudThemeProvider />
+<MudPopoverProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
+
+<MudLayout>
+    <MudAppBar Elevation="0" Dense="true">
+        <nav aria-label="Main" class="d-flex align-center flex-wrap">
+            <MudButton Href="/" Color="Color.Inherit">Buy</MudButton>
+            <MudButton Href="/my-bids" Color="Color.Inherit">My bids</MudButton>
+            <MudButton Href="/sell" Color="Color.Inherit">Sell</MudButton>
+        </nav>
+        <MudSpacer />
+        @if (Session.Account is { } account)
+        {
+            <MudText Class="mr-2" data-testid="signed-in-as">@account.DisplayName</MudText>
+            <MudButton Color="Color.Inherit" OnClick="SignOutAsync">Sign out</MudButton>
+        }
+        else
+        {
+            <MudButton Href="/sign-in" Color="Color.Inherit">Sign in</MudButton>
+        }
+    </MudAppBar>
+    <MudMainContent>
+        <MudContainer MaxWidth="MaxWidth.Large" Class="py-4">
+            @Body
+        </MudContainer>
+    </MudMainContent>
+</MudLayout>
+
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        Session.Changed += OnSessionChanged;
+        await Session.LoadAsync();
+    }
+
+    private async Task SignOutAsync()
+    {
+        await Session.SignOutAsync();
+        Navigation.NavigateTo("/");
+    }
+
+    private void OnSessionChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Session.Changed -= OnSessionChanged;
+}

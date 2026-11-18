@@ -4,10 +4,12 @@ WORKDIR /repo
 COPY .editorconfig global.json Directory.Build.props Directory.Packages.props ./
 COPY eng/ eng/
 COPY src/Auction.Domain/Auction.Domain.csproj src/Auction.Domain/packages.lock.json src/Auction.Domain/
+COPY src/Auction.Web/Auction.Web.csproj src/Auction.Web/packages.lock.json src/Auction.Web/
 COPY src/Auction.Api/Auction.Api.csproj src/Auction.Api/packages.lock.json src/Auction.Api/
 RUN dotnet restore --locked-mode src/Auction.Api/Auction.Api.csproj
 COPY src/Auction.Domain/ src/Auction.Domain/
 COPY src/Auction.Contracts/ src/Auction.Contracts/
+COPY src/Auction.Web/ src/Auction.Web/
 COPY src/Auction.Api/ src/Auction.Api/
 RUN dotnet publish src/Auction.Api/Auction.Api.csproj --no-restore -c Release -o /app
 

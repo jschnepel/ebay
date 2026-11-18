@@ -1,0 +1,3 @@
+.boot { font-family: sans-serif; padding: 1rem; }
+#blazor-error-ui { display: none; position: fixed; bottom: 0; left: 0; right: 0; padding: 0.75rem 1rem; background: #ffe7a6; }
+#blazor-error-ui .reload { margin-left: 0.5rem; }

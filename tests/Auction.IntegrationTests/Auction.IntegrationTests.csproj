@@ -12,6 +12,7 @@
     <PackageReference Include="Microsoft.Testing.Extensions.CodeCoverage" />
     <PackageReference Include="Testcontainers.PostgreSql" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <PackageReference Include="Microsoft.Playwright" />
     <PackageReference Include="Npgsql" />
     <PackageReference Include="Grpc.Net.Client" />
     <PackageReference Include="Grpc.HealthCheck" />

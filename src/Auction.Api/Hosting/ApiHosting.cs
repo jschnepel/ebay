@@ -56,6 +56,7 @@ internal static class ApiHosting
     {
         app.UseExceptionHandler();
         app.UseStatusCodePages();
+        app.Use(SecurityHeaders.AddAsync);
         app.UseMiddleware<SameOriginJsonMiddleware>();
         app.UseAuthentication();
         app.UseAuthorization();
@@ -65,6 +66,12 @@ internal static class ApiHosting
         api.MapAuctions();
         app.MapOpenApi();
         app.MapHealthChecks("/health");
+
+        // The Blazor client: its files, and its page for every other path so deep links load the app.
+        // An unknown API path is still a 404 problem, never the app's page.
+        app.MapStaticAssets();
+        app.MapFallback("/api/{**path}", () => Problems.Of(StatusCodes.Status404NotFound, "not_found", "There is no such API path."));
+        app.MapFallbackToFile("index.html");
         return app;
     }
 

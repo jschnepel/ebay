@@ -1,0 +1,159 @@
+@page "/auctions/{Id:guid}"
+@inject AuctionApi Api
+@inject Session Session
+
+<PageTitle>@(_auction?.Title ?? "Auction")</PageTitle>
+
+@if (_error is not null)
+{
+    <MudText Typo="Typo.h4" HtmlTag="h1">Auction</MudText>
+    <MudAlert Severity="Severity.Error">@_error</MudAlert>
+}
+else if (_auction is not { } auction)
+{
+    <MudText Typo="Typo.h4" HtmlTag="h1">Auction</MudText>
+    <MudProgressCircular Indeterminate="true" aria-label="Loading the auction" />
+}
+else
+{
+    <MudText Typo="Typo.h4" HtmlTag="h1">@auction.Title</MudText>
+    <MudText Class="mb-2">@auction.Description</MudText>
+    <MudSimpleTable Dense="true" Class="mb-4">
+        <tbody>
+            <tr><th scope="row">Current price</th><td data-testid="current-price">@Format.Price(auction)</td></tr>
+            <tr><th scope="row">Bids</th><td>@auction.BidCount</td></tr>
+            <tr><th scope="row">Status</th><td data-testid="status">@Format.Status(auction.Status)@(auction.Outcome is { } outcome ? $" ({outcome.Replace('_', ' ')})" : "")</td></tr>
+            @if (auction.ReserveMet is { } met)
+            {
+                <tr><th scope="row">Reserve</th><td>@(met ? "Reserve met" : "Reserve not met yet")</td></tr>
+            }
+            @if (auction.ReserveCents is { } reserve)
+            {
+                <tr><th scope="row">Your reserve</th><td>@Format.Dollars(reserve)</td></tr>
+            }
+            <tr><th scope="row">Bidding</th><td>@(auction.BidEntry == "proxy" ? "Proxy: enter your maximum; the system bids for you" : $"Fixed steps of {Format.Dollars(auction.IncrementCents)}")</td></tr>
+            <tr><th scope="row">Starts</th><td>@Format.Time(auction.StartsAt)</td></tr>
+            <tr><th scope="row">Ends</th><td>@Format.Time(auction.EndsAt)</td></tr>
+        </tbody>
+    </MudSimpleTable>
+
+    @if (auction.YouLead)
+    {
+        <MudAlert Severity="Severity.Success" Class="mb-2">You are the highest bidder.</MudAlert>
+    }
+
+    @if (auction.Status == "active" && !auction.YouAreSeller)
+    {
+        @if (Session.Account is null)
+        {
+            <MudText Class="mb-4"><MudLink Href="@($"/sign-in?returnUrl=/auctions/{Id}")">Sign in</MudLink> to bid.</MudText>
+        }
+        else if (!Session.Account.IsAdmin)
+        {
+            <MudPaper Class="pa-4 mb-4" Outlined="true">
+                <MudTextField @bind-Value="_amount" Label="@(auction.BidEntry == "proxy" ? "Your maximum ($)" : "Your bid ($)")" Immediate="true"
+                              HelperText="@($"At least {Format.Dollars(auction.MinimumNextBidCents)}")" />
+                <MudButton Class="mt-2" Variant="Variant.Filled" Color="Color.Primary" OnClick="BidAsync" Disabled="_busy">Place bid</MudButton>
+                @if (_bidMessage is not null)
+                {
+                    <MudAlert Class="mt-2" Severity="@(_bidAccepted ? Severity.Success : Severity.Error)" data-testid="bid-result">@_bidMessage</MudAlert>
+                }
+            </MudPaper>
+        }
+    }
+
+    <MudText Typo="Typo.h6" HtmlTag="h2">Bid history</MudText>
+    @if (_bids is null || _bids.Count == 0)
+    {
+        <MudText>No bids yet.</MudText>
+    }
+    else
+    {
+        <MudSimpleTable Dense="true">
+            <thead><tr><th>Bidder</th><th>Amount</th><th>How</th><th>When</th></tr></thead>
+            <tbody>
+                @foreach (var bid in _bids)
+                {
+                    <tr>
+                        <td>@bid.Bidder</td>
+                        <td>@(bid.AmountCents is { } cents ? Format.Dollars(cents) : "outbid at once")</td>
+                        <td>@(bid.Source == "proxy" ? "automatic" : "bid")</td>
+                        <td>@Format.Time(bid.AcceptedAt)</td>
+                    </tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+    }
+}
+
+@code {
+    [Parameter]
+    public Guid Id { get; set; }
+
+    private AuctionDetail? _auction;
+    private List<BidView>? _bids;
+    private string? _error;
+    private string _amount = "";
+    private string? _bidMessage;
+    private bool _bidAccepted;
+    private bool _busy;
+
+    // One key per intended bid: a retry of the same amount reuses it, so it can't be placed twice.
+    private (string Amount, string Key)? _pending;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await Session.LoadAsync();
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        var detail = await Api.DetailAsync(Id);
+        if (!detail.Succeeded)
+        {
+            _error = detail.Problem!.Status == 404 ? "This auction doesn't exist or isn't visible to you." : detail.Message;
+            return;
+        }
+
+        _auction = detail.Value;
+        var bids = await Api.BidsAsync(Id);
+        _bids = bids.Value?.Items.ToList();
+    }
+
+    private async Task BidAsync()
+    {
+        if (Format.ParseDollars(_amount) is not { } cents)
+        {
+            (_bidAccepted, _bidMessage) = (false, "Enter an amount in dollars, like 12.50.");
+            return;
+        }
+
+        if (_pending is not { } pending || pending.Amount != _amount)
+        {
+            pending = (_amount, Guid.NewGuid().ToString());
+            _pending = pending;
+        }
+
+        _busy = true;
+        var result = await Api.BidAsync(Id, cents, pending.Key);
+        _busy = false;
+        if (result.Succeeded)
+        {
+            _pending = null;
+            _amount = "";
+            (_bidAccepted, _bidMessage) = (true, result.Value!.YouLead == true ? "Bid placed. You are the highest bidder." : "Bid placed, but another bidder's maximum is higher.");
+            await LoadAsync();
+        }
+        else
+        {
+            // A refusal is final for this key; only "busy" or no connection is worth retrying with it.
+            if (result.Problem!.Status is not (0 or 503))
+            {
+                _pending = null;
+            }
+
+            (_bidAccepted, _bidMessage) = (false, result.Message);
+        }
+    }
+}
