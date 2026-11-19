@@ -125,7 +125,7 @@ public sealed partial class ApiBoundaryTests(MigratedDatabase db)
         Assert.Equal(1, await QueriesAsync(anonymous, "/api/v1/auctions?pageSize=1"));
         Assert.Equal(1, await QueriesAsync(anonymous, $"/api/v1/auctions?pageSize={ApiHost.MaxPageSize}"));
         Assert.Equal(1, await QueriesAsync(anonymous, $"/api/v1/auctions/{id}"));
-        Assert.Equal(2, await QueriesAsync(anonymous, $"/api/v1/auctions/{id}/bids?pageSize=1"));
+        Assert.Equal(2, await QueriesAsync(anonymous, $"/api/v1/auctions/{id}/bids?pageSize=1", emptyPool: true));
         Assert.Equal(2, await QueriesAsync(anonymous, $"/api/v1/auctions/{id}/bids?pageSize={ApiHost.MaxPageSize}"));
     }
 
@@ -154,8 +154,11 @@ public sealed partial class ApiBoundaryTests(MigratedDatabase db)
     [GeneratedRegex(":[a-z]+}")]
     private static partial Regex RouteConstraint();
 
-    /// <summary>Counts the database commands one request runs, by tracing it under a trace id of its own.</summary>
-    private async Task<int> QueriesAsync(HttpClient http, string url)
+    /// <summary>
+    /// Counts the database commands one request runs, by tracing it under a trace id of its own. With
+    /// <paramref name="emptyPool"/> the request has to open a fresh connection, as it may under load.
+    /// </summary>
+    private async Task<int> QueriesAsync(HttpClient http, string url, bool emptyPool = false)
     {
         var traceId = ActivityTraceId.CreateRandom();
         var count = 0;
@@ -165,13 +168,18 @@ public sealed partial class ApiBoundaryTests(MigratedDatabase db)
             Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
             ActivityStopped = activity =>
             {
-                if (activity.Source.Name == "Npgsql" && activity.TraceId == traceId && activity.Kind == ActivityKind.Client)
+                // Npgsql also traces opening a physical connection; only spans that carry a query are commands.
+                if (activity.Source.Name == "Npgsql" && activity.TraceId == traceId && activity.GetTagItem("db.query.text") is not null)
                 {
                     Interlocked.Increment(ref count);
                 }
             },
         };
         ActivitySource.AddActivityListener(listener);
+        if (emptyPool)
+        {
+            (await db.ApiAsync()).Services.GetRequiredService<Npgsql.NpgsqlDataSource>().Clear();
+        }
 
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
         request.Headers.Add("traceparent", $"00-{traceId}-{ActivitySpanId.CreateRandom()}-01");
