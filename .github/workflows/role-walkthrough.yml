@@ -107,3 +107,25 @@ jobs:
         run: |
           dotnet restore tests/Auction.UnitTests --locked-mode
           dotnet test --project tests/Auction.UnitTests --no-restore -c Release --report-trx --results-directory "$RUNNER_TEMP/unit-results"
+  resolve-decoder:
+    name: Resolve photo decoder packages
+    if: github.head_ref == 'test/review-browser'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73
+        with:
+          global-json-file: global.json
+      - name: Generate the decoder lock changes
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          for path in (Path('Directory.Packages.props'),Path('src/Auction.Api/Auction.Api.csproj')):
+              lines = path.read_text().splitlines(keepends=True)
+              path.write_text(''.join(line if 'SixLabors.ImageSharp' not in line else ''.join(line.replace('SixLabors.ImageSharp', package).replace('3.2.0', '4.157.0') for package in ('SkiaSharp','SkiaSharp.NativeAssets.Linux.NoDependencies')) for line in lines))
+          PY
+          dotnet restore tests/Auction.IntegrationTests --force-evaluate
+          git diff -- '**/packages.lock.json'
