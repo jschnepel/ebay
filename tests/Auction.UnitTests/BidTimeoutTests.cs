@@ -24,12 +24,13 @@ public sealed class BidTimeoutTests
     {
         var handler = new WaitingHandler();
         using var http = new HttpClient(handler) { BaseAddress = new Uri("https://auction.test/") };
-        var bid = new AuctionApi(http).BidAsync(Guid.NewGuid(), 5000, "camera-bid");
-
-        await handler.Started.Task.WaitAsync(TestContext.Current.CancellationToken);
-        http.CancelPendingRequests();
-
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => bid);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
+        {
+            var bid = new AuctionApi(http).BidAsync(Guid.NewGuid(), 5000, "camera-bid");
+            await handler.Started.Task.WaitAsync(TestContext.Current.CancellationToken);
+            http.CancelPendingRequests();
+            await bid;
+        });
     }
 
     private sealed class WaitingHandler : HttpMessageHandler
