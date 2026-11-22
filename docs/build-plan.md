@@ -121,6 +121,32 @@ At each milestone (M1–M3), an independent requirements audit checks that miles
 
 **Shoulds and Coulds** fold into the step they touch, and only when that step's Musts are already green.
 
+## What's built
+
+Every step's state, with the evidence behind it. The [traceability table](requirements.md) has the same per requirement.
+
+| Layer | State |
+|---|---|
+| Toolchain and CI: pinned SDK, locked packages, zero-warning build, real-PostgreSQL tests | Built; CI green |
+| Auction rules: money, proxy and fixed-increment bidding, reserve, deadlines, listing validation, lifecycle | Built and unit-tested (88 tests) |
+| Database: schema, four least-privilege roles, append-only bids, amount and lifecycle constraints, one-shot migrator | Built and tested against PostgreSQL 18 |
+| Engine core: create, edit, publish, cancel and bid, each one locked transaction with idempotency and an outbox event | Built and tested against PostgreSQL 18, including 50-bidder races checked against the reference model |
+| Close worker: starts scheduled auctions, closes ended ones with Sold, Reserve not met or No bids, and deletes idempotency records after 24 hours | Built and tested, including two workers sweeping at once |
+| Engine service: the `auction.v1` gRPC contract, health probe, correlated JSON logs, internal-only in Compose | Built and tested from its container image, including the 50-bidder races over gRPC |
+| API: sign-up and email sign-in, cookie sessions, auction list, detail and bid history, and create, edit, publish, cancel and bid through the engine, with Problem Details, cross-site checks and an OpenAPI document | Built and tested over HTTP against the engine container |
+| Web client: Blazor WebAssembly and MudBlazor pages for sign-in, the directory, an auction with its bid box and history, selling (drafts, publish, cancel) and my bids, served by the API from the same origin | Built and tested in a real browser (Playwright) against the whole stack; plain styling until build step 15 |
+| One-command run with generated secrets and demo seed data | Built; CI runs it on every push from a fresh clone |
+| Live updates: outbox relay in commit order, SignalR hints through a Redis backplane, version-gated views that reconcile every 10 s | Built and tested: four browsers converge within 2 s; with Redis stopped, bids still work and views heal |
+| Simulator and verifier: virtual users over the public API (smoke, realistic and hot-burst profiles) and a read-only checker that recomputes every auction with a naive reference model | Built and tested: 50 bidders on one auction for 30 seconds with zero invariant violations |
+| Admin area: live activity, system health, latency KPIs over a rolling five minutes, auction moderation (suspend, resume, cancel with a reason), user disable/enable, starting and stopping a simulator run, and a searchable audit log of every admin action | Built and tested in the browser and over HTTP |
+| Accounts: one active session per account (signing in elsewhere ends the others, and an open page is told at once), a live notification bell, and sign-in, sign-up and write rate limits | Built and tested in the browser and over HTTP |
+| Images: up to four JPEG, PNG or WebP per listing, checked by file signature and size, stored in PostgreSQL, linked by the engine under the auction lock, frozen at publish, with race-free quotas and an hourly sweep | Built and tested, including racing attaches and quota races |
+| Redis jobs: a version-checked read cache for auctions and the directory, the session-validity cache, shared rate-limit counters and presence across instances, with PostgreSQL or local fallbacks; directory search and status filters | Built and tested, including two API instances sharing limits and presence, and a Redis outage |
+| Design: a themed MudBlazor layout, a card directory with cover images, shared loading, empty, error (with retry) and sign-in states, usable at 360 px | Built and tested: zero serious or critical axe violations on the main pages, no sideways scrolling at 360 px |
+| Release: liveness and readiness, a path base and trusted proxies for hosting, reset-demo, and supply-chain checks in CI (gitleaks, Trivy, SBOMs with provenance, Dependabot) | Built and tested; the release tag is the owner's to create |
+| Observability: OpenTelemetry traces, metrics and logs from the API and engine over OTLP, with the standalone Aspire dashboard in an optional Compose profile | Built and tested: a bid's trace runs from the API request through the engine's transaction to its queries |
+| Live demo: an always-on marketplace of simulated sellers and bidders with free photos, a choice of User or Admin at sign-up, and a daily and on-demand reset | Built and tested: listings with photos within minutes, bids on visitors' listings, recovery after cancellations, disabled accounts and resets |
+
 ## If the deadline is at risk
 
 Check progress at the end of each day against the Target column. Nothing below M3 is cut: steps 1–10 are the core requirements and the correctness that makes them true. If a step slips by more than half a day, cut from the top of the ladder down. Moving a Must to Should is a recorded decision.
