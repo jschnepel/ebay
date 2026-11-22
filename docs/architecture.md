@@ -295,6 +295,7 @@ Each package is pinned in `Directory.Packages.props` and locked by the lock file
 - An idempotent `reset-demo` command reseeds demo users and auctions; the hosted copy runs it nightly.
 - Works behind a reverse proxy (forwarded headers, WebSocket pass-through) under a configurable path base (`PATH_BASE`) with a path-scoped, app-specific cookie. TLS terminates at the proxy.
 - The hosted copy runs as its own Compose project (`auction-live`) with `deploy/compose.edge.yaml`: the API joins a network that holds only the tunnel container, never the other services on the host, and believes `X-Forwarded-For` only from that network's range. Every long-running service restarts with Docker, so the site comes back by itself after a reboot.
+- Delivery is pull-based: CI publishes images to GHCR only from `main` after every gate passes, and `deploy/deploy.sh` on the host deploys the newest passing commit with that commit's own Compose files, checks the public site and rolls back to the previous commit on failure. Nothing outside reaches into the host.
 - The key ring that protects the session cookie and antiforgery tokens lives on the `api-keys` volume (`Api:KeysDirectory`), so a rebuilt or replaced API container still accepts the cookies it issued and nobody is signed out by a deploy. The keys are not encrypted at rest; the Docker host already holds the database volume.
 - Demo passwords are generated at deploy time and never committed.
 - **Designed for cloud (not built):**

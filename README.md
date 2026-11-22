@@ -45,6 +45,18 @@ To watch traces, metrics and logs, start the optional Aspire dashboard and point
 OTEL_EXPORTER_OTLP_ENDPOINT=http://aspire-dashboard:18889 docker compose -f deploy/compose.yaml --profile observability up -d
 ```
 
+## Deploy
+
+The hosted copy updates itself from `main`, pulling rather than being pushed to:
+
+1. On every push to `main`, once every CI gate has passed, the `publish` job pushes the four images to GHCR as `ghcr.io/<owner>/auction-<name>:sha-<commit>`, each with a signed provenance attestation. Pull requests never publish.
+2. On the host, `deploy/deploy.sh` runs every five minutes. It asks GitHub for the newest commit on `main` whose CI run passed, fetches that commit's Compose files, pulls its images and starts them (`compose.yaml` + `compose.edge.yaml` + `compose.release.yaml`; the migrator runs first), then checks `/ready`, the page, `/login` and the API on the public address.
+3. If the switch or a check fails, it starts the previous commit again and exits non-zero; everything is logged in `deploy.log`. A missing image or an unreachable GitHub changes nothing.
+
+The host needs only outbound HTTPS and Docker: no inbound port, no runner, no deploy secrets in GitHub. Its settings and state live outside the checkout, in `~/.auction-live` (`.env` with the secrets, `releases/`, `current`, `previous`, `deploy.log`). `deploy/deploy.sh --check` shows what would deploy; `--to <commit>` deploys or rolls back to a given commit. Because a rollback runs the previous images against a database the newer migrator may have changed, every schema change must stay readable by the release before it.
+
+The images are pulled anonymously, so the GHCR packages must be public (GitHub → Packages → each `auction-*` package → visibility). Otherwise sign the host's Docker in to ghcr.io with a token that can read packages.
+
 ## Run the simulator
 
 With the stack running:
