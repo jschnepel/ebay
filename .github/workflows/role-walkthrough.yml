@@ -35,7 +35,10 @@ jobs:
         shell: bash
         run: |
           umask 077
-          ./run.sh > "$RUNNER_TEMP/auction-startup.log" 2>&1
+          if ! ./run.sh > "$RUNNER_TEMP/auction-startup.log" 2>&1; then
+            grep -E 'error (CS|RZ|NU|MSB|NETSDK)[0-9]+|container .*unhealthy|service .*failed|failed to solve' "$RUNNER_TEMP/auction-startup.log" | head -20 || true
+            exit 1
+          fi
           while read -r email password; do
             test -n "$password"
             if grep -Fq -- "$password" "$RUNNER_TEMP/auction-startup.log"; then

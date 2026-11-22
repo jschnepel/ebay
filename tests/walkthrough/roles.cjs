@@ -15,8 +15,22 @@ const row = (page, id, name) => page.getByTestId(id).filter({ hasText: name });
 const go = (page, route) => page.goto(new URL(route.replace(/^\//, ''), base).href);
 const signUp = async (page, label) => {
   const email = `${label}-${run}@example.test`;
-  await go(page, 'sign-in');
-  await page.getByLabel('Display name', { exact: true }).fill(title(label));
+  const response = await go(page, 'sign-in');
+  const displayName = page.getByLabel('Display name', {exact: true});
+  try {
+    await displayName.waitFor({state: 'visible', timeout: 30000});
+  } catch (error) {
+    const finalUrl = new URL(page.url());
+    const details = {
+      status: response?.status(), origin: finalUrl.origin, path: finalUrl.pathname,
+      title: (await page.title()).slice(0, 150),
+      headings: (await page.getByRole('heading').allTextContents()).slice(0, 4).map(s=>s.slice(0, 100)),
+    };
+    console.log('Sign-up page: '+JSON.stringify(details));
+    fs.writeFileSync(path.join(out,'signup-page.json'), JSON.stringify(details,null,2));
+    throw error;
+  }
+  await displayName.fill(title(label));
   await page.getByLabel('Email for the new account').fill(email);
   await button(page, 'Create account').click();
   await expect(page.getByTestId('signed-in-as')).toHaveText(title(label));
