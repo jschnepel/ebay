@@ -58,6 +58,10 @@ public sealed record CommandOutcome
     /// <summary>For an accepted bid: its place in the order of accepted bids (1, 2, 3, …).</summary>
     public long? BidSequence { get; init; }
 
+    /// <summary>The database time used to evaluate a command on a visible auction.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public DateTimeOffset? DecidedAt { get; init; }
+
     public UserId? LeaderId { get; init; }
 
     public Money? CurrentPrice { get; init; }

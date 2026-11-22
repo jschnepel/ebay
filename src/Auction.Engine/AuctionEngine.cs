@@ -327,10 +327,13 @@ public sealed class AuctionEngine(NpgsqlDataSource dataSource, EngineOptions opt
             }
         }
 
-        batch.BatchCommands.Add(IdempotencyStore.InsertCommand(context, requestHash, decision.Outcome));
+        var outcome = decision.Outcome.Error == CommandError.NotFound
+            ? decision.Outcome
+            : decision.Outcome with { DecidedAt = locked.Now };
+        batch.BatchCommands.Add(IdempotencyStore.InsertCommand(context, requestHash, outcome));
         await batch.ExecuteNonQueryAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
-        return decision.Outcome;
+        return outcome;
     }
 
     // A draft has no row to lock yet, so the idempotency record is written first: a concurrent duplicate

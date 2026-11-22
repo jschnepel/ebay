@@ -2,6 +2,7 @@ using Auction.Api.Accounts;
 using Auction.Api.Hosting;
 using Auction.Contracts.V1;
 using Grpc.Core;
+using Microsoft.AspNetCore.Http.HttpResults;
 
 namespace Auction.Api.Auctions;
 
@@ -58,7 +59,13 @@ internal sealed partial class EngineGateway(
 
         if (!result.Succeeded)
         {
-            return Refused(http, result);
+            var refusal = Refused(http, result);
+            if (result.DecidedAt is { } time && refusal is ProblemHttpResult problem)
+            {
+                problem.ProblemDetails.Extensions["decidedAt"] = time.ToDateTimeOffset();
+            }
+
+            return refusal;
         }
 
         // Read-your-writes through the cache: any read after this response sees at least this version.
@@ -79,6 +86,7 @@ internal sealed partial class EngineGateway(
         CurrentPriceCents = result.HasCurrentPriceCents ? result.CurrentPriceCents : null,
         YouLead = isBid ? result.LeaderId == actor : null,
         Replayed = result.Replayed,
+        DecidedAt = result.DecidedAt?.ToDateTimeOffset(),
     };
 
     private static IResult Refused(HttpContext http, CommandResult result) => result.Error switch

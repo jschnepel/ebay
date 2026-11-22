@@ -18,7 +18,7 @@ internal static class IdempotencyStore
     public const int MaxKeyLength = 255;
 
     private const string SelectSql =
-        "SELECT request_hash, outcome FROM idempotency_records WHERE actor_id = $1 AND key = $2";
+        "SELECT request_hash, outcome, created_at FROM idempotency_records WHERE actor_id = $1 AND key = $2";
 
     // A plain insert for commands on an existing auction: the same key committed first by a command on
     // another auction raises a unique violation, which rolls this command back so the retry replays.
@@ -58,7 +58,7 @@ internal static class IdempotencyStore
         };
 
     /// <summary>Reads the result of <see cref="SelectCommand"/> at the reader's current position.</summary>
-    public static async Task<RecordedOutcome?> ReadAsync(NpgsqlDataReader reader, CancellationToken cancellationToken)
+    public static async Task<RecordedOutcome?> ReadAsync(NpgsqlDataReader reader, bool existingAuction, CancellationToken cancellationToken)
     {
         if (!await reader.ReadAsync(cancellationToken))
         {
@@ -68,6 +68,12 @@ internal static class IdempotencyStore
         var hash = await reader.GetFieldValueAsync<byte[]>(0, cancellationToken);
         var outcome = JsonSerializer.Deserialize<CommandOutcome>(await reader.GetFieldValueAsync<string>(1, cancellationToken))
             ?? throw new InvalidOperationException("An idempotency record holds no outcome.");
+        // Older receipts have the original database record time but no decision time in their JSON.
+        if (existingAuction && outcome.DecidedAt is null && outcome.Error != CommandError.NotFound)
+        {
+            outcome = outcome with { DecidedAt = reader.GetFieldValue<DateTimeOffset>(2) };
+        }
+
         return new RecordedOutcome(hash, outcome);
     }
 
@@ -76,7 +82,7 @@ internal static class IdempotencyStore
     {
         await using var batch = new NpgsqlBatch(connection, transaction) { BatchCommands = { SelectCommand(context) } };
         await using var reader = await batch.ExecuteReaderAsync(cancellationToken);
-        return await ReadAsync(reader, cancellationToken);
+        return await ReadAsync(reader, existingAuction: false, cancellationToken);
     }
 
     /// <summary>Inserts the record; false when another transaction recorded the same key first.</summary>

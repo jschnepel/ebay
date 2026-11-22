@@ -97,6 +97,12 @@ internal sealed class AuctionCommandGrpcService(AuctionEngine engine) : V1.Aucti
     {
         var outcome = await engine.PlaceBidAsync(
             Context(request.RequestId, request.ActorId), AuctionIdOf(request.AuctionId), new Money(request.AmountCents), context.CancellationToken);
-        return new V1.PlaceBidResponse { Result = ToResult(outcome) };
+        var result = ToResult(outcome);
+        if (outcome.DecidedAt is { } decidedAt)
+        {
+            result.DecidedAt = Google.Protobuf.WellKnownTypes.Timestamp.FromDateTimeOffset(decidedAt);
+        }
+
+        return new V1.PlaceBidResponse { Result = result };
     }
 }

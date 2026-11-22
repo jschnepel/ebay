@@ -163,9 +163,30 @@ public sealed class AuctionApiTests(MigratedDatabase db)
         Assert.Equal((HttpStatusCode.Created, HttpStatusCode.Created), (first.StatusCode, repeat.StatusCode));
         var replay = await repeat.JsonAsync();
         Assert.True(replay.GetProperty("replayed").GetBoolean());
-        Assert.Equal((await first.JsonAsync()).GetProperty("bidSequence").GetInt64(), replay.GetProperty("bidSequence").GetInt64());
+        var original = await first.JsonAsync();
+        Assert.Equal(original.GetProperty("bidSequence").GetInt64(), replay.GetProperty("bidSequence").GetInt64());
+        var decidedAt = original.GetProperty("decidedAt").GetDateTimeOffset();
+        Assert.Equal(decidedAt, replay.GetProperty("decidedAt").GetDateTimeOffset());
+        var history = await buyer.Http.GetJsonAsync($"/api/v1/auctions/{id}/bids");
+        Assert.Equal(decidedAt, history.GetProperty("items")[0].GetProperty("acceptedAt").GetDateTimeOffset());
         await changed.AssertProblemAsync(HttpStatusCode.UnprocessableEntity, "key_reused");
         Assert.Equal(1, await db.ScalarAsync<long>(MigratedDatabase.Verifier, "SELECT count(*) FROM bids WHERE auction_id = $1", id));
+    }
+
+    [Fact]
+    public async Task A_replayed_bid_refusal_keeps_its_reason_and_decision_time()
+    {
+        var api = await db.ApiAsync();
+        var seller = await api.SignUpAsync();
+        var buyer = await api.SignUpAsync();
+        var id = await seller.PublishedAsync();
+        var key = Guid.NewGuid().ToString();
+        using var first = await buyer.Http.BidAsync(id, 1, key);
+        using var replay = await buyer.Http.BidAsync(id, 1, key);
+        await first.AssertProblemAsync(HttpStatusCode.UnprocessableEntity, "below_minimum");
+        await replay.AssertProblemAsync(HttpStatusCode.UnprocessableEntity, "below_minimum");
+        Assert.Equal((await first.JsonAsync()).GetProperty("decidedAt").GetDateTimeOffset(),
+            (await replay.JsonAsync()).GetProperty("decidedAt").GetDateTimeOffset());
     }
 
     [Fact]

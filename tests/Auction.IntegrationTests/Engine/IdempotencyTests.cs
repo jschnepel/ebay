@@ -48,6 +48,23 @@ public sealed class IdempotencyTests(MigratedDatabase db)
     }
 
     [Fact]
+    public async Task A_bid_receipt_saved_before_decision_times_replays_its_original_record_time()
+    {
+        var id = await ActiveAsync(db, _engine);
+        var context = As(UserId.New());
+        await _engine.PlaceBidAsync(context, id, new Money(1500), _ct);
+        var recordedAt = await db.NowAsync();
+        await db.ExecuteAsync(MigratedDatabase.Migrator,
+            "UPDATE idempotency_records SET outcome = outcome - 'DecidedAt', created_at = $3 WHERE actor_id = $1 AND key = $2",
+            context.Actor.Value, context.IdempotencyKey, recordedAt);
+
+        var replay = await _engine.PlaceBidAsync(context, id, new Money(1500), _ct);
+        Assert.True(replay.Replayed);
+        Assert.Equal(recordedAt, replay.DecidedAt);
+        Assert.Equal(1, await CountAsync(db, "bids", id));
+    }
+
+    [Fact]
     public async Task Reusing_a_key_for_a_different_request_is_refused()
     {
         var id = await ActiveAsync(db, _engine);

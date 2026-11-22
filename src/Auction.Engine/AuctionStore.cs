@@ -144,7 +144,7 @@ internal static class AuctionStore
         if (context is not null)
         {
             await reader.NextResultAsync(cancellationToken);
-            recorded = await IdempotencyStore.ReadAsync(reader, cancellationToken);
+            recorded = await IdempotencyStore.ReadAsync(reader, existingAuction: true, cancellationToken);
         }
 
         var auction = row is null

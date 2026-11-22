@@ -148,4 +148,7 @@ public sealed class CommandResponse
 
     /// <summary>True when this repeats the recorded result of an earlier request with the same key.</summary>
     public required bool Replayed { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public DateTimeOffset? DecidedAt { get; init; }
 }

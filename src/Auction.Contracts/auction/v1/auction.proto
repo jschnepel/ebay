@@ -219,6 +219,8 @@ message CommandResult {
   repeated FieldError field_errors = 8;
   // True when this is the recorded result of an earlier request with the same key.
   bool replayed = 9;
+  // For a bid receipt, the original database time, including when the outcome is replayed.
+  google.protobuf.Timestamp decided_at = 10;
 }
 
 message FieldError {
