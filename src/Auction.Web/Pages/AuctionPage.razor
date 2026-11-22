@@ -29,7 +29,7 @@ else
     <MudSimpleTable Dense="true" Class="mb-4">
         <tbody>
             <tr><th scope="row">Current price</th><td data-testid="current-price">@Format.Price(auction)</td></tr>
-            <tr><th scope="row">Bids</th><td>@auction.BidCount</td></tr>
+            <tr><th scope="row">Bids</th><td data-testid="bid-count">@auction.BidCount</td></tr>
             <tr><th scope="row">Status</th><td data-testid="status">@Format.Status(auction.Status)@(auction.Outcome is { } outcome ? $" ({outcome.Replace('_', ' ')})" : "")</td></tr>
             @if (auction.ReserveMet is { } met)
             {
@@ -108,8 +108,7 @@ else
     private bool _bidAccepted;
     private bool _busy;
 
-    // One key per intended bid: a retry of the same amount reuses it, so it can't be placed twice.
-    private (string Amount, string Key)? _pending;
+    private (long AmountCents, string Key)? _pending;
 
     private Guid? _watching;
     private bool _started;
@@ -200,9 +199,9 @@ else
             return;
         }
 
-        if (_pending is not { } pending || pending.Amount != _amount)
+        if (_pending is not { } pending || pending.AmountCents != cents)
         {
-            pending = (_amount, Guid.NewGuid().ToString());
+            pending = (cents, Guid.NewGuid().ToString());
             _pending = pending;
         }
 

@@ -38,6 +38,50 @@ public sealed class JourneyTests(MigratedDatabase db, Browsers browsers)
     }
 
     [Fact]
+    public async Task A_reformatted_bid_recovers_its_acceptance_after_the_reply_is_lost()
+    {
+        var site = await Browsers.SiteAsync(db);
+        var seller = await browsers.NewPageAsync(site);
+        var buyer = await browsers.NewPageAsync(site);
+        await seller.SignUpAsync("Seller");
+        var auction = await seller.ListAndPublishAsync($"Retry {Guid.NewGuid():N}", openingDollars: "10", reserveDollars: "15");
+        await buyer.SignUpAsync("Buyer");
+        await buyer.GotoAsync(auction);
+
+        // Send the real bid to the server, then drop its response before the page sees it.
+        int? firstStatus = null;
+        await buyer.RouteAsync("**/api/v1/auctions/*/bids", async route =>
+        {
+            if (route.Request.Method != "POST")
+            {
+                await route.ContinueAsync();
+                return;
+            }
+
+            var response = await route.FetchAsync();
+            firstStatus = response.Status;
+            await response.DisposeAsync();
+            await route.AbortAsync();
+        });
+        await buyer.BidAsync("50");
+        var receipt = buyer.GetByTestId("bid-result");
+        await Assertions.Expect(receipt).ToContainTextAsync("Check the connection");
+        Assert.Equal(201, firstStatus);
+        await buyer.UnrouteAllAsync(new() { Behavior = UnrouteBehavior.Wait });
+
+        await buyer.BidAsync("50.00");
+        await Assertions.Expect(receipt).ToHaveTextAsync("Your earlier bid was accepted.");
+        await Assertions.Expect(buyer.GetByTestId("bid-count")).ToHaveTextAsync("1");
+
+        // Once the bidder has received the receipt, another submission is a fresh bid.
+        await buyer.BidAsync("50");
+        await Assertions.Expect(receipt).ToContainTextAsync("Your new maximum must be higher");
+        await seller.ReloadAsync();
+        await Assertions.Expect(seller.GetByTestId("bid-count")).ToHaveTextAsync("1");
+        await Assertions.Expect(seller.GetByTestId("current-price")).ToHaveTextAsync("$15.00");
+    }
+
+    [Fact]
     public async Task A_demo_account_signs_out_and_back_in_with_its_email_and_a_repeated_sign_up_is_offered_that_account()
     {
         var site = await Browsers.SiteAsync(db);

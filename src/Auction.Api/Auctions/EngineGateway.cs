@@ -109,7 +109,7 @@ internal sealed partial class EngineGateway(
 
     private static IResult Problem(int status, string code, string title) => Problems.Of(status, code, title);
 
-    // Nothing was recorded: the same key can be retried.
+    // The outcome may be unknown to the API. Retry with the same key to recover a committed result.
     private static IResult Unavailable(HttpContext http)
     {
         http.Response.Headers.RetryAfter = "1";
