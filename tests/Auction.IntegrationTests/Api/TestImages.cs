@@ -13,7 +13,7 @@ internal static class TestImages
             return [.. Encode(SKEncodedImageFormat.Png, 4), .. new byte[extraBytes]];
         }
 
-        return Encode(SKEncodedImageFormat.Png, extraBytes == 0 ? 4 : 26);
+        return Encode(SKEncodedImageFormat.Png, extraBytes == 0 ? 4 : 23);
     }
 
     private const int ImageQuotaSample = 1500;
