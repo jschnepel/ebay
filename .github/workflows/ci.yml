@@ -58,6 +58,12 @@ jobs:
           AUCTION_BASE_URL: http://localhost:8080
         run: dotnet test --no-build -c Release --project tests/Auction.IntegrationTests --report-trx --results-directory "$GITHUB_WORKSPACE/TestResults/stack" -- --filter-class "*JourneyTests"
 
+      # The containers end to end, on a throwaway stack of their own: health, non-root users, loopback-only
+      # ports, a redeploy that keeps people signed in, an engine restart, live prices, moderation by the
+      # seeded admin and a verified simulator run. A skipped test fails the step.
+      - name: End-to-end tests of the containers (eng/e2e.sh)
+        run: sh eng/e2e.sh
+
       - name: Stack logs
         if: failure()
         run: docker compose -f deploy/compose.yaml logs --no-color --tail 200
