@@ -16,7 +16,7 @@ public sealed record LiveOptions(int TargetListings = 40, int Sellers = 24, int 
     public TimeSpan VerifyEvery { get; init; } = TimeSpan.FromMinutes(5);
 
     /// <summary>Scales the bidders' pauses (tests act a hundred times faster).</summary>
-    public double ThinkScale { get; init; } = 1.0;
+    public double ThinkScale { get; init; } = 1.0; // not money: a factor on pauses
 
     /// <summary>At most this many new listings per cycle, so a refill is spread over a few cycles.</summary>
     public int MaxNewPerCycle { get; init; } = 10;

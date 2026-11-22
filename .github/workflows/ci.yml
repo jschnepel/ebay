@@ -26,9 +26,10 @@ jobs:
       - name: No floating-point money
         shell: bash
         run: |
-          # Money is long cents: no float/double in src, and decimal only on lines marked display-only.
+          # Money is long cents: float/double only on lines marked "not money" (fractions, odds, durations),
+          # and decimal only on lines marked display-only.
           code() { grep -rnE "$1" --include='*.cs' src/ | grep -vE '^[^:]+:[0-9]+:[[:space:]]*//' || true; }
-          hits=$(code '\b(float|double)\b')
+          hits=$(code '\b(float|double)\b' | grep -v 'not money' || true)
           if [ -n "$hits" ]; then echo "$hits"; echo "::error::float/double found in src/"; exit 1; fi
           hits=$(code '\bdecimal\b|\b[0-9]+m\b' | grep -v 'display-only' || true)
           if [ -n "$hits" ]; then echo "$hits"; echo "::error::decimal outside a display-only line in src/"; exit 1; fi

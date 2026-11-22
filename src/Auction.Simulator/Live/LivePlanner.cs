@@ -16,7 +16,7 @@ public sealed class LivePlanner(Random random)
 
     // Durations are 15 minutes plus an exponential tail, capped at a day: about 3 hours on average, with
     // plenty of short auctions so something is always about to end.
-    private const double TailMeanHours = 2.75;
+    private const double TailMeanHours = 2.75; // not money: a duration
 
     /// <summary>Above this opening price a visitor's listing gets no simulated bids.</summary>
     public const long VisitorOpeningCapCents = 500_000;
@@ -114,7 +114,7 @@ public sealed class LivePlanner(Random random)
         _ => 1_000,
     };
 
-    private string Pick(params (string Value, double Weight)[] choices)
+    private string Pick(params (string Value, double Weight)[] choices) // not money: odds
     {
         var roll = random.NextDouble() * choices.Sum(c => c.Weight);
         foreach (var (value, weight) in choices)
@@ -129,7 +129,8 @@ public sealed class LivePlanner(Random random)
         return choices[^1].Value;
     }
 
-    private double Between(double low, double high) => low + (random.NextDouble() * (high - low));
+    // A uniform draw; any amount made from it is rounded to whole cents by the caller.
+    private double Between(double low, double high) => low + (random.NextDouble() * (high - low)); // not money
 
     private static long RoundDown(long cents, long step) => cents / step * step;
 }
