@@ -63,7 +63,7 @@ else
                     <tbody>
                         @foreach (var bid in _bids)
                         {
-                            <tr>
+                            <tr data-testid="bid-row">
                                 <td>@bid.Bidder</td>
                                 <td class="num">@if (bid.AmountCents is { } cents)
                                     {@Format.Dollars(cents)}
@@ -76,6 +76,24 @@ else
                     </tbody>
                 </MudSimpleTable>
                 </div>
+                @* Hidden while one default-sized page holds the whole history; kept once the size has been changed. *@
+                @if (_bidCursors.Count > 1 || _bidNext is not null || _bidPageSize != BidPageSizes[0])
+                {
+                    <nav class="pager" aria-label="Bid history pages">
+                        <label class="pager-size">
+                            Rows per page
+                            <select @onchange="ChangeBidPageSizeAsync" aria-label="Rows per page">
+                                @foreach (var size in BidPageSizes)
+                                {
+                                    <option value="@size" selected="@(size == _bidPageSize)">@size</option>
+                                }
+                            </select>
+                        </label>
+                        <span class="muted" data-testid="bid-page">Page @_bidCursors.Count</span>
+                        <MudButton Variant="Variant.Outlined" Size="Size.Small" Disabled="@(_bidCursors.Count == 1)" OnClick="NewerBidsAsync">Newer</MudButton>
+                        <MudButton Variant="Variant.Outlined" Size="Size.Small" Disabled="@(_bidNext is null)" OnClick="OlderBidsAsync">Older</MudButton>
+                    </nav>
+                }
             }
         </div>
 
@@ -154,6 +172,12 @@ else
     private AuctionDetail? _auction;
     private List<BidView>? _bids;
 
+    // The bid history's paging: newest first, 10 a page by default; the stack holds each shown page's cursor
+    // (null for the first), so Newer goes back the way Older came.
+    private static readonly int[] BidPageSizes = [10, 25, 50];
+    private int _bidPageSize = 10;
+    private Stack<string?> _bidCursors = new([null]);
+    private string? _bidNext;
     private string? _error;
     private string _amount = "";
     private string? _bidMessage;
@@ -180,6 +204,7 @@ else
             }
 
             (_auction, _bids, _error, _watching) = (null, null, null, Id);
+            (_bidCursors, _bidNext) = (new([null]), null);
             await Live.WatchAsync(Id);
         }
 
@@ -225,10 +250,47 @@ else
             return;
         }
 
-        var bids = await Api.BidsAsync(id);
+        var bids = await Api.BidsAsync(id, _bidCursors.Peek(), _bidPageSize);
         if (bids.Succeeded && id == Id && _auction.Version == detail.Value!.Version)
         {
-            _bids = bids.Value!.Items.ToList();
+            (_bids, _bidNext) = (bids.Value!.Items.ToList(), bids.Value.NextCursor);
+        }
+    }
+
+    private async Task OlderBidsAsync()
+    {
+        if (_bidNext is not null)
+        {
+            _bidCursors.Push(_bidNext);
+            await ShowBidsAsync();
+        }
+    }
+
+    private async Task NewerBidsAsync()
+    {
+        if (_bidCursors.Count > 1)
+        {
+            _bidCursors.Pop();
+            await ShowBidsAsync();
+        }
+    }
+
+    private async Task ChangeBidPageSizeAsync(ChangeEventArgs change)
+    {
+        if (int.TryParse(change.Value?.ToString(), System.Globalization.CultureInfo.InvariantCulture, out var size) && BidPageSizes.Contains(size))
+        {
+            (_bidPageSize, _bidCursors) = (size, new([null]));
+            await ShowBidsAsync();
+        }
+    }
+
+    // Another page of the same auction's history, without reloading the auction.
+    private async Task ShowBidsAsync()
+    {
+        var bids = await Api.BidsAsync(Id, _bidCursors.Peek(), _bidPageSize);
+        if (bids.Succeeded)
+        {
+            (_bids, _bidNext) = (bids.Value!.Items.ToList(), bids.Value.NextCursor);
         }
     }
 

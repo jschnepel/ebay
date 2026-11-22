@@ -84,6 +84,10 @@ public sealed class ApiHost(string connectionString, Uri engineAddress, bool dem
         builder.UseSetting("Api:RelayPollInterval", "00:00:00.500");
         builder.UseSetting("Api:RelayRetryDelay", "00:00:00.500");
 
+        // Small pages exercise paging; a test's own settings below may raise them.
+        builder.UseSetting("Api:DefaultPageSize", DefaultPageSize.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        builder.UseSetting("Api:MaxPageSize", MaxPageSize.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
         // Every test signs users up and in from one address, so the limits are out of the way unless a test sets them.
         foreach (var (name, value) in Unlimited.Concat(settings ?? new Dictionary<string, string>()))
         {
@@ -94,8 +98,6 @@ public sealed class ApiHost(string connectionString, Uri engineAddress, bool dem
         {
             builder.ConfigureServices(services => services.AddSingleton<Microsoft.AspNetCore.Hosting.IStartupFilter>(new ClientAddress(System.Net.IPAddress.Parse(address))));
         }
-        builder.UseSetting("Api:DefaultPageSize", DefaultPageSize.ToString(System.Globalization.CultureInfo.InvariantCulture));
-        builder.UseSetting("Api:MaxPageSize", MaxPageSize.ToString(System.Globalization.CultureInfo.InvariantCulture));
     }
 }
 

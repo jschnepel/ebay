@@ -206,3 +206,8 @@ h2.mud-typography { font-size: 1.25rem; font-weight: 600; color: var(--ink); }
 .bell-empty { margin: 0; padding: 1rem; }
 .bell-foot { padding: 0.6rem 1rem; border-top: 1px solid var(--line); text-align: center; }
 @media (max-width: 600px) { .bell-panel { position: fixed; top: 3.5rem; left: 0.5rem; right: 0.5rem; width: auto; } }
+
+/* Paging under a list: rows per page on the left, the page and its buttons on the right. */
+.pager { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 0.5rem 0.75rem; margin-top: 0.75rem; font-size: 0.875rem; }
+.pager-size { display: flex; align-items: center; gap: 0.4rem; margin-right: auto; color: var(--muted); }
+.pager-size select { font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 0.2rem 0.4rem; }

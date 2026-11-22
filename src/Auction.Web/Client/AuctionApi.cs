@@ -46,8 +46,9 @@ public sealed class AuctionApi(HttpClient http)
 
     public Task<ApiResult<AuctionDetail>> DetailAsync(Guid id) => SendAsync<AuctionDetail>(HttpMethod.Get, $"auctions/{id}");
 
-    public Task<ApiResult<Page<BidView>>> BidsAsync(Guid id, string? cursor = null) =>
-        SendAsync<Page<BidView>>(HttpMethod.Get, WithCursor($"auctions/{id}/bids", cursor));
+    /// <summary>One page of an auction's bid history, newest first; <paramref name="pageSize"/> defaults to the API's.</summary>
+    public Task<ApiResult<Page<BidView>>> BidsAsync(Guid id, string? cursor = null, int? pageSize = null) =>
+        SendAsync<Page<BidView>>(HttpMethod.Get, WithCursor(pageSize is { } size ? $"auctions/{id}/bids?pageSize={size}" : $"auctions/{id}/bids", cursor));
 
     public Task<ApiResult<Page<AuctionSummary>>> MineAsync(string? cursor) =>
         SendAsync<Page<AuctionSummary>>(HttpMethod.Get, WithCursor("me/auctions", cursor));
