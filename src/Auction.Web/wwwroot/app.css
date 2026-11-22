@@ -110,7 +110,7 @@ h2.mud-typography { font-size: 1.25rem; font-weight: 600; color: var(--ink); }
 .lot-page h1 { margin: 0 0 0.75rem; overflow-wrap: anywhere; }
 .lot-page .lot-cover { border-radius: var(--radius); max-height: 26rem; }
 .lot-description { max-width: 68ch; line-height: 1.6; margin: 1rem 0 1.5rem; white-space: pre-line; }
-.ticket { position: sticky; top: 4.5rem; background: var(--surface); border: 1px solid var(--line); border-top: 4px solid var(--ink); border-radius: var(--radius); padding: 1.25rem; display: flex; flex-direction: column; gap: 0.75rem; }
+.ticket { background: var(--surface); border: 1px solid var(--line); border-top: 4px solid var(--ink); border-radius: var(--radius); padding: 1.25rem; display: flex; flex-direction: column; gap: 0.75rem; }
 .ticket .price { font-size: 2.75rem; }
 .ticket-row { display: flex; justify-content: space-between; gap: 1rem; font-size: 0.9375rem; }
 .ticket-row .clock { font-size: 1.125rem; }
