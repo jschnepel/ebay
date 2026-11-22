@@ -1,0 +1,62 @@
+name: Ordered browser walkthrough
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+permissions:
+  contents: read
+concurrency:
+  group: walkthrough-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  walkthrough:
+    if: github.head_ref == 'test/review-browser' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [disposable, hosted]
+    name: Role checks (${{ matrix.target }})
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Select target
+        shell: bash
+        run: |
+          printf 'ROLE_BROWSER_MODULES=%s/role-browser\nROLE_RESULTS=%s/role-results\n' "$RUNNER_TEMP" "$RUNNER_TEMP" >> "$GITHUB_ENV"
+          if [[ '${{ matrix.target }}' == 'hosted' ]]; then
+            echo 'AUCTION_BASE_URL=https://auction.schnepel.cloud/' >> "$GITHUB_ENV"
+          else
+            echo 'AUCTION_BASE_URL=http://127.0.0.1:8080/' >> "$GITHUB_ENV"
+          fi
+      - name: Start disposable stack and check startup output
+        if: matrix.target == 'disposable'
+        shell: bash
+        run: |
+          umask 077
+          ./run.sh > "$RUNNER_TEMP/auction-startup.log" 2>&1
+          while read -r email password; do
+            test -n "$password"
+            if grep -Fq -- "$password" "$RUNNER_TEMP/auction-startup.log"; then
+              echo 'A demo credential appeared in startup output.'
+              exit 1
+            fi
+          done < deploy/.demo-credentials
+          read -r email password < deploy/.demo-credentials
+          echo "::add-mask::$password"
+          printf 'QA_ADMIN_EMAIL=%s\nQA_ADMIN_PASSWORD=%s\n' "$email" "$password" >> "$GITHUB_ENV"
+      - name: Install Chromium
+        shell: bash
+        run: |
+          npm install --prefix "$ROLE_BROWSER_MODULES" --ignore-scripts --no-audit --no-fund @playwright/test@1.64.1
+          "$ROLE_BROWSER_MODULES/node_modules/.bin/playwright" install --with-deps chromium
+      - name: Run buyer, seller and admin checks
+        run: node tests/walkthrough/roles.cjs
+      - name: Save step results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: role-walkthrough-${{ matrix.target }}
+          path: ${{ runner.temp }}/role-results
+          retention-days: 7
