@@ -11,10 +11,13 @@ public sealed record Activity(long ActiveAuctions, long BidsLastFiveMinutes, IRe
 public sealed record ModeratedAuction(
     Guid Id, string Title, string Status, Guid SellerId, string SellerName, long? CurrentPriceCents, long BidCount, DateTimeOffset EndsAt, long Version);
 
+/// <summary>One admin action (ADM-03): who, what, on which target, why and when.</summary>
+public sealed record AuditEntry(long Id, DateTimeOffset At, Guid AdminId, string AdminName, string Action, string TargetType, Guid TargetId, string Reason);
+
 public sealed record UserSummary(Guid Id, string DisplayName, string Kind, bool Disabled, DateTimeOffset CreatedAt);
 
 /// <summary>
-/// The admin area's reads, as the api role. Drafts are never listed: they stay private to their seller
+/// The admin area's reads, as the api role, including the read-only audit log (ADM-03). Drafts are never listed: they stay private to their seller
 /// even from admins. Searches take a title or display-name fragment, or an exact id.
 /// </summary>
 internal sealed class AdminReader(NpgsqlDataSource dataSource)
@@ -49,6 +52,16 @@ internal sealed class AdminReader(NpgsqlDataSource dataSource)
           AND ($1::timestamptz IS NULL OR (created_at, id) > ($1::timestamptz, $2::uuid))
         ORDER BY created_at, id
         LIMIT $3
+        """;
+
+    // Newest first; a search takes an exact admin, target or action, or a fragment of the admin's name.
+    private const string AuditSql = """
+        SELECT a.id, a.at, a.admin_id, u.display_name, a.action, a.target_type, a.target_id, a.reason
+        FROM auction.admin_audit a JOIN auction.users u ON u.id = a.admin_id
+        WHERE ($3::text IS NULL OR a.admin_id::text = $3 OR a.target_id::text = $3 OR a.action = $3 OR u.display_name ILIKE '%' || $3 || '%')
+          AND ($1::bigint IS NULL OR a.id < $1)
+        ORDER BY a.id DESC
+        LIMIT $2
         """;
 
     public async Task<Activity> ActivityAsync(int onlineUsers, CancellationToken cancellationToken)
@@ -87,6 +100,24 @@ internal sealed class AdminReader(NpgsqlDataSource dataSource)
             reader.GetGuid(0), reader.GetString(1), reader.GetString(2), reader.GetBoolean(3), reader.GetFieldValue<DateTimeOffset>(4)),
             item => (item.CreatedAt, item.Id)), after, pageSize, cancellationToken);
 
+    public async Task<Page<AuditEntry>> AuditAsync(string? query, long? before, int pageSize, CancellationToken cancellationToken)
+    {
+        await using var command = dataSource.CreateCommand(AuditSql);
+        command.Parameters.Add(new NpgsqlParameter { Value = (object?)before ?? DBNull.Value, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Bigint });
+        command.Parameters.Add(new NpgsqlParameter { Value = pageSize + 1 });
+        command.Parameters.Add(new NpgsqlParameter { Value = (object?)Blank(query) ?? DBNull.Value, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Text });
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var items = new List<AuditEntry>();
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            items.Add(ReadAuditEntry(reader));
+        }
+
+        return items.Count <= pageSize
+            ? new Page<AuditEntry>(items, null)
+            : new Page<AuditEntry>(items[..pageSize], Cursors.Encode(items[pageSize - 1].Id));
+    }
+
     /// <summary>Unpublished events: the live-hint backlog shown in admin health.</summary>
     public async Task<long> OutboxBacklogAsync(CancellationToken cancellationToken)
     {
@@ -97,6 +128,10 @@ internal sealed class AdminReader(NpgsqlDataSource dataSource)
     private static RecentBid ReadRecentBid(NpgsqlDataReader reader) => new(
         reader.GetGuid(0), reader.GetString(1), reader.IsDBNull(2) ? null : reader.GetInt64(2), reader.GetString(3),
         reader.GetFieldValue<DateTimeOffset>(4));
+
+    private static AuditEntry ReadAuditEntry(NpgsqlDataReader reader) => new(
+        reader.GetInt64(0), reader.GetFieldValue<DateTimeOffset>(1), reader.GetGuid(2), reader.GetString(3), reader.GetString(4),
+        reader.GetString(5), reader.GetGuid(6), reader.GetString(7));
 
     private static string? Blank(string? text) => string.IsNullOrWhiteSpace(text) ? null : text.Trim();
 

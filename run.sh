@@ -22,7 +22,7 @@ secret() {
 if [ ! -f "$env_file" ]; then
     work="$env_file.tmp"
     cp deploy/.env.example "$work"
-    for name in POSTGRES_PASSWORD MIGRATOR_DB_PASSWORD ENGINE_DB_PASSWORD API_DB_PASSWORD VERIFIER_DB_PASSWORD ADMIN_PASSWORD DEMO_PASSWORD SIMULATOR_PASSWORD; do
+    for name in POSTGRES_PASSWORD MIGRATOR_DB_PASSWORD ENGINE_DB_PASSWORD API_DB_PASSWORD VERIFIER_DB_PASSWORD ADMIN_PASSWORD DEMO_PASSWORD SIMULATOR_PASSWORD SIMULATOR_CONTROL_TOKEN; do
         value=$(secret)
         # Fills only an empty value, keeping the line's comment.
         sed "s|^$name=[[:space:]]*#|$name=$value  #|; s|^$name=[[:space:]]*\$|$name=$value|" "$work" > "$work.next"
@@ -43,8 +43,17 @@ if [ ! -f "$env_file" ]; then
     echo "Admin sign-in: admin@auction.test / $admin_password (kept in $credentials)"
 fi
 
+# Secrets added after an existing .env was created are appended, so an older .env keeps working.
+for name in SIMULATOR_CONTROL_TOKEN; do
+    if ! grep -q "^$name=[^[:space:]#]" "$env_file"; then
+        sed -i.bak "/^$name=/d" "$env_file" && rm -f "$env_file.bak"
+        echo "$name=$(secret)" >> "$env_file"
+        echo "Added a generated $name to $env_file."
+    fi
+done
+
 sh deploy/prepare-engine-tls.sh
-docker compose -f deploy/compose.yaml up -d --build --wait api redis
+docker compose -f deploy/compose.yaml up -d --build --wait api redis simulator-control
 
 # A PORT set in the shell wins over deploy/.env, as it does for Compose.
 port=${PORT:-$(sed -n 's/^PORT=\([0-9]*\).*/\1/p' "$env_file")}

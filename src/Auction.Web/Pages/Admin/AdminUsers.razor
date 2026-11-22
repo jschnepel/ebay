@@ -3,7 +3,9 @@
 @inject Session Session
 
 <PageTitle>Users</PageTitle>
-<MudText Typo="Typo.h4" HtmlTag="h1" Class="mb-4">Users</MudText>
+<div class="page-head">
+    <MudText Typo="Typo.h4" HtmlTag="h1">Users</MudText>
+</div>
 
 @if (_forbidden)
 {
@@ -11,33 +13,51 @@
 }
 else
 {
-    <MudStack Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.End" Class="mb-2">
-        <MudTextField @bind-Value="_query" Label="Display name or account id" Immediate="true" />
-        <MudButton Variant="Variant.Outlined" OnClick="SearchAsync">Search</MudButton>
-    </MudStack>
-    <MudTextField @bind-Value="_reason" Label="Reason (kept in the audit log)" Immediate="true" MaxLength="500" Class="mb-2" />
+    <div class="searchbar is-two" role="search">
+        <MudTextField @bind-Value="_query" Label="Display name or account id" Variant="Variant.Outlined" Margin="Margin.Dense" Immediate="true" OnKeyDown="SearchOnEnterAsync" />
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SearchAsync">Search</MudButton>
+    </div>
+
+    <div class="reason-bar">
+        <MudTextField @bind-Value="_reason" Label="Reason (kept in the audit log)" Variant="Variant.Outlined" Margin="Margin.Dense"
+                      Immediate="true" MaxLength="500" HelperText="Every enable or disable needs one." />
+    </div>
 
     @if (_message is not null)
     {
-        <MudAlert Class="mb-2" Severity="@(_failed ? Severity.Error : Severity.Success)" data-testid="user-result">@_message</MudAlert>
+        <MudAlert Class="mb-3" Severity="@(_failed ? Severity.Error : Severity.Success)" data-testid="user-result">@_message</MudAlert>
     }
 
-    @if (_items is not null)
+    @if (_items is null)
     {
-        <div class="table-scroll"><MudSimpleTable Dense="true">
-            <thead><tr><th>Name</th><th>Kind</th><th>Account id</th><th>State</th><th>Actions</th></tr></thead>
+        <PageState State="ViewState.Loading" LoadingText="Loading users…" />
+    }
+    else if (_items.Count == 0 && !_loadFailed)
+    {
+        <p class="muted">No accounts match. Try part of a display name, or a full account id.</p>
+    }
+    else
+    {
+        <div class="panel table-panel table-scroll is-wide"><MudSimpleTable Dense="true" Elevation="0">
+            <thead><tr><th>Account</th><th>Kind</th><th>State</th><th><span class="sr-only">Actions</span></th></tr></thead>
             <tbody>
                 @foreach (var user in _items)
                 {
                     <tr data-testid="user-row">
-                        <td>@user.DisplayName</td>
-                        <td>@user.Kind.Replace('_', ' ')</td>
-                        <td><code>@user.Id</code></td>
-                        <td>@(user.Disabled ? "Disabled" : "Enabled")</td>
                         <td>
-                            @if (user.Id != Session.Account?.Id)
+                            <div class="cell-title">@user.DisplayName</div>
+                            <div class="id">@user.Id</div>
+                        </td>
+                        <td>@Kind(user.Kind)</td>
+                        <td><span class="@($"tag {(user.Disabled ? "is-off" : "is-live")}")">@(user.Disabled ? "Disabled" : "Enabled")</span></td>
+                        <td class="actions">
+                            @if (user.Id == Session.Account?.Id)
                             {
-                                <MudButton Size="Size.Small" Color="@(user.Disabled ? Color.Primary : Color.Error)" OnClick="() => ToggleAsync(user)" Disabled="_busy">
+                                <span class="muted">You</span>
+                            }
+                            else
+                            {
+                                <MudButton Size="Size.Small" Variant="@(user.Disabled ? Variant.Outlined : Variant.Text)" Color="@(user.Disabled ? Color.Primary : Color.Error)" OnClick="() => ToggleAsync(user)" Disabled="_busy">
                                     @(user.Disabled ? "Enable" : "Disable")
                                 </MudButton>
                             }
@@ -48,7 +68,7 @@ else
         </MudSimpleTable></div>
         @if (_next is not null)
         {
-            <MudButton Class="mt-2" Variant="Variant.Outlined" OnClick="MoreAsync">Show more</MudButton>
+            <MudButton Class="mt-3" Variant="Variant.Outlined" OnClick="MoreAsync">Show more</MudButton>
         }
     }
 }
@@ -62,6 +82,7 @@ else
     private bool _failed;
     private bool _busy;
     private bool _forbidden;
+    private bool _loadFailed;
 
     protected override async Task OnInitializedAsync()
     {
@@ -73,9 +94,17 @@ else
         }
     }
 
+    private static string Kind(string kind)
+    {
+        var words = kind.Replace('_', ' ');
+        return words.Length == 0 ? words : char.ToUpperInvariant(words[0]) + words[1..];
+    }
+
+    private Task SearchOnEnterAsync(KeyboardEventArgs key) => key.Key == "Enter" ? SearchAsync() : Task.CompletedTask;
+
     private async Task SearchAsync()
     {
-        (_items, _next) = (null, null);
+        (_items, _next, _loadFailed) = (null, null, false);
         await MoreAsync();
     }
 
@@ -85,6 +114,8 @@ else
         if (!page.Succeeded)
         {
             (_failed, _message) = (true, page.Message);
+            _items ??= [];
+            _loadFailed = true;
             return;
         }
 

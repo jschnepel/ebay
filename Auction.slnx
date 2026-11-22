@@ -11,6 +11,7 @@
   <Folder Name="/tests/">
     <Project Path="tests/Auction.IntegrationTests/Auction.IntegrationTests.csproj" />
     <Project Path="tests/Auction.ReferenceModel/Auction.ReferenceModel.csproj" />
+    <Project Path="tests/Auction.StackTests/Auction.StackTests.csproj" />
     <Project Path="tests/Auction.UnitTests/Auction.UnitTests.csproj" />
   </Folder>
 </Solution>

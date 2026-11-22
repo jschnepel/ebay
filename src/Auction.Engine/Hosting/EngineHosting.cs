@@ -11,6 +11,7 @@ internal static class EngineHosting
     public static WebApplicationBuilder AddEngine(this WebApplicationBuilder builder)
     {
         builder.Logging.ClearProviders().AddJsonConsole(json => json.IncludeScopes = true);
+        builder.AddTelemetry();
 
         builder.Services.AddSingleton<PeerIdentity>();
         builder.WebHost.ConfigureKestrel((context, kestrel) =>

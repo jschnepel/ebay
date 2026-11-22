@@ -1,11 +1,13 @@
 using System.Diagnostics;
 using System.Net;
+using System.Net.Http.Json;
 using System.Text.Json;
 using Auction.IntegrationTests.Api;
 using Auction.IntegrationTests.Browser;
 using Auction.IntegrationTests.Database;
 using Auction.Migrator;
 using Auction.Simulator;
+using Auction.Simulator.Control;
 using Auction.Verifier;
 using Npgsql;
 
@@ -13,13 +15,14 @@ namespace Auction.IntegrationTests.Simulation;
 
 /// <summary>
 /// The simulator over the public API of the whole stack, and the separate verifier over the database
-/// (SIM-01..05, SIM-16, INT-03). Runs alone: the hot burst would distort the timing-bound tests beside it,
-/// and runs share the simulator accounts.
+/// (SIM-01..05, SIM-16, INT-03), and its control endpoint for the admin area (ADM-02). Runs alone: the hot
+/// burst would distort the timing-bound tests beside it, and runs share the simulator accounts.
 /// </summary>
 [Collection(Simulation.Name)]
 public sealed class SimulatorTests(MigratedDatabase db)
 {
     private const string Password = "simulator-pass-for-tests";
+    private const string ControlToken = "control-token-for-tests";
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
@@ -47,7 +50,8 @@ public sealed class SimulatorTests(MigratedDatabase db)
     {
         var site = await SeededSiteAsync();
 
-        var report = await new SimulationRunner(Profile.HotBurst, Options(site, seed: 11)).RunAsync(Ct);
+        using var runner = new SimulationRunner(Profile.HotBurst, Options(site, seed: 11));
+        var report = await runner.RunAsync(Ct);
 
         Assert.Null(report.SetupError);
         Assert.Equal(50, report.Intended.Bidders);
@@ -62,7 +66,8 @@ public sealed class SimulatorTests(MigratedDatabase db)
     {
         var site = await SeededSiteAsync();
 
-        var report = await new SimulationRunner(Profile.Realistic, Options(site, seed: 3) with { Duration = TimeSpan.FromSeconds(15) }).RunAsync(Ct);
+        using var runner = new SimulationRunner(Profile.Realistic, Options(site, seed: 3) with { Duration = TimeSpan.FromSeconds(15) });
+        var report = await runner.RunAsync(Ct);
 
         Assert.True(report.Passed, JsonSerializer.Serialize(report));
         Assert.Equal(5, report.Auctions.Count);
@@ -98,11 +103,97 @@ public sealed class SimulatorTests(MigratedDatabase db)
     {
         var site = await SeededSiteAsync();
 
-        var report = await new SimulationRunner(Profile.Smoke, Options(site, seed: 1) with { Password = "wrong" }).RunAsync(Ct);
+        using var runner = new SimulationRunner(Profile.Smoke, Options(site, seed: 1) with { Password = "wrong" });
+        var report = await runner.RunAsync(Ct);
 
         Assert.NotNull(report.SetupError);
         Assert.False(report.Passed);
         Assert.Null(report.Actual);
+    }
+
+    [Fact]
+    public async Task The_control_endpoint_needs_its_token_runs_one_profile_at_a_time_and_stops_on_request()
+    {
+        var site = await SeededSiteAsync();
+        await using var control = await ControlHost.StartAsync(ControlSettingsFor(site));
+        using var anonymous = new HttpClient { BaseAddress = control.Address };
+        using var wrongToken = ControlHost.Client(control.Address, "not-the-control-token");
+        using var http = ControlHost.Client(control.Address, ControlToken);
+
+        using (var noToken = await anonymous.PostAsJsonAsync("runs", new { profile = "smoke" }, Ct))
+        using (var wrong = await wrongToken.GetAsync(new Uri("runs/current", UriKind.Relative), Ct))
+        {
+            Assert.Equal((HttpStatusCode.Unauthorized, HttpStatusCode.Unauthorized), (noToken.StatusCode, wrong.StatusCode));
+        }
+
+        using (var first = await http.PostAsJsonAsync("runs", new { profile = "smoke" }, Ct))
+        using (var second = await http.PostAsJsonAsync("runs", new { profile = "smoke" }, Ct))
+        using (var unknown = await http.PostAsJsonAsync("runs", new { profile = "endless" }, Ct))
+        {
+            Assert.Equal(
+                (HttpStatusCode.Accepted, HttpStatusCode.Conflict, HttpStatusCode.BadRequest),
+                (first.StatusCode, second.StatusCode, unknown.StatusCode));
+        }
+
+        await ControlHost.WaitForAsync(http, run => run.GetProperty("accepted").GetInt32() > 0);
+        using (var stop = await http.DeleteAsync(new Uri("runs/current", UriKind.Relative), Ct))
+        {
+            Assert.Equal(HttpStatusCode.Accepted, stop.StatusCode);
+        }
+
+        var last = (await ControlHost.WaitForAsync(http, run => run.GetProperty("state").GetString() == "idle")).GetProperty("last");
+        Assert.True(last.GetProperty("stoppedEarly").GetBoolean());
+        Assert.True(last.GetProperty("passed").GetBoolean(), last.ToString());
+        using var none = await http.DeleteAsync(new Uri("runs/current", UriKind.Relative), Ct);
+        Assert.Equal(HttpStatusCode.Conflict, none.StatusCode);
+    }
+
+    [Fact]
+    public async Task An_admin_starts_and_stops_a_profile_through_the_API_which_audits_both_and_hides_the_routes_from_others()
+    {
+        var site = await SeededSiteAsync();
+        await using var control = await ControlHost.StartAsync(ControlSettingsFor(site));
+        await using var api = await db.ApiWithAsync(new Dictionary<string, string>
+        {
+            ["Api:SimulatorAddress"] = control.Address.ToString(),
+            ["Api:SimulatorToken"] = ControlToken,
+        });
+        var user = await api.SignUpAsync();
+        var (admin, signIn) = await api.SignInAsync(await db.InsertPasswordAccountAsync("admin", "admin-simulator-password"), "admin-simulator-password");
+        Assert.Equal(HttpStatusCode.OK, signIn.StatusCode);
+        signIn.Dispose();
+
+        using (var notAdmin = await user.Http.PostAsJsonAsync("/api/v1/admin/simulator/runs", new { profile = "smoke" }, Ct))
+        using (var hotBurst = await admin.PostAsJsonAsync("/api/v1/admin/simulator/runs", new { profile = "hot-burst" }, Ct))
+        {
+            await notAdmin.AssertProblemAsync(HttpStatusCode.NotFound, "not_found");
+            await hotBurst.AssertProblemAsync(HttpStatusCode.Conflict, "profile_not_allowed");
+        }
+
+        Guid runId;
+        using (var start = await admin.PostAsJsonAsync("/api/v1/admin/simulator/runs", new { profile = "smoke" }, Ct))
+        using (var again = await admin.PostAsJsonAsync("/api/v1/admin/simulator/runs", new { profile = "smoke" }, Ct))
+        {
+            Assert.Equal(HttpStatusCode.Accepted, start.StatusCode);
+            runId = (await start.JsonAsync()).GetProperty("runId").GetGuid();
+            await again.AssertProblemAsync(HttpStatusCode.Conflict, "run_in_progress");
+        }
+
+        var view = await admin.GetJsonAsync("/api/v1/admin/simulator");
+        Assert.True(view.GetProperty("available").GetBoolean());
+        Assert.Equal(["smoke", "realistic"], view.GetProperty("profiles").EnumerateArray().Select(p => p.GetString()));
+        await ControlHost.WaitForAsync(admin, run => run.GetProperty("accepted").GetInt32() > 0, "/api/v1/admin/simulator", "run");
+
+        using (var stop = await admin.DeleteAsync(new Uri("/api/v1/admin/simulator/runs/current", UriKind.Relative), Ct))
+        {
+            Assert.Equal(HttpStatusCode.Accepted, stop.StatusCode);
+        }
+
+        await ControlHost.WaitForAsync(admin, run => run.GetProperty("state").GetString() == "idle", "/api/v1/admin/simulator", "run");
+        Assert.Equal(2L, await db.ScalarAsync<long>(
+            MigratedDatabase.Migrator,
+            "SELECT count(*) FROM admin_audit WHERE target_type = 'simulator_run' AND target_id = $1 AND action IN ('simulator_start', 'simulator_stop')",
+            runId));
     }
 
     [Fact]
@@ -126,6 +217,8 @@ public sealed class SimulatorTests(MigratedDatabase db)
         VerifierConnectionString = db.ConnectionStringFor(MigratedDatabase.Verifier),
         WaitForClose = false,
     };
+
+    private ControlSettings ControlSettingsFor(Uri site) => new(site, Password, ControlToken, db.ConnectionStringFor(MigratedDatabase.Verifier));
 
     private async Task<Uri> SeededSiteAsync()
     {

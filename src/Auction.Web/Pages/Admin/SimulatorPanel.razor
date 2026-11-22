@@ -1,0 +1,81 @@
+@inject AuctionApi Api
+
+@* Starts and stops a simulator profile; the page around it refreshes the state every second. *@
+<section class="panel mb-4" data-testid="simulator-panel">
+    <MudText Typo="Typo.h6" HtmlTag="h2">Load simulator</MudText>
+    @if (View is null)
+    {
+        <PageState State="ViewState.Loading" LoadingText="Asking the simulator…" />
+    }
+    else if (!View.Available)
+    {
+        <MudText data-testid="simulator-state">Not available: the simulator service isn't running. Start it with <code>./run.sh up</code>.</MudText>
+    }
+    else
+    {
+        var run = View.Run;
+        <MudText Class="mb-2" data-testid="simulator-state">@StateText(run)</MudText>
+        @if (run is { State: "idle" })
+        {
+            <div class="d-flex flex-wrap align-center gap-2">
+                <MudSelect T="string" @bind-Value="_profile" Label="Profile" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Style="min-width: 12rem">
+                    @foreach (var profile in View.Profiles)
+                    {
+                        <MudSelectItem Value="@profile">@profile</MudSelectItem>
+                    }
+                </MudSelect>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="_busy" OnClick="StartAsync">Start run</MudButton>
+            </div>
+        }
+        else
+        {
+            <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Disabled="@(_busy || run?.State == "stopping")" OnClick="StopAsync">Stop run</MudButton>
+        }
+
+        @if (run?.Last is { } last)
+        {
+            <MudText Typo="Typo.body2" Class="mt-2" data-testid="simulator-last">
+                Last run: @last.Profile, @last.Accepted bids accepted, @(last.Passed ? "every invariant held" : $"failed: {last.Error}")@(last.StoppedEarly ? " (stopped early)" : "").
+                Finished at @Format.Recent(last.FinishedAt).
+            </MudText>
+        }
+    }
+
+    @if (_message is not null)
+    {
+        <MudAlert Class="mt-2" Severity="Severity.Error" data-testid="simulator-message">@_message</MudAlert>
+    }
+</section>
+
+@code {
+    [Parameter]
+    public SimulatorView? View { get; set; }
+
+    /// <summary>Asks the page to fetch the state again after a start or stop.</summary>
+    [Parameter]
+    public EventCallback Changed { get; set; }
+
+    private string _profile = "smoke";
+    private string? _message;
+    private bool _busy;
+
+    private static string StateText(SimulatorRun? run) => run switch
+    {
+        { State: "running" } => $"Running {run.Profile}: {run.Attempts} bids sent, {run.Accepted} accepted so far.",
+        { State: "stopping" } => $"Stopping {run.Profile}; checking what it did.",
+        _ => "Idle.",
+    };
+
+    private Task StartAsync() => SendAsync(() => Api.StartSimulatorAsync(_profile));
+
+    private Task StopAsync() => SendAsync(Api.StopSimulatorAsync);
+
+    private async Task SendAsync(Func<Task<ApiResult<SimulatorRun>>> send)
+    {
+        _busy = true;
+        var result = await send();
+        _message = result.Succeeded ? null : result.Message;
+        _busy = false;
+        await Changed.InvokeAsync();
+    }
+}

@@ -96,7 +96,7 @@ public sealed class JourneyTests(MigratedDatabase db, Browsers browsers)
 
         await buyer.BidAsync("50.00");
         await Assertions.Expect(button).ToHaveTextAsync("Accepted");
-        await Assertions.Expect(button).ToHaveCSSAsync("background-color", "rgb(46, 125, 50)");
+        await Assertions.Expect(button).ToHaveCSSAsync("background-color", "rgb(46, 107, 69)");
         var time = originalTime.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss 'UTC'", CultureInfo.InvariantCulture);
         await Assertions.Expect(receipt).ToHaveTextAsync($"Accepted · $50.00 · {title} · {time}");
         await Assertions.Expect(buyer.GetByTestId("bid-count")).ToHaveTextAsync("1");
@@ -105,7 +105,7 @@ public sealed class JourneyTests(MigratedDatabase db, Browsers browsers)
         await buyer.BidAsync("50");
         await buyer.Mouse.MoveAsync(0, 0);
         await Assertions.Expect(button).ToHaveTextAsync("Rejected · place bid again");
-        await Assertions.Expect(button).ToHaveCSSAsync("background-color", "rgb(179, 38, 30)");
+        await Assertions.Expect(button).ToHaveCSSAsync("background-color", "rgb(163, 38, 30)");
         await Assertions.Expect(receipt).ToContainTextAsync($"Rejected · $50.00 · {title}");
         await Assertions.Expect(receipt.Locator("time")).ToContainTextAsync("UTC");
         await Assertions.Expect(receipt.GetByTestId("bid-reason")).ToHaveTextAsync("Your new maximum must be higher than your current maximum.");

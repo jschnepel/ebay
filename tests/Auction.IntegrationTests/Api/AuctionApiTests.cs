@@ -1,6 +1,10 @@
+using System.Diagnostics;
 using System.Net;
+using System.Net.Http.Json;
 using System.Text.Json;
 using Auction.IntegrationTests.Database;
+using Microsoft.Extensions.DependencyInjection;
+using Npgsql;
 
 namespace Auction.IntegrationTests.Api;
 
@@ -32,6 +36,67 @@ public sealed class AuctionApiTests(MigratedDatabase db)
         Assert.Equal("Bidder 1", Assert.Single(history.EnumerateArray()).GetProperty("bidder").GetString());
         var own = (await buyer.Http.GetJsonAsync($"/api/v1/auctions/{id}/bids")).GetProperty("items");
         Assert.Equal("You", own[0].GetProperty("bidder").GetString());
+    }
+
+    [Fact]
+    public async Task A_bid_through_the_API_reaches_the_engine_over_gRPC_under_the_requests_trace_id_and_is_stored()
+    {
+        var api = await db.ApiAsync();
+        var engine = await db.EngineServiceAsync();
+        var buyer = await api.SignUpAsync();
+        var id = await (await api.SignUpAsync()).PublishedAsync();
+        var traceId = ActivityTraceId.CreateRandom().ToHexString();
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/auctions/{id}/bids") { Content = JsonContent.Create(new { amountCents = 1500 }) };
+        request.Headers.Add(ApiCalls.KeyHeader, Guid.NewGuid().ToString());
+        request.Headers.Add("traceparent", $"00-{traceId}-{ActivitySpanId.CreateRandom().ToHexString()}-01");
+        using var response = await buyer.Http.SendAsync(request, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+
+        // Console logging is buffered, so the engine's line may take a moment to appear.
+        string? line = null;
+        for (var i = 0; i < 50 && line is null; i++)
+        {
+            line = (await engine.LogsAsync()).Split('\n').FirstOrDefault(l => l.Contains(traceId, StringComparison.Ordinal));
+            await Task.Delay(line is null ? 100 : 0, TestContext.Current.CancellationToken);
+        }
+
+        Assert.NotNull(line);
+        Assert.Contains("/auction.v1.AuctionCommandService/PlaceBid", line, StringComparison.Ordinal);
+        Assert.Equal(1L, await db.ScalarAsync<long>(
+            MigratedDatabase.Verifier, "SELECT count(*) FROM bids WHERE auction_id = $1 AND bidder_id = $2", id, buyer.Id));
+    }
+
+    [Fact]
+    public async Task The_APIs_own_database_connection_can_read_auctions_but_not_write_them_or_their_bids()
+    {
+        var api = await db.ApiAsync();
+        var id = await (await api.SignUpAsync()).PublishedAsync();
+        await using var connection = await api.Services.GetRequiredService<NpgsqlDataSource>().OpenConnectionAsync(TestContext.Current.CancellationToken);
+
+        async Task<string?> RunAsync(string sql)
+        {
+            await using var command = new NpgsqlCommand(sql, connection) { Parameters = { new() { Value = id } } };
+            try
+            {
+                await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
+                return null;
+            }
+            catch (PostgresException e)
+            {
+                return e.SqlState;
+            }
+        }
+
+        Assert.Null(await RunAsync("SELECT title FROM auctions WHERE id = $1"));
+        Assert.All(
+            [
+                await RunAsync("UPDATE auctions SET title = 'Changed' WHERE id = $1"),
+                await RunAsync("DELETE FROM auctions WHERE id = $1"),
+                await RunAsync("INSERT INTO bids (auction_id, seq, bidder_id, amount_cents, source, accepted_at, request_id) VALUES ($1, 1, gen_random_uuid(), 5000, 'bidder', now(), gen_random_uuid())"),
+            ],
+            state => Assert.Equal(PostgresErrorCodes.InsufficientPrivilege, state));
+        Assert.Equal(0L, await db.ScalarAsync<long>(MigratedDatabase.Verifier, "SELECT count(*) FROM bids WHERE auction_id = $1", id));
     }
 
     [Fact]

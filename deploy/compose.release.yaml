@@ -1,0 +1,27 @@
+# Runs the images CI published for one commit instead of building from a checkout, so a deployment
+# runs exactly what CI built, tested and scanned. deploy/deploy.sh uses it with the base file and
+# compose.edge.yaml:
+#
+#   IMAGE_TAG=sha-<commit> docker compose -f compose.yaml -f compose.edge.yaml -f compose.release.yaml up -d --wait
+#
+# IMAGE_REGISTRY is where CI pushes them (ghcr.io/<owner>).
+x-release-image: &release
+  build: !reset null
+  pull_policy: missing
+
+services:
+  migrator:
+    <<: *release
+    image: ${IMAGE_REGISTRY:-ghcr.io/jschnepel}/auction-migrator:${IMAGE_TAG:?set IMAGE_TAG to the commit's image tag}
+  engine:
+    <<: *release
+    image: ${IMAGE_REGISTRY:-ghcr.io/jschnepel}/auction-engine:${IMAGE_TAG:?set IMAGE_TAG to the commit's image tag}
+  api:
+    <<: *release
+    image: ${IMAGE_REGISTRY:-ghcr.io/jschnepel}/auction-api:${IMAGE_TAG:?set IMAGE_TAG to the commit's image tag}
+  simulator:
+    <<: *release
+    image: ${IMAGE_REGISTRY:-ghcr.io/jschnepel}/auction-simulator:${IMAGE_TAG:?set IMAGE_TAG to the commit's image tag}
+  simulator-control:
+    <<: *release
+    image: ${IMAGE_REGISTRY:-ghcr.io/jschnepel}/auction-simulator:${IMAGE_TAG:?set IMAGE_TAG to the commit's image tag}

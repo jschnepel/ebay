@@ -8,6 +8,7 @@ using Auction.Contracts.V1;
 using Auction.Transport;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Options;
@@ -22,13 +23,14 @@ internal static class ApiHosting
     public static WebApplicationBuilder AddApi(this WebApplicationBuilder builder)
     {
         builder.Logging.ClearProviders().AddJsonConsole(json => json.IncludeScopes = true);
+        builder.AddTelemetry();
 
         builder.Services.AddOptions<ApiOptions>()
             .Bind(builder.Configuration.GetSection("Api"))
             .Validate(
                 options => options.IsValid(),
-                "Api options are missing or out of range: Api:EngineAddress is required, Api:PathBase must start with / and not end with one, "
-                + "Api:TrustedProxies must be IP addresses, and the limits and intervals must be positive.")
+                "Api options are missing or out of range: Api:EngineAddress is required, Api:PathBase must start with / and not end with one, Api:KeysDirectory must be an absolute path, "
+                + "Api:TrustedProxies must be IP addresses or CIDR ranges, and the limits and intervals must be positive.")
             .ValidateOnStart();
         builder.Services.AddSingleton(services => services.GetRequiredService<IOptions<ApiOptions>>().Value);
 
@@ -64,10 +66,19 @@ internal static class ApiHosting
         builder.Services.AddSingleton<AdminKpis>();
         builder.Services.AddSingleton<AdminReader>();
         builder.Services.AddSingleton<RedisHealth>();
+        builder.Services.AddHttpClient<SimulatorControl>(SimulatorControl.Configure);
         builder.Services.AddSingleton<Presence>();
         builder.Services.AddHostedService(services => services.GetRequiredService<Presence>());
 
         builder.Services.AddProblemDetails();
+        if (builder.Configuration["Api:KeysDirectory"] is { Length: > 0 } keysDirectory)
+        {
+            // A fixed application name keeps the keys valid when the path base or the container changes.
+            builder.Services.AddDataProtection()
+                .SetApplicationName("auction-api")
+                .PersistKeysToFileSystem(new DirectoryInfo(keysDirectory));
+        }
+
         builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme).AddCookie(cookie =>
         {
             cookie.Cookie.Name = SessionCookie;
@@ -114,14 +125,19 @@ internal static class ApiHosting
     public static WebApplication MapApi(this WebApplication app)
     {
         var options = app.Services.GetRequiredService<ApiOptions>();
-        if (options.TrustedProxyAddresses is { Count: > 0 } proxies)
+        if (options.TrustedProxyAddresses.Count + options.TrustedProxyNetworks.Count > 0)
         {
             var forwarded = new ForwardedHeadersOptions { ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto };
             forwarded.KnownIPNetworks.Clear();
             forwarded.KnownProxies.Clear();
-            foreach (var proxy in proxies)
+            foreach (var proxy in options.TrustedProxyAddresses)
             {
                 forwarded.KnownProxies.Add(proxy);
+            }
+
+            foreach (var network in options.TrustedProxyNetworks)
+            {
+                forwarded.KnownIPNetworks.Add(network);
             }
 
             app.UseForwardedHeaders(forwarded);

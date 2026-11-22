@@ -1,0 +1,24 @@
+@* A lot's cover: its first photo, or its title set large when it has none. Active lots carry the meter along the bottom edge. *@
+<a href="@($"auctions/{Auction.Id}")" class="lot-cover" tabindex="-1" aria-hidden="true">
+    @if ((ImageId ?? Auction.CoverImageId) is { } image)
+    {
+        <img src="@($"api/v1/images/{image}")" alt="" data-testid="cover" />
+    }
+    else
+    {
+        <span class="lot-cover-type">@Auction.Title</span>
+    }
+    @if (Auction.Status == "active")
+    {
+        <span class="meter"><span style="@($"width: {Clock.Elapsed(Auction, DateTimeOffset.UtcNow) * 100:0.#}%")"></span></span>
+    }
+</a>
+
+@code {
+    [Parameter, EditorRequired]
+    public AuctionSummary Auction { get; set; } = null!;
+
+    /// <summary>The photo to show; the auction's cover when not given.</summary>
+    [Parameter]
+    public Guid? ImageId { get; set; }
+}

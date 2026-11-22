@@ -38,7 +38,7 @@ public sealed class WebClientHostingTests(MigratedDatabase db)
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal(HttpStatusCode.OK, styles.StatusCode);
-        Assert.Contains(".auction-card", await styles.Content.ReadAsStringAsync(Ct), StringComparison.Ordinal);
+        Assert.Contains(".lot-cover", await styles.Content.ReadAsStringAsync(Ct), StringComparison.Ordinal);
     }
 
     [Fact]

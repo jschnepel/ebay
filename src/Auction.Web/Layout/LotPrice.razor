@@ -1,0 +1,13 @@
+@* The price as one string for tests and screen readers ("$10.00 (opening)"), with the note set small. *@
+<span class="price" data-testid="@TestId">@if (Auction.CurrentPriceCents is { } price)
+    {@Format.Dollars(price)}
+    else
+    {@Format.Dollars(Auction.OpeningPriceCents)<small> (opening)</small>}</span>
+
+@code {
+    [Parameter, EditorRequired]
+    public AuctionSummary Auction { get; set; } = null!;
+
+    [Parameter]
+    public string TestId { get; set; } = "price";
+}

@@ -3,7 +3,9 @@
 @inject Session Session
 
 <PageTitle>Moderate auctions</PageTitle>
-<MudText Typo="Typo.h4" HtmlTag="h1" Class="mb-4">Auctions</MudText>
+<div class="page-head">
+    <MudText Typo="Typo.h4" HtmlTag="h1">Auctions</MudText>
+</div>
 
 @if (_forbidden)
 {
@@ -11,9 +13,9 @@
 }
 else
 {
-    <MudStack Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.End" Class="mb-2">
-        <MudTextField @bind-Value="_query" Label="Title, seller name or id" Immediate="true" />
-        <MudSelect T="string" @bind-Value="_status" Label="Status">
+    <div class="searchbar" role="search">
+        <MudTextField @bind-Value="_query" Label="Title, seller name or id" Variant="Variant.Outlined" Margin="Margin.Dense" Immediate="true" OnKeyDown="SearchOnEnterAsync" />
+        <MudSelect T="string" @bind-Value="_status" Label="Status" Variant="Variant.Outlined" Margin="Margin.Dense">
             <MudSelectItem T="string" Value="@("")">Any</MudSelectItem>
             <MudSelectItem T="string" Value="@("active")">Active</MudSelectItem>
             <MudSelectItem T="string" Value="@("scheduled")">Scheduled</MudSelectItem>
@@ -21,37 +23,51 @@ else
             <MudSelectItem T="string" Value="@("closed")">Closed</MudSelectItem>
             <MudSelectItem T="string" Value="@("cancelled")">Cancelled</MudSelectItem>
         </MudSelect>
-        <MudButton Variant="Variant.Outlined" OnClick="SearchAsync">Search</MudButton>
-    </MudStack>
-    <MudTextField @bind-Value="_reason" Label="Reason (sent to the seller and bidders, kept in the audit log)" Immediate="true" MaxLength="500" Class="mb-2" />
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SearchAsync">Search</MudButton>
+    </div>
+
+    <div class="reason-bar">
+        <MudTextField @bind-Value="_reason" Label="Reason (sent to the seller and bidders, kept in the audit log)" Variant="Variant.Outlined" Margin="Margin.Dense"
+                      Immediate="true" MaxLength="500" HelperText="Every suspend, resume or cancel needs one." />
+    </div>
 
     @if (_message is not null)
     {
-        <MudAlert Class="mb-2" Severity="@(_failed ? Severity.Error : Severity.Success)" data-testid="moderation-result">@_message</MudAlert>
+        <MudAlert Class="mb-3" Severity="@(_failed ? Severity.Error : Severity.Success)" data-testid="moderation-result">@_message</MudAlert>
     }
 
-    @if (_items is not null)
+    @if (_items is null)
     {
-        <div class="table-scroll"><MudSimpleTable Dense="true">
-            <thead><tr><th>Item</th><th>Seller</th><th>Price</th><th>Bids</th><th>Status</th><th>Ends</th><th>Actions</th></tr></thead>
+        <PageState State="ViewState.Loading" LoadingText="Loading auctions…" />
+    }
+    else if (_items.Count == 0 && !_loadFailed)
+    {
+        <p class="muted">No auctions match. Try another title, seller or status.</p>
+    }
+    else
+    {
+        <div class="panel table-panel table-scroll is-wide"><MudSimpleTable Dense="true" Elevation="0">
+            <thead><tr><th>Item</th><th class="num">Price</th><th class="num">Bids</th><th>Status</th><th>Ends</th><th><span class="sr-only">Actions</span></th></tr></thead>
             <tbody>
                 @foreach (var auction in _items)
                 {
                     <tr data-testid="moderated-auction">
-                        <td><MudLink Href="@($"auctions/{auction.Id}")">@auction.Title</MudLink></td>
-                        <td>@auction.SellerName</td>
-                        <td>@(auction.CurrentPriceCents is { } cents ? Format.Dollars(cents) : "no bids")</td>
-                        <td>@auction.BidCount</td>
-                        <td>@Format.Status(auction.Status)</td>
-                        <td>@Format.Time(auction.EndsAt)</td>
                         <td>
+                            <MudLink Href="@($"auctions/{auction.Id}")" Class="cell-title">@auction.Title</MudLink>
+                            <div class="muted cell-sub">by @auction.SellerName</div>
+                        </td>
+                        <td class="num">@(auction.CurrentPriceCents is { } cents ? Format.Dollars(cents) : "no bids")</td>
+                        <td class="num">@auction.BidCount</td>
+                        <td><span class="@($"tag {Format.StatusTone(auction.Status)}")">@Format.Status(auction.Status)</span></td>
+                        <td class="nowrap">@Format.Time(auction.EndsAt)</td>
+                        <td class="actions">
                             @if (auction.Status == "active")
                             {
-                                <MudButton Size="Size.Small" OnClick="@(() => ModerateAsync(auction, Suspend))" Disabled="_busy">Suspend</MudButton>
+                                <MudButton Size="Size.Small" Variant="Variant.Outlined" OnClick="@(() => ModerateAsync(auction, Suspend))" Disabled="_busy">Suspend</MudButton>
                             }
                             @if (auction.Status == "suspended")
                             {
-                                <MudButton Size="Size.Small" OnClick="@(() => ModerateAsync(auction, Resume))" Disabled="_busy">Resume</MudButton>
+                                <MudButton Size="Size.Small" Variant="Variant.Outlined" OnClick="@(() => ModerateAsync(auction, Resume))" Disabled="_busy">Resume</MudButton>
                             }
                             @if (auction.Status is "scheduled" or "active" or "suspended")
                             {
@@ -64,7 +80,7 @@ else
         </MudSimpleTable></div>
         @if (_next is not null)
         {
-            <MudButton Class="mt-2" Variant="Variant.Outlined" OnClick="MoreAsync">Show more</MudButton>
+            <MudButton Class="mt-3" Variant="Variant.Outlined" OnClick="MoreAsync">Show more</MudButton>
         }
     }
 }
@@ -79,6 +95,7 @@ else
     private bool _failed;
     private bool _busy;
     private bool _forbidden;
+    private bool _loadFailed;
     private readonly Dictionary<(Guid, string), string> _keys = [];
     private const string Suspend = "suspend";
     private const string Resume = "resume";
@@ -94,9 +111,11 @@ else
         }
     }
 
+    private Task SearchOnEnterAsync(KeyboardEventArgs key) => key.Key == "Enter" ? SearchAsync() : Task.CompletedTask;
+
     private async Task SearchAsync()
     {
-        (_items, _next) = (null, null);
+        (_items, _next, _loadFailed) = (null, null, false);
         await MoreAsync();
     }
 
@@ -106,6 +125,8 @@ else
         if (!page.Succeeded)
         {
             (_failed, _message) = (true, page.Message);
+            _items ??= [];
+            _loadFailed = true;
             return;
         }
 

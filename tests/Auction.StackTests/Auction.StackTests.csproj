@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    End-to-end tests of the containers Compose runs, reached only from outside: the published port, a
+    browser and the Docker CLI. No project references, so nothing in-process can stand in for the stack.
+    eng/e2e.sh starts an isolated stack and runs them; without one they are skipped.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="Microsoft.Testing.Extensions.TrxReport" />
+    <PackageReference Include="Microsoft.Playwright" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The same browser steps the in-process journeys use, so both read the same way. -->
+    <Compile Include="..\Auction.IntegrationTests\Browser\BrowserUser.cs" Link="BrowserUser.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+</Project>

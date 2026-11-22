@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using Auction.IntegrationTests.Database;
 
 namespace Auction.IntegrationTests.Api;
@@ -17,6 +18,8 @@ public sealed class AdminApiTests(MigratedDatabase db)
     [InlineData("/api/v1/admin/kpis")]
     [InlineData("/api/v1/admin/auctions")]
     [InlineData("/api/v1/admin/users")]
+    [InlineData("/api/v1/admin/simulator")]
+    [InlineData("/api/v1/admin/audit")]
     public async Task Admin_routes_are_not_found_for_anyone_but_an_admin(string route)
     {
         var api = await db.ApiAsync();
@@ -185,6 +188,52 @@ public sealed class AdminApiTests(MigratedDatabase db)
         await onPublished.AssertProblemAsync(HttpStatusCode.Conflict, "invalid_state");
         Assert.Equal(HttpStatusCode.OK, byOwner.StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, await seller.Http.StatusOfGetAsync($"/api/v1/auctions/{draft}"));
+    }
+
+    [Fact]
+    public async Task The_audit_log_pages_through_an_admins_actions_newest_first_with_who_what_target_and_reason()
+    {
+        var api = await db.ApiAsync();
+        var admin = await AdminAsync(api);
+        var adminId = (await admin.GetJsonAsync("/api/v1/account/me")).GetProperty("id").GetGuid();
+        var id = await (await api.SignUpAsync()).PublishedAsync();
+        var user = await api.SignUpAsync();
+        foreach (var (action, reason) in new[] { ("suspend", "Audit one"), ("resume", "Audit two") })
+        {
+            using var moderated = await ModerateAsync(admin, id, action, reason);
+            Assert.Equal(HttpStatusCode.OK, moderated.StatusCode);
+        }
+
+        using (var disabled = await admin.PostCommandAsync($"/api/v1/admin/users/{user.Id}/disable", new { reason = "Audit three" }))
+        {
+            Assert.Equal(HttpStatusCode.NoContent, disabled.StatusCode);
+        }
+
+        var first = await admin.GetJsonAsync($"/api/v1/admin/audit?q={adminId}&pageSize=2");
+        var second = await admin.GetJsonAsync($"/api/v1/admin/audit?q={adminId}&pageSize=2&cursor={first.GetProperty("nextCursor").GetString()}");
+        var entries = first.GetProperty("items").EnumerateArray().Concat(second.GetProperty("items").EnumerateArray()).ToList();
+
+        Assert.Equal(
+            [("disable", "user", user.Id, "Audit three"), ("resume", "auction", id, "Audit two"), ("suspend", "auction", id, "Audit one")],
+            entries.Select(e => (e.GetProperty("action").GetString(), e.GetProperty("targetType").GetString(), e.GetProperty("targetId").GetGuid(), e.GetProperty("reason").GetString())));
+        Assert.All(entries, e => Assert.Equal(("admin account", adminId), (e.GetProperty("adminName").GetString(), e.GetProperty("adminId").GetGuid())));
+        Assert.Equal(JsonValueKind.Null, second.GetProperty("nextCursor").ValueKind);
+        Assert.True(entries[0].GetProperty("at").GetDateTimeOffset() >= entries[2].GetProperty("at").GetDateTimeOffset());
+    }
+
+    [Fact]
+    public async Task Without_a_simulator_the_panel_says_unavailable_and_a_start_or_stop_is_503()
+    {
+        var api = await db.ApiAsync();
+        var admin = await AdminAsync(api);
+
+        var view = await admin.GetJsonAsync("/api/v1/admin/simulator");
+        using var start = await admin.PostAsJsonAsync("/api/v1/admin/simulator/runs", new { profile = "smoke" }, TestContext.Current.CancellationToken);
+        using var stop = await admin.DeleteAsync(new Uri("/api/v1/admin/simulator/runs/current", UriKind.Relative), TestContext.Current.CancellationToken);
+
+        Assert.False(view.GetProperty("available").GetBoolean());
+        await start.AssertProblemAsync(HttpStatusCode.ServiceUnavailable, "simulator_unavailable");
+        await stop.AssertProblemAsync(HttpStatusCode.ServiceUnavailable, "simulator_unavailable");
     }
 
     private static Task<HttpResponseMessage> ModerateAsync(HttpClient admin, Guid id, string action, string reason) =>

@@ -1,0 +1,19 @@
+# Hosting behind a tunnel or reverse proxy that runs in its own Compose project. Joins the API to the
+# proxy's Docker network under a fixed name, so the proxy reaches it without a published port:
+#
+#   docker compose -p auction-live --env-file <env> -f deploy/compose.yaml -f deploy/compose.edge.yaml up -d --build --wait api redis simulator-control
+#
+# EDGE_NETWORK is that network's name. Give it nothing but the proxy, so a public API can reach no other
+# service behind it, and set TRUSTED_PROXIES to its CIDR range so each visitor's own address counts for
+# the rate limits (the proxy's address may change when it restarts).
+services:
+  api:
+    networks:
+      default: {}
+      edge:
+        aliases: ["${EDGE_ALIAS:-auction-api}"]
+
+networks:
+  edge:
+    name: ${EDGE_NETWORK:?set EDGE_NETWORK to the proxy's Docker network}
+    external: true

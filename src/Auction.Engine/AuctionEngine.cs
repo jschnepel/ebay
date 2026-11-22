@@ -267,6 +267,16 @@ public sealed class AuctionEngine(NpgsqlDataSource dataSource, EngineOptions opt
     private async Task<CommandOutcome> WithRetriesAsync(
         CommandContext context, Func<Task<CommandOutcome>> attempt, CancellationToken cancellationToken)
     {
+        // One span for the whole command, every attempt included (OBS-01); the database spans nest under it.
+        using var span = EngineTelemetry.Source.StartActivity(EngineTelemetry.TransactionSpan);
+        var outcome = await RetryAsync(context, attempt, cancellationToken);
+        span?.SetTag("auction.id", outcome.AuctionId?.ToString()).SetTag("auction.outcome", outcome.Error.ToString());
+        return outcome;
+    }
+
+    private async Task<CommandOutcome> RetryAsync(
+        CommandContext context, Func<Task<CommandOutcome>> attempt, CancellationToken cancellationToken)
+    {
         if (!IdempotencyStore.IsValidKey(context.IdempotencyKey))
         {
             return new CommandOutcome { Error = CommandError.InvalidKey };
