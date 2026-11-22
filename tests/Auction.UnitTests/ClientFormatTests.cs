@@ -6,6 +6,16 @@ namespace Auction.UnitTests;
 public sealed class ClientFormatTests
 {
     [Theory]
+    [InlineData("2026-11-22T14:30", 0, 0)]
+    [InlineData("2026-11-22T14:30:00", 0, 0)]
+    [InlineData("2026-11-22T14:30:07.125", 7, 125)]
+    public void An_edited_schedule_preserves_the_local_time(string input, int second, int millisecond)
+    {
+        var expected = new DateTime(2026, 11, 22, 14, 30, second, millisecond, DateTimeKind.Local);
+        Assert.Equal(new DateTimeOffset(expected), Format.ParseLocalInput(input));
+    }
+
+    [Theory]
     [InlineData("active", "is-live")]
     [InlineData("suspended", "is-off")]
     [InlineData("cancelled", "is-off")]

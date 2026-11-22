@@ -7,6 +7,7 @@ namespace Auction.Web.Client;
 public static class Format
 {
     private const string LocalInputFormat = "yyyy-MM-dd'T'HH:mm";
+    private static readonly string[] LocalInputFormats = [LocalInputFormat, LocalInputFormat + ":ss", LocalInputFormat + ":ss.FFFFFFF"];
 
     public static string Dollars(long cents) => "$" + new Money(cents).ToString();
 
@@ -67,7 +68,7 @@ public static class Format
         instant.ToLocalTime().ToString(LocalInputFormat, CultureInfo.InvariantCulture);
 
     public static DateTimeOffset? ParseLocalInput(string? text) =>
-        DateTime.TryParseExact(text, LocalInputFormat, CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal, out var local)
+        DateTime.TryParseExact(text, LocalInputFormats, CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal, out var local)
             ? new DateTimeOffset(local)
             : null;
 }
