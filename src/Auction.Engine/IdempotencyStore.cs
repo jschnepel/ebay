@@ -71,7 +71,7 @@ internal static class IdempotencyStore
         // Older receipts have the original database record time but no decision time in their JSON.
         if (existingAuction && outcome.DecidedAt is null && outcome.Error != CommandError.NotFound)
         {
-            outcome = outcome with { DecidedAt = reader.GetFieldValue<DateTimeOffset>(2) };
+            outcome = outcome with { DecidedAt = await reader.GetFieldValueAsync<DateTimeOffset>(2, cancellationToken) };
         }
 
         return new RecordedOutcome(hash, outcome);
