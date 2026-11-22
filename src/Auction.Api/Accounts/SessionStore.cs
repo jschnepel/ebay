@@ -6,18 +6,11 @@ namespace Auction.Api.Accounts;
 /// <summary>
 /// Server-side sessions (AUTH-02): one active session per account. Starting a session revokes every other
 /// session of that account in the same transaction, so the newest sign-in always wins; a request is
-/// accepted only while its session is unrevoked and its account enabled. A valid session is cached in
-/// Redis for a minute, and every revocation deletes its entry in the same step, so revocation takes effect
-/// at once; with Redis down each request reads PostgreSQL.
+/// accepted only while its session is unrevoked and its account enabled. Every validation reads the committed PostgreSQL state.
 /// </summary>
-internal sealed class SessionStore(NpgsqlDataSource dataSource, Caching.RedisJobs redis)
+internal sealed class SessionStore(NpgsqlDataSource dataSource)
 {
-    private static readonly TimeSpan CacheLifetime = TimeSpan.FromMinutes(1);
-
     private const string RevokeAllSql =
-        "UPDATE auction.sessions SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL RETURNING id";
-
-    private const string RevokeOthersSql =
         "UPDATE auction.sessions SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL RETURNING id";
 
     private const string InsertSql = "INSERT INTO auction.sessions (id, user_id, created_at) VALUES ($1, $2, now())";
@@ -36,7 +29,7 @@ internal sealed class SessionStore(NpgsqlDataSource dataSource, Caching.RedisJob
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         var ended = new List<Guid>();
-        await using (var revoke = new NpgsqlCommand(RevokeOthersSql, connection, transaction))
+        await using (var revoke = new NpgsqlCommand(RevokeAllSql, connection, transaction))
         {
             revoke.Parameters.Add(new NpgsqlParameter { Value = user.Value });
             await using var reader = await revoke.ExecuteReaderAsync(cancellationToken);
@@ -55,7 +48,6 @@ internal sealed class SessionStore(NpgsqlDataSource dataSource, Caching.RedisJob
         }
 
         await transaction.CommitAsync(cancellationToken);
-        await ForgetAsync(ended);
         return (session, ended);
     }
 
@@ -71,28 +63,15 @@ internal sealed class SessionStore(NpgsqlDataSource dataSource, Caching.RedisJob
             ended.Add(reader.GetGuid(0));
         }
 
-        await ForgetAsync(ended);
         return ended;
     }
 
     public async Task<bool> IsValidAsync(Guid session, UserId user, CancellationToken cancellationToken)
     {
-        var cached = await redis.TryAsync(db => db.StringGetAsync(Key(session)));
-        if (cached.HasValue)
-        {
-            return cached == user.Value.ToString("N");
-        }
-
         await using var command = dataSource.CreateCommand(ValidSql);
         command.Parameters.Add(new NpgsqlParameter { Value = session });
         command.Parameters.Add(new NpgsqlParameter { Value = user.Value });
-        var valid = await command.ExecuteScalarAsync(cancellationToken) is true;
-        if (valid)
-        {
-            await redis.TryAsync(db => db.StringSetAsync(Key(session), user.Value.ToString("N"), CacheLifetime));
-        }
-
-        return valid;
+        return await command.ExecuteScalarAsync(cancellationToken) is true;
     }
 
     public async Task RevokeAsync(Guid session, CancellationToken cancellationToken)
@@ -100,13 +79,5 @@ internal sealed class SessionStore(NpgsqlDataSource dataSource, Caching.RedisJob
         await using var command = dataSource.CreateCommand(RevokeSql);
         command.Parameters.Add(new NpgsqlParameter { Value = session });
         await command.ExecuteNonQueryAsync(cancellationToken);
-        await ForgetAsync([session]);
     }
-
-    private static string Key(Guid session) => $"session:{session:N}";
-
-    private Task ForgetAsync(List<Guid> sessions) =>
-        sessions.Count == 0
-            ? Task.CompletedTask
-            : redis.TryAsync(db => db.KeyDeleteAsync([.. sessions.Select(s => (StackExchange.Redis.RedisKey)Key(s))]));
 }

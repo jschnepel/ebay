@@ -50,15 +50,14 @@ public sealed class RedisJobTests(MigratedDatabase db)
     }
 
     [Fact]
-    public async Task A_revoked_session_fails_at_once_even_after_it_was_cached()
+    public async Task The_next_request_observes_a_committed_revocation_even_without_cache_invalidation()
     {
         var api = await db.ApiAsync();
         var user = await api.SignUpAsync();
-        Assert.Equal(HttpStatusCode.OK, await user.Http.StatusOfGetAsync("/api/v1/account/me")); // now cached
+        Assert.Equal(HttpStatusCode.OK, await user.Http.StatusOfGetAsync("/api/v1/account/me"));
 
-        var (_, elsewhere) = await api.SignInAsync(user.Email);
+        await db.ExecuteAsync(MigratedDatabase.Api, "UPDATE sessions SET revoked_at = now() WHERE user_id = $1", user.Id);
 
-        Assert.Equal(HttpStatusCode.OK, elsewhere.StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized, await user.Http.StatusOfGetAsync("/api/v1/account/me"));
     }
 
