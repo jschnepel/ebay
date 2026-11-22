@@ -60,9 +60,17 @@ async function saveDraft(page, name, {floor, entry, start, end} = {}) {
   if (entry) await select(page, 'Bidding', entry);
   if (start) await page.getByLabel('Starts', {exact:true}).fill(start);
   if (end) await page.getByLabel('Ends', {exact:true}).fill(end);
+  const result = page.waitForResponse(res => res.request().method()==='POST' && /\/auctions(?:\?|$)/.test(res.url()), {timeout: 10000}).catch(()=>null);
   await button(page, 'Save draft').click();
   const item = row(page, 'my-auction-row', name);
-  await expect(item).toContainText('Draft');
+  try {
+    await expect(item).toContainText('Draft',{timeout:10000});
+  } catch (error) {
+    const res = await result;
+    const problem = res && !res.ok() ? await res.json().catch(()=>null) : null;
+    const message = await page.getByTestId('draft-error').allTextContents();
+    throw new Error('Draft '+name+' did not appear. '+JSON.stringify({status:res?.status(),errors:problem?.errors,message})+' '+error.message);
+  }
   return item;
 }
 async function publish(page, name, options, status = 'Active') {
@@ -104,9 +112,12 @@ async function main() {
     const auction=await publish(fixtures,lot);
     const fixed=await publish(fixtures,title('fixed'),{floor:'No reserve',entry:'Fixed steps of one increment'});
     const end=new Date(Date.now()+240000).toISOString().slice(0,16);
-    const sale=await publish(fixtures,title('sale'),{end,floor:'Minimum bid (the opening price)'});
-    const reserveLot=await publish(fixtures,title('reserve'),{end});
-    const noBids=await publish(fixtures,title('no-bids'),{end});
+    let sale, reserveLot, noBids;
+    await step('Setup / closing auctions',fixtures,async()=>{
+      sale=await publish(fixtures,title('sale'),{end,floor:'Minimum bid (the opening price)'});
+      reserveLot=await publish(fixtures,title('reserve'),{end});
+      noBids=await publish(fixtures,title('no-bids'),{end});
+    });
     // Each mutation targets a listing or account created by this run.
     let email, sellerEmail, sellerAuction;
     const b=(name,fn)=>step('Buyer / '+name,buyer,fn);
@@ -160,6 +171,7 @@ async function main() {
       await link(buyer,'My bids').click(); await expect(row(buyer,'my-bid-row',lot)).toContainText('Outbid');
     });
     await b('Wait through the deadline; inspect sold, reserve not met and no-bid results',async()=>{
+      if (!sale || !reserveLot || !noBids) throw new Error('Closing fixtures were unavailable.');
       for(const [url,outcome] of [[sale,'sold'],[reserveLot,'reserve not met'],[noBids,'no bids']]){
         await buyer.goto(url);
         await expect(buyer.getByTestId('status')).toHaveText(new RegExp('Closed.*'+outcome,'i'),{timeout:260000});
@@ -178,6 +190,7 @@ async function main() {
       await button(seller,'Save draft').click(); await expect(seller.getByTestId('draft-error')).toContainText('dollars');
     });
     await s('Read seller closing notices for sale, reserve not met and no bids',async()=>{
+      if (!sale || !reserveLot || !noBids) throw new Error('Closing fixtures were unavailable.');
       await fixtures.getByTestId('bell').click();
       await expect(row(fixtures,'notification',title('sale')).first()).toContainText('ended and sold');
       await expect(row(fixtures,'notification',title('reserve')).first()).toContainText('below its reserve');
