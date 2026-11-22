@@ -104,6 +104,8 @@ public sealed record Problem
     public Dictionary<string, string[]>? Errors { get; init; }
 
     public static Problem Unreachable { get; } = new() { Status = 0, Title = "The server can't be reached. Check the connection and try again." };
+
+    public static Problem UnconfirmedBid { get; } = new() { Status = 0, Title = "We couldn't confirm your bid. Try again with the same amount." };
 }
 
 // The admin area's shapes.

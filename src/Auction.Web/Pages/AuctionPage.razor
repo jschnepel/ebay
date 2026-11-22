@@ -232,13 +232,24 @@ else
         }
 
         _busy = true;
-        var result = await Api.BidAsync(Id, cents, pending.Key);
+        ApiResult<CommandResponse> result;
+        try
+        {
+            result = await Api.BidAsync(Id, cents, pending.Key);
+        }
+        finally
+        {
+            if (_pending == pending)
+            {
+                _busy = false;
+            }
+        }
+
         if (_pending != pending)
         {
             return;
         }
 
-        _busy = false;
         if (Session.Account?.Id != bidder.Id)
         {
             _pending = null;
@@ -249,7 +260,7 @@ else
         if (problem is not null && (problem.Status is < 400 or >= 500 or 408 or 429))
         {
             // A gateway or network failure can arrive after the engine has committed the bid.
-            _bidMessage = problem.Status == 0 ? result.Message : "We couldn't confirm your bid. Try again with the same amount.";
+            _bidMessage = problem.Status == 0 ? result.Message : Problem.UnconfirmedBid.Title;
             return;
         }
 

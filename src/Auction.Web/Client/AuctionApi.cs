@@ -66,8 +66,17 @@ public sealed class AuctionApi(HttpClient http)
     public Task<ApiResult<CommandResponse>> CancelAsync(Guid id, string key) =>
         SendAsync<CommandResponse>(HttpMethod.Post, $"auctions/{id}/cancel", key: key);
 
-    public Task<ApiResult<CommandResponse>> BidAsync(Guid id, long amountCents, string key) =>
-        SendAsync<CommandResponse>(HttpMethod.Post, $"auctions/{id}/bids", new { amountCents }, key);
+    public async Task<ApiResult<CommandResponse>> BidAsync(Guid id, long amountCents, string key)
+    {
+        try
+        {
+            return await SendAsync<CommandResponse>(HttpMethod.Post, $"auctions/{id}/bids", new { amountCents }, key);
+        }
+        catch (OperationCanceledException e) when (e.InnerException is TimeoutException)
+        {
+            return new ApiResult<CommandResponse>(null, Problem.UnconfirmedBid);
+        }
+    }
 
     public Task<ApiResult<NotificationPage>> NotificationsAsync(string? cursor) =>
         SendAsync<NotificationPage>(HttpMethod.Get, WithCursor("me/notifications", cursor));
