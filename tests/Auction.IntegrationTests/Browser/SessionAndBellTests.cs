@@ -49,7 +49,7 @@ public sealed class SessionAndBellTests(MigratedDatabase db, Browsers browsers)
         await page.SignUpAsync("Outbid bidder");
         await page.GotoAsync($"/auctions/{id}");
         await page.BidAsync("10.00");
-        await Assertions.Expect(page.GetByTestId("bid-result")).ToContainTextAsync("highest bidder");
+        await Assertions.Expect(page.GetByTestId("bid-result")).ToContainTextAsync($"Accepted · $10.00 · {title}");
         await page.GotoAsync("/");
         await Assertions.Expect(page.GetByTestId("unread-count")).ToHaveTextAsync("0");
 

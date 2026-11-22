@@ -1,4 +1,5 @@
 @page "/auctions/{Id:guid}"
+@using System.Globalization
 @implements IAsyncDisposable
 @inject AuctionApi Api
 @inject Session Session
@@ -62,12 +63,27 @@ else
                 <MudTextField @bind-Value="_amount" Label="@(auction.BidEntry == "proxy" ? "Your maximum ($)" : "Your bid ($)")" Immediate="true"
                               HelperText="@($"At least {Format.Dollars(auction.MinimumNextBidCents)}")" />
                 <MudButton Class="mt-2" Variant="Variant.Filled" Color="Color.Primary" OnClick="BidAsync" Disabled="_busy">Place bid</MudButton>
-                @if (_bidMessage is not null)
-                {
-                    <MudAlert Class="mt-2" Severity="@(_bidAccepted ? Severity.Success : Severity.Error)" data-testid="bid-result">@_bidMessage</MudAlert>
-                }
             </MudPaper>
         }
+    }
+
+    @if (_receipt is { } receipt && receipt.BidderId == Session.Account?.Id)
+    {
+        <MudAlert Class="mb-4" Severity="@(receipt.Reason is null ? Severity.Success : Severity.Error)" data-testid="bid-result">
+            <div>
+                <strong>@(receipt.Reason is null ? "Accepted" : "Rejected")</strong>
+                · @Format.Dollars(receipt.AmountCents) · @receipt.Item · @(receipt.ReceivedOnly ? "Received " : "")
+                <time datetime="@receipt.Timestamp.ToString("O", CultureInfo.InvariantCulture)">@receipt.Timestamp.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss 'UTC'", CultureInfo.InvariantCulture)</time>
+            </div>
+            @if (receipt.Reason is { } reason)
+            {
+                <div data-testid="bid-reason">@reason</div>
+            }
+        </MudAlert>
+    }
+    else if (_bidMessage is not null && Session.Account is { IsAdmin: false })
+    {
+        <MudAlert Class="mb-4" Severity="Severity.Warning" data-testid="bid-result">@_bidMessage</MudAlert>
     }
 
     <MudText Typo="Typo.h6" HtmlTag="h2">Bid history</MudText>
@@ -105,10 +121,12 @@ else
     private string? _error;
     private string _amount = "";
     private string? _bidMessage;
-    private bool _bidAccepted;
+    private BidReceipt? _receipt;
     private bool _busy;
 
-    private (long AmountCents, string Key)? _pending;
+    private sealed record BidReceipt(Guid BidderId, long AmountCents, string Item, DateTimeOffset Timestamp, bool ReceivedOnly, string? Reason);
+
+    private (Guid BidderId, long AmountCents, string Key)? _pending;
 
     private Guid? _watching;
     private bool _started;
@@ -121,6 +139,7 @@ else
             _pending = null;
             _amount = "";
             _bidMessage = null;
+            _receipt = null;
             _busy = false;
             if (_watching is { } previous)
             {
@@ -193,15 +212,22 @@ else
 
     private async Task BidAsync()
     {
-        if (Format.ParseDollars(_amount) is not { } cents)
+        if (Session.Account is not { IsAdmin: false } bidder || _auction is not { } auction || auction.Id != Id)
         {
-            (_bidAccepted, _bidMessage) = (false, "Enter an amount in dollars, like 12.50.");
             return;
         }
 
-        if (_pending is not { } pending || pending.AmountCents != cents)
+        _receipt = null;
+        _bidMessage = null;
+        if (Format.ParseDollars(_amount) is not { } cents)
         {
-            pending = (cents, Guid.NewGuid().ToString());
+            _bidMessage = "Enter an amount in dollars, like 12.50.";
+            return;
+        }
+
+        if (_pending is not { } pending || pending.BidderId != bidder.Id || pending.AmountCents != cents)
+        {
+            pending = (bidder.Id, cents, Guid.NewGuid().ToString());
             _pending = pending;
         }
 
@@ -209,37 +235,32 @@ else
         var result = await Api.BidAsync(Id, cents, pending.Key);
         if (_pending != pending)
         {
-            return; // The bidder moved to another auction while the request was in flight.
+            return;
         }
 
         _busy = false;
-        if (result.Succeeded)
+        if (Session.Account?.Id != bidder.Id)
         {
             _pending = null;
-            _amount = "";
-            _bidAccepted = true;
-            _bidMessage = result.Value switch
-            {
-                { Replayed: true } => "Your earlier bid was accepted.",
-                { YouLead: true } => "Bid placed. You are the highest bidder.",
-                _ => "Bid placed, but another bidder's maximum is higher.",
-            };
-            await LoadAsync();
+            return;
         }
-        else if (result.Problem!.Status is 502 or 504)
-        {
-            // The engine may already have accepted the bid. Keep its key for the retry.
-            (_bidAccepted, _bidMessage) = (false, "We couldn't confirm your bid. Try again with the same amount.");
-        }
-        else
-        {
-            // A lost connection (0) or a busy service (503) also permits a retry with the same key.
-            if (result.Problem!.Status is not (0 or 503))
-            {
-                _pending = null;
-            }
 
-            (_bidAccepted, _bidMessage) = (false, result.Message);
+        var problem = result.Problem;
+        if (problem is not null && (problem.Status is < 400 or >= 500 or 408 or 429))
+        {
+            // A gateway or network failure can arrive after the engine has committed the bid.
+            _bidMessage = problem.Status == 0 ? result.Message : "We couldn't confirm your bid. Try again with the same amount.";
+            return;
+        }
+
+        _pending = null;
+        var decidedAt = result.Value?.DecidedAt ?? problem?.DecidedAt;
+        _receipt = new BidReceipt(bidder.Id, cents, auction.Title, decidedAt ?? DateTimeOffset.UtcNow,
+            ReceivedOnly: decidedAt is null, Reason: problem is null ? null : result.Message);
+        if (result.Succeeded)
+        {
+            _amount = "";
+            await LoadAsync();
         }
     }
 }

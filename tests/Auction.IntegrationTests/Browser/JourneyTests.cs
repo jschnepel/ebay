@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Text.Json;
 using Auction.IntegrationTests.Database;
 using Microsoft.Playwright;
 
@@ -22,7 +24,7 @@ public sealed class JourneyTests(MigratedDatabase db, Browsers browsers)
         await buyer.GotoAsync(auction);
         await Assertions.Expect(buyer.GetByTestId("current-price")).ToHaveTextAsync("$10.00 (opening)");
         await buyer.BidAsync("25.00");
-        await Assertions.Expect(buyer.GetByTestId("bid-result")).ToContainTextAsync("You are the highest bidder");
+        await Assertions.Expect(buyer.GetByTestId("bid-result")).ToContainTextAsync($"Accepted · $25.00 · {title}");
 
         // The maximum covers the reserve, so the price rises to it and no further.
         foreach (var page in new[] { buyer, seller })
@@ -47,12 +49,13 @@ public sealed class JourneyTests(MigratedDatabase db, Browsers browsers)
         var seller = await browsers.NewPageAsync(site);
         var buyer = await browsers.NewPageAsync(site);
         await seller.SignUpAsync("Seller");
-        var auction = await seller.ListAndPublishAsync($"Retry {Guid.NewGuid():N}", openingDollars: "10", reserveDollars: "15");
+        var title = $"Retry {Guid.NewGuid():N}";
+        var auction = await seller.ListAndPublishAsync(title, openingDollars: "10", reserveDollars: "15");
         await buyer.SignUpAsync("Buyer");
         await buyer.GotoAsync(auction);
 
         // Let the server commit the real bid before simulating what the browser receives.
-        int? firstStatus = null;
+        DateTimeOffset? acceptedAt = null;
         await buyer.RouteAsync("**/api/v1/auctions/*/bids", async route =>
         {
             if (route.Request.Method != "POST")
@@ -62,7 +65,11 @@ public sealed class JourneyTests(MigratedDatabase db, Browsers browsers)
             }
 
             var response = await route.FetchAsync();
-            firstStatus = response.Status;
+            if (response.Status == 201)
+            {
+                using var body = JsonDocument.Parse(await response.TextAsync());
+                acceptedAt = body.RootElement.GetProperty("decidedAt").GetDateTimeOffset();
+            }
             await response.DisposeAsync();
             if (gatewayStatus is int status)
             {
@@ -76,17 +83,21 @@ public sealed class JourneyTests(MigratedDatabase db, Browsers browsers)
         await buyer.BidAsync("50");
         var receipt = buyer.GetByTestId("bid-result");
         await Assertions.Expect(receipt).ToContainTextAsync(expectedMessage);
-        Assert.Equal(201, firstStatus);
+        var originalTime = Assert.IsType<DateTimeOffset>(acceptedAt);
         await buyer.UnrouteAllAsync(new() { Behavior = UnrouteBehavior.Wait });
 
         await buyer.BidAsync("50.00");
-        await Assertions.Expect(receipt).ToHaveTextAsync("Your earlier bid was accepted.");
+        var time = originalTime.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss 'UTC'", CultureInfo.InvariantCulture);
+        await Assertions.Expect(receipt).ToHaveTextAsync($"Accepted · $50.00 · {title} · {time}");
         await Assertions.Expect(buyer.GetByTestId("bid-count")).ToHaveTextAsync("1");
 
         // Once the bidder has received the receipt, another submission is a fresh bid.
         await buyer.BidAsync("50");
-        await Assertions.Expect(receipt).ToContainTextAsync("Your new maximum must be higher");
+        await Assertions.Expect(receipt).ToContainTextAsync($"Rejected · $50.00 · {title}");
+        await Assertions.Expect(receipt.Locator("time")).ToContainTextAsync("UTC");
+        await Assertions.Expect(receipt.GetByTestId("bid-reason")).ToHaveTextAsync("Your new maximum must be higher than your current maximum.");
         await seller.ReloadAsync();
+        await Assertions.Expect(seller.GetByTestId("bid-result")).ToHaveCountAsync(0);
         await Assertions.Expect(seller.GetByTestId("bid-count")).ToHaveTextAsync("1");
         await Assertions.Expect(seller.GetByTestId("current-price")).ToHaveTextAsync("$15.00");
     }

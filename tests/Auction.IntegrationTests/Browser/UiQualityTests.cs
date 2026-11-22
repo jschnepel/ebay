@@ -74,7 +74,7 @@ public sealed class UiQualityTests(MigratedDatabase db, Browsers browsers)
 
         await buyer.GotoAsync(auction);
         await buyer.BidAsync("8.00");
-        await Assertions.Expect(buyer.GetByTestId("bid-result")).ToContainTextAsync("highest bidder");
+        await Assertions.Expect(buyer.GetByTestId("bid-result")).ToContainTextAsync("Accepted · $8.00");
     }
 
     [Fact]

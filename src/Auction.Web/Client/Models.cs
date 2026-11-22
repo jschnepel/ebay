@@ -64,7 +64,10 @@ public sealed record AuctionDetail : AuctionSummary
 
 public sealed record BidView(long Sequence, string Bidder, long? AmountCents, string Source, DateTimeOffset AcceptedAt);
 
-public sealed record CommandResponse(Guid AuctionId, long? Version, long? CurrentPriceCents, bool? YouLead, bool Replayed);
+public sealed record CommandResponse(Guid AuctionId, long? Version, long? CurrentPriceCents, bool? YouLead, bool Replayed)
+{
+    public DateTimeOffset? DecidedAt { get; init; }
+}
 
 public sealed record DraftTerms
 {
@@ -90,6 +93,8 @@ public sealed record DraftTerms
 /// <summary>An RFC 9457 problem as the API sends it, with its <c>code</c> and any field errors.</summary>
 public sealed record Problem
 {
+    public DateTimeOffset? DecidedAt { get; init; }
+
     public int Status { get; init; }
 
     public string? Title { get; init; }
