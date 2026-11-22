@@ -130,6 +130,20 @@ public sealed class AccountApiTests(MigratedDatabase db)
     }
 
     [Theory]
+    [InlineData(null)]
+    [InlineData("user")]
+    [InlineData("admin")]
+    public async Task An_account_made_without_a_password_signs_in_whatever_is_typed_in_the_password_box(string? role)
+    {
+        var api = await db.ApiAsync();
+        var account = await api.SignUpAsync(role: role);
+
+        var (_, typed) = await api.SignInAsync(account.Email, "something typed by mistake");
+
+        Assert.Equal(HttpStatusCode.OK, typed.StatusCode);
+    }
+
+    [Theory]
     [InlineData("seeded")]
     [InlineData("simulator")]
     [InlineData("admin")]

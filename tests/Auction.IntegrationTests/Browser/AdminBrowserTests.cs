@@ -85,7 +85,7 @@ public sealed class AdminBrowserTests(MigratedDatabase db, Browsers browsers)
         var admin = await browsers.NewPageAsync(site);
         await admin.GotoAsync("/sign-in");
         await admin.GetByLabel("Email", new() { Exact = true }).FillAsync(await db.InsertPasswordAccountAsync("admin", Password));
-        await admin.GetByLabel("Password (seeded accounts only)").FillAsync(Password);
+        await admin.GetByLabel("Password (built-in demo accounts only)").FillAsync(Password);
         await admin.GetByRole(AriaRole.Button, new() { Name = "Sign in", Exact = true }).ClickAsync();
         await Assertions.Expect(admin.GetByRole(AriaRole.Link, new() { Name = "Sell" })).ToHaveCountAsync(0);
         await admin.GotoAsync("/admin");
@@ -146,7 +146,7 @@ public sealed class AdminBrowserTests(MigratedDatabase db, Browsers browsers)
         var admin = await browsers.NewPageAsync(site);
         await admin.GotoAsync("/sign-in");
         await admin.GetByLabel("Email", new() { Exact = true }).FillAsync(await db.InsertPasswordAccountAsync("admin", Password));
-        await admin.GetByLabel("Password (seeded accounts only)").FillAsync(Password);
+        await admin.GetByLabel("Password (built-in demo accounts only)").FillAsync(Password);
         await admin.GetByRole(AriaRole.Button, new() { Name = "Sign in", Exact = true }).ClickAsync();
         await Assertions.Expect(admin.GetByRole(AriaRole.Link, new() { Name = "Sell" })).ToHaveCountAsync(0);
         await admin.GotoAsync("/admin");

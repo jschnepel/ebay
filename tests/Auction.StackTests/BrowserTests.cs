@@ -161,7 +161,7 @@ public sealed class BrowserTests(StackUnderTest stack)
         var admin = await stack.NewPageAsync();
         await admin.GotoAsync("/sign-in");
         await admin.GetByLabel("Email", new() { Exact = true }).FillAsync(StackUnderTest.AdminEmail);
-        await admin.GetByLabel("Password (seeded accounts only)").FillAsync(StackUnderTest.AdminPassword);
+        await admin.GetByLabel("Password (built-in demo accounts only)").FillAsync(StackUnderTest.AdminPassword);
         await admin.GetByRole(AriaRole.Button, new() { Name = "Sign in", Exact = true }).ClickAsync();
         await Assertions.Expect(admin.GetByTestId("signed-in-as")).ToHaveTextAsync("Admin");
         await Assertions.Expect(admin.GetByRole(AriaRole.Link, new() { Name = "Sell" })).ToHaveCountAsync(0);

@@ -133,10 +133,12 @@ internal static class AccountEndpoints
     private static Ok<AccountResponse> Me(ClaimsPrincipal user) =>
         TypedResults.Ok(new AccountResponse(user.UserIdOf()!.Value.Value, user.Identity?.Name ?? "", user.KindOf()));
 
+    // An account a visitor made has no password and signs in by email alone, under DEMO_MODE; anything typed in
+    // the password box by mistake is ignored rather than refused. Every other account needs its password.
     private static bool MaySignIn(Account account, string? password, IPasswordHasher<Account> hasher, ApiOptions options) =>
-        string.IsNullOrEmpty(password)
-            ? options.DemoMode && AccountKinds.IsVisitor(account.Kind) && account.PasswordHash is null
-            : account.PasswordHash is { } hash && hasher.VerifyHashedPassword(account, hash, password) != PasswordVerificationResult.Failed;
+        account.PasswordHash is not { } hash
+            ? options.DemoMode && AccountKinds.IsVisitor(account.Kind)
+            : !string.IsNullOrEmpty(password) && hasher.VerifyHashedPassword(account, hash, password) != PasswordVerificationResult.Failed;
 
     // One active session per account (AUTH-02): this sign-in ends every other one, and any page still open on
     // an ended session is told at once.
