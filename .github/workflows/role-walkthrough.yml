@@ -64,3 +64,46 @@ jobs:
           name: role-walkthrough-${{ matrix.target }}
           path: ${{ runner.temp }}/role-results
           retention-days: 7
+  focused:
+    name: Unit tests and startup credentials
+    if: github.head_ref == 'test/review-browser' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73
+        with:
+          global-json-file: global.json
+      - name: Exercise first and repeated startup without starting containers
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          root=$(mktemp -d)
+          mkdir -p "$root/deploy" "$root/bin"
+          cp run.sh "$root/"
+          cp deploy/.env.example deploy/prepare-engine-tls.sh "$root/deploy/"
+          printf '#!/bin/sh\nexit 0\n' > "$root/bin/docker"
+          chmod 700 "$root/bin/docker"
+          cd "$root"
+          PATH="$root/bin:$PATH" ./run.sh > first.log 2>&1
+          test "$(wc -l < deploy/.demo-credentials)" -eq 3
+          test "$(stat -c %a deploy/.demo-credentials)" = 600
+          cp deploy/.demo-credentials first-credentials
+          PATH="$root/bin:$PATH" ./run.sh > repeat.log 2>&1
+          cmp -s first-credentials deploy/.demo-credentials
+          while read -r email password; do
+            test -n "$password"
+            if grep -Fq -- "$password" first.log repeat.log; then
+              echo "A generated credential was printed."
+              exit 1
+            fi
+          done < deploy/.demo-credentials
+          grep -Fq 'deploy/.demo-credentials' first.log
+      - name: Run the domain and client unit tests
+        shell: bash
+        run: |
+          dotnet restore tests/Auction.UnitTests --locked-mode
+          dotnet test --project tests/Auction.UnitTests --no-restore -c Release --report-trx --results-directory "$RUNNER_TEMP/unit-results"
