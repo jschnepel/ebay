@@ -1,7 +1,4 @@
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.Formats;
-using SixLabors.ImageSharp.Memory;
-using SixLabors.ImageSharp.PixelFormats;
+using SkiaSharp;
 
 namespace Auction.Api.Images;
 
@@ -16,54 +13,54 @@ public static class ImageFormat
     public const string Png = "image/png";
     public const string WebP = "image/webp";
 
-    private static readonly DecoderOptions Options = CreateOptions();
     private static readonly SemaphoreSlim Slots = new(2, 2);
 
     internal static async Task<ListingPhoto?> NormalizeAsync(byte[] data, string? claimed, CancellationToken cancellationToken)
     {
+        if (data.Length is 0 or > ImageOptions.MaxImageBytes)
+        {
+            return null;
+        }
+
         await Slots.WaitAsync(cancellationToken);
         try
         {
-            var format = Image.DetectFormat(Options, data);
-            var mime = format.DefaultMimeType;
-            if (mime is not (Jpeg or Png or WebP) || (claimed is not null && claimed != mime))
+            using var input = SKData.CreateCopy(data);
+            using var codec = SKCodec.Create(input);
+            var mime = codec?.EncodedFormat switch
+            {
+                SKEncodedImageFormat.Jpeg => Jpeg,
+                SKEncodedImageFormat.Png => Png,
+                SKEncodedImageFormat.Webp => WebP,
+                _ => null,
+            };
+            if (codec is null || mime is null || (claimed is not null && claimed != mime))
             {
                 return null;
             }
 
-            var info = Image.Identify(Options, data);
-            if (info.Width is <= 0 or > 4096 || info.Height is <= 0 or > 4096 || (long)info.Width * info.Height > 4_000_000)
+            var (width, height) = (codec.Info.Width, codec.Info.Height);
+            if (width is <= 0 or > 4096 || height is <= 0 or > 4096 || (long)width * height > 4_000_000)
             {
                 return null;
             }
 
-            using var pixels = Image.Load<Rgba32>(Options, data);
-            if (pixels.Width != info.Width || pixels.Height != info.Height)
+            var info = new SKImageInfo(width, height, SKColorType.Rgba8888, SKAlphaType.Premul);
+            using var pixels = new SKBitmap(info);
+            if (codec.GetPixels(info, pixels.GetPixels()) != SKCodecResult.Success)
             {
                 return null;
             }
 
-            using var output = new MemoryStream();
-            await pixels.SaveAsync(output, format, cancellationToken);
-            return output.Length <= ImageOptions.MaxImageBytes
-                ? new ListingPhoto(new ImageInfo(mime, pixels.Width, pixels.Height), output.ToArray())
+            cancellationToken.ThrowIfCancellationRequested();
+            using var output = pixels.Encode(codec.EncodedFormat, 90);
+            return output is { Size: > 0 and <= ImageOptions.MaxImageBytes }
+                ? new ListingPhoto(new ImageInfo(mime, width, height), output.ToArray())
                 : null;
-        }
-        catch (Exception e) when (e is ImageFormatException or InvalidMemoryOperationException or NotSupportedException)
-        {
-            return null;
         }
         finally
         {
             Slots.Release();
         }
-    }
-
-    private static DecoderOptions CreateOptions()
-    {
-        var config = Configuration.Default.Clone();
-        config.MaxDegreeOfParallelism = 1;
-        config.MemoryAllocator = MemoryAllocator.Create(new MemoryAllocatorOptions { AllocationLimitMegabytes = 64, MaximumPoolSizeMegabytes = 16 });
-        return new DecoderOptions { Configuration = config, SkipMetadata = true, MaxFrames = 1 };
     }
 }
