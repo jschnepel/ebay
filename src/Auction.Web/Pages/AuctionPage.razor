@@ -209,7 +209,13 @@ else
         {
             _pending = null;
             _amount = "";
-            (_bidAccepted, _bidMessage) = (true, result.Value!.YouLead == true ? "Bid placed. You are the highest bidder." : "Bid placed, but another bidder's maximum is higher.");
+            _bidAccepted = true;
+            _bidMessage = result.Value switch
+            {
+                { Replayed: true } => "Your earlier bid was accepted.",
+                { YouLead: true } => "Bid placed. You are the highest bidder.",
+                _ => "Bid placed, but another bidder's maximum is higher.",
+            };
             await LoadAsync();
         }
         else
