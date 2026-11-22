@@ -278,9 +278,9 @@ async function main() {
       await button(admin,'Search').click(); const item=row(admin,'user-row',maker);
       await button(item,'Disable').click(); await expect(admin.getByTestId('user-result')).toContainText('Give a reason');
       await admin.getByLabel(/^Reason/).fill('QA account check '+run); await button(item,'Disable').click();
-      await expect(item.getByRole('cell').nth(3)).toHaveText('Disabled');
+      await expect(item.getByRole('cell',{name:'Disabled',exact:true})).toBeVisible();
       try { await signIn(seller,sellerEmail); await expect(seller.getByTestId('sign-in-error')).toBeVisible(); }
-      finally { await button(item,'Enable').click(); await expect(item.getByRole('cell').nth(3)).toHaveText('Enabled'); }
+      finally { await button(item,'Enable').click(); await expect(item.getByRole('cell',{name:'Enabled',exact:true})).toBeVisible(); }
       await signIn(seller,sellerEmail); await expect(seller.getByTestId('signed-in-as')).toHaveText(maker);
     });
     await a('Admin sign-out and denial of signed-out admin pages',async()=>{
