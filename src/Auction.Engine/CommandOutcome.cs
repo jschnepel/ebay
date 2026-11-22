@@ -39,6 +39,7 @@ public enum CommandError
 
     /// <summary>The draft already has the most images allowed.</summary>
     ImageLimit,
+    MaximumUnchanged,
 }
 
 /// <summary>

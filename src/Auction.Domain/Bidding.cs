@@ -11,6 +11,7 @@ public enum BidRejection
     BelowMinimum,
     WrongIncrementAmount,
     MaximumLowered,
+    MaximumUnchanged,
 }
 
 /// <summary>Who caused a history step: the bidder themselves, or the engine bidding for them.</summary>
@@ -107,7 +108,7 @@ public static class Bidding
     }
 
     // PROXY: the amount is the bidder's private maximum. It may never be lowered, and must reach the
-    // minimum next bid. Raising it to the same amount keeps the original order for tie-breaking.
+    // minimum next bid. A fresh request from an existing bidder must raise their maximum.
     private static BidDecision PlaceProxy(AuctionState state, UserId bidderId, Money maximum)
     {
         var own = state.Maxima.Find(m => m.BidderId == bidderId);
@@ -116,18 +117,19 @@ public static class Bidding
             return Reject(state, BidRejection.MaximumLowered);
         }
 
+        if (own is not null && maximum == own.Maximum)
+        {
+            return Reject(state, BidRejection.MaximumUnchanged);
+        }
+
         if (!maximum.IsAtLeast(MinimumNextBid(state)))
         {
             return Reject(state, BidRejection.BelowMinimum);
         }
 
         var sequence = state.AcceptedBidCount + 1;
-        var maxima = own switch
-        {
-            null => state.Maxima.Add(new ProxyMaximum(bidderId, maximum, sequence)),
-            _ when maximum.Cents > own.Maximum.Cents => state.Maxima.Replace(own, own with { Maximum = maximum, Sequence = sequence }),
-            _ => state.Maxima,
-        };
+        var nextMaximum = new ProxyMaximum(bidderId, maximum, sequence);
+        var maxima = own is null ? state.Maxima.Add(nextMaximum) : state.Maxima.Replace(own, nextMaximum);
         var (leaderId, price) = ProxyResolver.Resolve(maxima, state.Terms);
         var next = state with
         {

@@ -85,7 +85,7 @@ public static class NaiveAuction
         }
 
         var ownMax = accepted.Where(b => b.BidderId == bid.BidderId).Select(b => (long?)b.AmountCents).Max();
-        return bid.AmountCents >= next && (ownMax is null || bid.AmountCents >= ownMax.Value);
+        return bid.AmountCents >= next && (ownMax is null || bid.AmountCents > ownMax.Value);
     }
 
     private static (Guid? Leader, long? Price) Standing(RefTerms terms, List<RefBid> accepted)

@@ -15,6 +15,24 @@ public sealed class IdempotencyTests(MigratedDatabase db)
     private readonly CancellationToken _ct = TestContext.Current.CancellationToken;
 
     [Fact]
+    public async Task A_fresh_equal_maximum_is_refused_but_retrying_the_original_key_replays_success()
+    {
+        var id = await ActiveAsync(db, _engine);
+        var firstKey = As(UserId.New());
+        var maximum = new Money(1500);
+        var first = await _engine.PlaceBidAsync(firstKey, id, maximum, _ct);
+        var duplicate = await _engine.PlaceBidAsync(As(firstKey.Actor), id, maximum, _ct);
+        var replay = await _engine.PlaceBidAsync(firstKey, id, maximum, _ct);
+
+        Assert.True(first.Succeeded);
+        Assert.Equal(CommandError.MaximumUnchanged, duplicate.Error);
+        Assert.True(replay.Succeeded && replay.Replayed);
+        Assert.Equal(first.Version, replay.Version);
+        Assert.Equal(1, await CountAsync(db, "bids", id));
+        Assert.Equal(1L, await db.ScalarAsync<long>(MigratedDatabase.Verifier, "SELECT accepted_bid_count FROM auctions WHERE id = $1", id.Value));
+    }
+
+    [Fact]
     public async Task Repeating_a_bid_returns_the_recorded_outcome_and_records_one_bid()
     {
         var id = await ActiveAsync(db, _engine);

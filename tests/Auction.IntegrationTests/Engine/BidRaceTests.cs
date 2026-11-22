@@ -56,7 +56,7 @@ public abstract class BidRaceScenarios(MigratedDatabase db)
         // so a bid refused during the race must also be refused after the last accepted bid.
         foreach (var refused in attempts.Where(a => !a.Outcome.Succeeded))
         {
-            Assert.Contains(refused.Outcome.Error, new[] { CommandError.BelowMinimum, CommandError.MaximumLowered });
+            Assert.Contains(refused.Outcome.Error, new[] { CommandError.BelowMinimum, CommandError.MaximumLowered, CommandError.MaximumUnchanged });
             var withRefused = accepted.Append(refused).Select(a => new RefBid(a.Bidder.Value, a.Cents));
             Assert.False(NaiveAuction.Replay(reference, seller.Value, withRefused).Accepted[^1]);
         }

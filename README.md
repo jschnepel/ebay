@@ -57,6 +57,7 @@ The full rules, with their reasons and legal basis, are in the [requirements](do
 - **Timed, ascending-price, one item, US dollars.** Amounts are whole cents end to end.
 - **The seller picks two settings per auction:** a price floor (a hidden reserve, a published minimum bid, or no reserve) and a bidding mode (proxy, where bidders set a private maximum and the system bids for them, or fixed steps of one increment).
 - **Proxy price:** the highest maximum leads at the second-highest maximum plus one increment, capped at the leader's maximum; equal maxima go to the earlier one. Under a reserve, the price jumps to the reserve when a maximum first reaches it.
+- A fresh request to set the same proxy maximum returns HTTP 422. A retry with the original idempotency key replays its recorded outcome.
 - **Deadlines use the database clock**, read after the auction's lock is taken, so a bid that waited past the end is refused. The close worker ends each auction as Sold, Reserve not met or No bids.
 - **Terms freeze at publish.** A seller can't bid on their own auction, and can cancel only before the first accepted bid. Drafts are private to their seller.
 - **Bidders are anonymous** in public histories ("Bidder 1", "You"); maxima and reserves are never shown.
