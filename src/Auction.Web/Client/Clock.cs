@@ -28,10 +28,10 @@ public static class Clock
         auction.Status == "active" && auction.EndsAt - now <= SoonWindow;
 
     /// <summary>The share of the auction's run that has passed, from 0 before it starts to 1 at its end.</summary>
-    public static double Elapsed(AuctionSummary auction, DateTimeOffset now)
+    public static decimal Elapsed(AuctionSummary auction, DateTimeOffset now) // display-only: progress meter
     {
-        var length = (auction.EndsAt - auction.StartsAt).TotalSeconds;
-        return length <= 0 ? 1 : Math.Clamp((now - auction.StartsAt).TotalSeconds / length, 0, 1);
+        var length = (auction.EndsAt - auction.StartsAt).Ticks;
+        return length <= 0 ? 1 : Math.Clamp((decimal)(now - auction.StartsAt).Ticks / length, 0, 1); // display-only
     }
 
     /// <summary>How often a view showing this auction's clock needs to redraw it.</summary>

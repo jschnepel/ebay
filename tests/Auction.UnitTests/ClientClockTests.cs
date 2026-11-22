@@ -60,7 +60,7 @@ public sealed class ClientClockTests
     [Fact]
     public void The_meter_is_the_share_of_the_auction_that_has_run_and_stays_between_0_and_1()
     {
-        Assert.Equal(0.25, Clock.Elapsed(Auction("active", TimeSpan.FromHours(1), TimeSpan.FromHours(3)), Now), 3);
+        Assert.Equal(0.25m, Clock.Elapsed(Auction("active", TimeSpan.FromHours(1), TimeSpan.FromHours(3)), Now));
         Assert.Equal(0, Clock.Elapsed(Auction("scheduled", TimeSpan.FromHours(-1), TimeSpan.FromHours(3)), Now));
         Assert.Equal(1, Clock.Elapsed(Auction("closed", TimeSpan.FromHours(4), TimeSpan.FromHours(-1)), Now));
     }
