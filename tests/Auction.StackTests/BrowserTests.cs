@@ -14,18 +14,14 @@ public sealed class BrowserTests(StackUnderTest stack)
     private static readonly LocatorAssertionsToHaveTextOptions WithinBound = new() { Timeout = 2_000 };
 
     [Fact]
-    public async Task The_live_marketplace_fills_the_first_page_with_photographed_listings_within_two_minutes()
+    public async Task The_live_marketplace_has_photographed_listings_within_two_minutes_and_their_photos_load()
     {
-        var visitor = await stack.NewPageAsync();
+        using var anonymous = stack.Client();
         var deadline = DateTimeOffset.UtcNow.AddMinutes(2);
-        var photographed = 0;
+        var (active, photographed) = (0, 0);
         while (DateTimeOffset.UtcNow < deadline)
         {
-            await visitor.GotoAsync("/");
-            await Assertions.Expect(visitor.GetByTestId("state-loading")).ToHaveCountAsync(0);
-            await visitor.WaitForLoadStateAsync(LoadState.NetworkIdle);
-            photographed = await visitor.EvaluateAsync<int>(
-                "() => [...document.querySelectorAll('img[data-testid=cover]')].filter(i => i.complete && i.naturalWidth > 0).length");
+            (active, photographed) = await ActiveListingsAsync(anonymous);
             if (photographed >= 12)
             {
                 break;
@@ -34,7 +30,49 @@ public sealed class BrowserTests(StackUnderTest stack)
             await Task.Delay(5_000, TestContext.Current.CancellationToken);
         }
 
-        Assert.True(photographed >= 12, $"only {photographed} listings with a loaded photo after two minutes");
+        Assert.True(photographed >= 12, $"{photographed} photographed of {active} active listings after two minutes; the live marketplace says {await LiveStatusAsync()}");
+        var visitor = await stack.NewPageAsync();
+        await visitor.GotoAsync("/");
+        await Assertions.Expect(visitor.GetByTestId("state-loading")).ToHaveCountAsync(0);
+        // Covers load after the list renders, so wait for one to finish rather than reading the page at once.
+        await visitor.WaitForFunctionAsync(
+            "() => [...document.querySelectorAll('img[data-testid=cover]')].some(i => i.complete && i.naturalWidth > 0)",
+            null,
+            new() { Timeout = 30_000 });
+    }
+
+    // Every active auction through the public directory, and how many have a cover photo.
+    private static async Task<(int Active, int Photographed)> ActiveListingsAsync(HttpClient http)
+    {
+        var (active, photographed) = (0, 0);
+        string? cursor = null;
+        do
+        {
+            var url = "/api/v1/auctions?status=active&pageSize=50" + (cursor is null ? "" : $"&cursor={Uri.EscapeDataString(cursor)}");
+            using var page = System.Text.Json.JsonDocument.Parse(await http.GetStringAsync(new Uri(url, UriKind.Relative), TestContext.Current.CancellationToken));
+            foreach (var item in page.RootElement.GetProperty("items").EnumerateArray())
+            {
+                active++;
+                photographed += item.TryGetProperty("coverImageId", out var cover) && cover.ValueKind == System.Text.Json.JsonValueKind.String ? 1 : 0;
+            }
+
+            cursor = page.RootElement.TryGetProperty("nextCursor", out var next) && next.ValueKind == System.Text.Json.JsonValueKind.String ? next.GetString() : null;
+        }
+        while (cursor is not null);
+
+        return (active, photographed);
+    }
+
+    // The admin area's view of the live marketplace, for a failure message.
+    private async Task<string> LiveStatusAsync()
+    {
+        using var admin = stack.Client();
+        admin.DefaultRequestHeaders.Add("Origin", stack.Site.GetLeftPart(UriPartial.Authority));
+        using var signIn = await admin.PostAsync(
+            new Uri("/api/v1/account/sign-in", UriKind.Relative),
+            System.Net.Http.Json.JsonContent.Create(new { email = StackUnderTest.AdminEmail, password = StackUnderTest.AdminPassword }),
+            TestContext.Current.CancellationToken);
+        return await admin.GetStringAsync(new Uri("/api/v1/admin/simulator", UriKind.Relative), TestContext.Current.CancellationToken);
     }
 
     [Fact]

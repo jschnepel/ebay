@@ -56,6 +56,8 @@ finish() {
     if [ "$status" -ne 0 ]; then
         echo "End-to-end run failed; the last of each container's log:"
         compose logs --no-color --tail 60 || true
+        echo "The simulator's own messages (its request lines left out):"
+        compose logs --no-color simulator-control 2>/dev/null | grep -E '"Category":"Auction\.Simulator' | tail -n 80 || true
     fi
 
     if [ "${E2E_KEEP:-}" = 1 ]; then
