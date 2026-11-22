@@ -22,7 +22,7 @@ public sealed record AdminHealth(IReadOnlyList<HealthItem> Components, long Outb
 public sealed record AdminKpiView(int WindowSeconds, LatencySummary ApiRequest, LatencySummary Bid, LatencySummary EngineCall, LatencySummary PublishLag);
 
 /// <summary>
-/// The admin area (UI-04, ADM-01). Every route answers 404 to anyone who isn't an admin, so its existence
+/// The admin area (UI-04, ADM-01, ADM-02, ADM-03). Every route answers 404 to anyone who isn't an admin, so its existence
 /// isn't revealed. Moderation goes to the engine with the admin as the actor and a required reason, which
 /// the engine audits; disabling a user is the API's own write, audited in the same transaction.
 /// </summary>
@@ -47,6 +47,13 @@ internal static class AdminEndpoints
         admin.MapGet("/users", UsersAsync).Produces<Page<UserSummary>>().ProducesProblem(StatusCodes.Status400BadRequest);
         admin.MapPost("/users/{id:guid}/disable", (Guid id, ReasonRequest body, HttpContext http) => SetDisabledAsync(id, body, http, disabled: true));
         admin.MapPost("/users/{id:guid}/enable", (Guid id, ReasonRequest body, HttpContext http) => SetDisabledAsync(id, body, http, disabled: false));
+        admin.MapGet("/audit", AuditAsync).Produces<Page<AuditEntry>>().ProducesProblem(StatusCodes.Status400BadRequest);
+        admin.MapGet("/simulator", async (SimulatorControl simulator, CancellationToken cancellationToken) =>
+            TypedResults.Ok(await simulator.ViewAsync(cancellationToken))).Produces<SimulatorView>();
+        admin.MapPost("/simulator/runs", (SimulatorStartRequest body, SimulatorControl simulator, HttpContext http) => simulator.StartAsync(body, http))
+            .Produces<SimulatorRun>(StatusCodes.Status202Accepted).ProducesProblem(StatusCodes.Status409Conflict).ProducesProblem(StatusCodes.Status503ServiceUnavailable);
+        admin.MapDelete("/simulator/runs/current", (SimulatorControl simulator, HttpContext http) => simulator.StopAsync(http))
+            .Produces<SimulatorRun>(StatusCodes.Status202Accepted).ProducesProblem(StatusCodes.Status409Conflict).ProducesProblem(StatusCodes.Status503ServiceUnavailable);
         return api;
     }
 
@@ -97,6 +104,22 @@ internal static class AdminEndpoints
         }
 
         return TypedResults.Ok(await reader.UsersAsync(q, after, size, cancellationToken));
+    }
+
+    private static async Task<IResult> AuditAsync(
+        string? q, int? pageSize, string? cursor, AdminReader reader, ApiOptions options, CancellationToken cancellationToken)
+    {
+        if (!Paging.TryParse(pageSize, null, options, out var size, out _, out var problem))
+        {
+            return problem;
+        }
+
+        if (!Cursors.TryDecode(cursor, out long? before))
+        {
+            return Problems.BadRequest("invalid_cursor", "The cursor is not one this API returned.");
+        }
+
+        return TypedResults.Ok(await reader.AuditAsync(q, before, size, cancellationToken));
     }
 
     private static async Task<IResult> ModerateAsync(Guid id, ReasonRequest body, HttpContext http, EngineGateway engine, Moderation action)

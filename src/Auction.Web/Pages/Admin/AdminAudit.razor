@@ -1,0 +1,105 @@
+@page "/admin/audit"
+@inject AuctionApi Api
+@inject Session Session
+
+<PageTitle>Audit log</PageTitle>
+<div class="page-head">
+    <MudText Typo="Typo.h4" HtmlTag="h1">Audit log</MudText>
+    <p class="muted page-sub">Every admin action, newest first. Entries can't be edited or removed.</p>
+</div>
+
+@if (_forbidden)
+{
+    <PageState State="ViewState.Forbidden" ForbiddenText="Page not found." />
+}
+else
+{
+    <div class="searchbar is-two" role="search">
+        <MudTextField @bind-Value="_query" Label="Admin name, admin or target id, or action" Variant="Variant.Outlined" Margin="Margin.Dense" Immediate="true" OnKeyDown="SearchOnEnterAsync" />
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SearchAsync">Search</MudButton>
+    </div>
+
+    @if (_message is not null)
+    {
+        <MudAlert Class="mb-3" Severity="Severity.Error">@_message</MudAlert>
+    }
+
+    @if (_items is null)
+    {
+        <PageState State="ViewState.Loading" LoadingText="Loading the audit log…" />
+    }
+    else if (_items.Count == 0 && _message is null)
+    {
+        <p class="muted" data-testid="audit-empty">No admin actions match.</p>
+    }
+    else
+    {
+        <ol class="audit">
+            @foreach (var entry in _items)
+            {
+                <li class="audit-entry" data-testid="audit-row">
+                    <div class="audit-line">
+                        <span class="audit-what"><strong>@entry.AdminName</strong> <span class="@($"tag {Tone(entry.Action)}")">@entry.Action.Replace('_', ' ')</span> @Target(entry)</span>
+                        <time class="muted nowrap" datetime="@entry.At.ToString("O")">@Format.Time(entry.At)</time>
+                    </div>
+                    <p class="audit-reason">@entry.Reason</p>
+                    <div class="id">@entry.TargetId</div>
+                </li>
+            }
+        </ol>
+        @if (_next is not null)
+        {
+            <MudButton Class="mt-3" Variant="Variant.Outlined" OnClick="MoreAsync">Show more</MudButton>
+        }
+    }
+}
+
+@code {
+    private string _query = "";
+    private List<AuditEntry>? _items;
+    private string? _next;
+    private string? _message;
+    private bool _forbidden;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Session.LoadAsync();
+        _forbidden = Session.Account?.IsAdmin != true;
+        if (!_forbidden)
+        {
+            await SearchAsync();
+        }
+    }
+
+    // Actions that take something away read red; the ones that give it back read green.
+    private static string Tone(string action) => action switch
+    {
+        "suspend" or "cancel" or "disable" => "is-off",
+        "resume" or "enable" => "is-live",
+        _ => "",
+    };
+
+    // "simulator stop" already names its target, so "simulator run" after it would only repeat it.
+    private static string Target(AuditEntry entry) =>
+        entry.Action.StartsWith(entry.TargetType.Split('_')[0], StringComparison.Ordinal) ? "" : entry.TargetType.Replace('_', ' ');
+
+    private Task SearchOnEnterAsync(KeyboardEventArgs key) => key.Key == "Enter" ? SearchAsync() : Task.CompletedTask;
+
+    private async Task SearchAsync()
+    {
+        (_items, _next) = (null, null);
+        await MoreAsync();
+    }
+
+    private async Task MoreAsync()
+    {
+        var page = await Api.AdminAuditAsync(_query, _next);
+        _message = page.Succeeded ? null : page.Message;
+        _items ??= [];
+        if (page.Value is { } value)
+        {
+            _items.AddRange(value.Items);
+            _next = value.NextCursor;
+        }
+    }
+}

@@ -11,21 +11,22 @@
 <MudSnackbarProvider />
 
 <MudLayout>
-    <MudAppBar Elevation="1" Dense="true">
+    <MudAppBar Elevation="0" Dense="true" Class="appbar">
         <a href="./" class="brand d-none d-sm-inline">Auctions</a>
-        <nav aria-label="Main" class="d-flex align-center flex-wrap">
+        <nav aria-label="Main" class="nav">
             @if (Session.Account?.IsAdmin == true)
             {
                 @* Admin accounts can't buy or sell, so they see only the admin area. *@
-                <MudButton Href="admin" Color="Color.Inherit">Activity</MudButton>
-                <MudButton Href="admin/auctions" Color="Color.Inherit">Auctions</MudButton>
-                <MudButton Href="admin/users" Color="Color.Inherit">Users</MudButton>
+                <NavLink href="admin" Match="NavLinkMatch.All">Activity</NavLink>
+                <NavLink href="admin/auctions">Auctions</NavLink>
+                <NavLink href="admin/users">Users</NavLink>
+                <NavLink href="admin/audit">Audit log</NavLink>
             }
             else
             {
-                <MudButton Href="./" Color="Color.Inherit">Buy</MudButton>
-                <MudButton Href="my-bids" Color="Color.Inherit">My bids</MudButton>
-                <MudButton Href="sell" Color="Color.Inherit">Sell</MudButton>
+                <NavLink href="./" Match="NavLinkMatch.All">Buy</NavLink>
+                <NavLink href="my-bids">My bids</NavLink>
+                <NavLink href="sell">Sell</NavLink>
             }
         </nav>
         <MudSpacer />
@@ -58,19 +59,30 @@
 </MudLayout>
 
 @code {
-    // A calm palette whose text meets WCAG AA contrast on both the bar and the page.
+    // Petrol ink on cool paper, matching the tokens in app.css; text meets WCAG AA on the bar and the page.
     private static readonly MudTheme Theme = new()
     {
         PaletteLight = new PaletteLight
         {
-            Primary = "#4A3F9E",
-            AppbarBackground = "#2F2A5C",
-            Background = "#FAF9FC",
-            Secondary = "#9A3B5B",
-            Success = "#2E7D32",
-            Error = "#B3261E",
-            TextSecondary = "#55505F",
+            Primary = "#12343B",
+            AppbarBackground = "#12343B",
+            Background = "#F3F5F4",
+            Surface = "#FFFFFF",
+            Secondary = "#7A5410",
+            Success = "#2E6B45",
+            Error = "#A3261E",
+            TextPrimary = "#12343B",
+            TextSecondary = "#5B676A",
+            LinesDefault = "#D3DCDA",
+            TableLines = "#D3DCDA",
+            Divider = "#D3DCDA",
         },
+        Typography = new Typography
+        {
+            Default = new DefaultTypography { FontFamily = ["system-ui", "-apple-system", "Segoe UI", "Roboto", "Helvetica Neue", "sans-serif"] },
+            Button = new ButtonTypography { TextTransform = "none", FontWeight = "600" },
+        },
+        LayoutProperties = new LayoutProperties { DefaultBorderRadius = "6px" },
     };
 
     private Guid? _connectedAs;

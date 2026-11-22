@@ -115,6 +115,15 @@ public sealed record LatencySummary(int Count, long? P50Ms, long? P95Ms);
 
 public sealed record AdminKpis(int WindowSeconds, LatencySummary ApiRequest, LatencySummary Bid, LatencySummary EngineCall, LatencySummary PublishLag);
 
+public sealed record AuditEntry(long Id, DateTimeOffset At, Guid AdminId, string AdminName, string Action, string TargetType, Guid TargetId, string Reason);
+
+public sealed record SimulatorOutcome(
+    Guid RunId, string Profile, DateTimeOffset StartedAt, DateTimeOffset FinishedAt, bool StoppedEarly, bool Passed, int Accepted, string? Error);
+
+public sealed record SimulatorRun(string State, Guid? RunId, string? Profile, DateTimeOffset? StartedAt, int Attempts, int Accepted, SimulatorOutcome? Last);
+
+public sealed record SimulatorView(bool Available, IReadOnlyList<string> Profiles, SimulatorRun? Run);
+
 public sealed record ModeratedAuction(
     Guid Id, string Title, string Status, Guid SellerId, string SellerName, long? CurrentPriceCents, long BidCount, DateTimeOffset EndsAt, long Version);
 

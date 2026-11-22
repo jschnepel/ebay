@@ -9,6 +9,7 @@ internal static class EngineHosting
     public static WebApplicationBuilder AddEngine(this WebApplicationBuilder builder)
     {
         builder.Logging.ClearProviders().AddJsonConsole(json => json.IncludeScopes = true);
+        builder.AddTelemetry();
 
         // gRPC over plaintext HTTP/2 on the internal network; the engine is never exposed publicly.
         builder.WebHost.ConfigureKestrel(kestrel =>

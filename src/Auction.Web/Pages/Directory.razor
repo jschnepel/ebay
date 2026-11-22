@@ -7,69 +7,53 @@
 <PageTitle>Auctions</PageTitle>
 <MudText Typo="Typo.h4" HtmlTag="h1" Class="mb-4">Auctions</MudText>
 
-<MudPaper Class="pa-3 mb-4" Outlined="true">
-    <MudGrid Spacing="2" Justify="Justify.FlexStart" role="search">
-        <MudItem xs="12" sm="6">
-            <MudTextField @bind-Value="_query" Label="Search titles" Immediate="true" OnKeyDown="SearchOnEnterAsync"
-                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" />
-        </MudItem>
-        <MudItem xs="8" sm="4">
-            <MudSelect T="string" @bind-Value="_status" Label="Show">
-                <MudSelectItem T="string" Value="@("")">All</MudSelectItem>
-                <MudSelectItem T="string" Value="@("active")">Active</MudSelectItem>
-                <MudSelectItem T="string" Value="@("ending_soon")">Ending within the hour</MudSelectItem>
-                <MudSelectItem T="string" Value="@("closed")">Closed</MudSelectItem>
-            </MudSelect>
-        </MudItem>
-        <MudItem xs="4" sm="2" Class="d-flex align-end">
-            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SearchAsync" FullWidth="true">Search</MudButton>
-        </MudItem>
-    </MudGrid>
-</MudPaper>
+<div class="searchbar" role="search">
+    <MudTextField @bind-Value="_query" Label="Search titles" Immediate="true" OnKeyDown="SearchOnEnterAsync"
+                  Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" />
+    <MudSelect T="string" @bind-Value="_status" Label="Show">
+        <MudSelectItem T="string" Value="@("active")">Live now</MudSelectItem>
+        <MudSelectItem T="string" Value="@("ending_soon")">Ending within the hour</MudSelectItem>
+        <MudSelectItem T="string" Value="@("closed")">Closed</MudSelectItem>
+        <MudSelectItem T="string" Value="@("")">All auctions</MudSelectItem>
+    </MudSelect>
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SearchAsync">Search</MudButton>
+</div>
 
 <PageState State="State" Error="@_list.Error" Retry="SearchAsync" LoadingText="Loading auctions…">
     <EmptyContent>
         @if (_searched)
         {
-            <MudText>No auctions match. Try another word or show all.</MudText>
+            <MudText>No auctions match. Try another word, or show everything.</MudText>
         }
         else
         {
-            <MudText>No auctions are listed yet.</MudText>
-            <MudButton Class="mt-2" Href="sell/new" Variant="Variant.Outlined">List an item</MudButton>
+            <MudText>Nothing is up for auction right now.</MudText>
+            <div class="d-flex flex-wrap justify-center gap-2 mt-3">
+                <MudButton Href="sell/new" Variant="Variant.Filled" Color="Color.Primary">List an item</MudButton>
+                <MudButton OnClick="ShowEverythingAsync" Variant="Variant.Outlined">Show closed auctions</MudButton>
+            </div>
         }
     </EmptyContent>
     <ChildContent>
-        <MudGrid Spacing="3">
+        <div class="lots">
             @foreach (var auction in _list.Items!)
             {
-                <MudItem xs="12" sm="6" md="4" lg="3">
-                    <MudCard Outlined="true" Class="auction-card" data-testid="auction-row">
-                        <a href="@($"auctions/{auction.Id}")" class="auction-card-picture" tabindex="-1" aria-hidden="true">
-                            @if (auction.CoverImageId is { } cover)
-                            {
-                                <img src="@($"api/v1/images/{cover}")" alt="" data-testid="cover" />
-                            }
-                            else
-                            {
-                                <MudIcon Icon="@Icons.Material.Outlined.Image" Size="Size.Large" />
-                            }
-                        </a>
-                        <MudCardContent>
-                            <MudLink Href="@($"auctions/{auction.Id}")" Typo="Typo.subtitle1" Class="auction-card-title">@auction.Title</MudLink>
-                            <MudText Typo="Typo.h6" data-testid="price">@Format.Price(auction)</MudText>
-                            <MudText Typo="Typo.body2">
-                                @auction.BidCount @(auction.BidCount == 1 ? "bid" : "bids") · @Format.Status(auction.Status)
-                            </MudText>
-                            <MudText Typo="Typo.caption">Ends @Format.Time(auction.EndsAt)</MudText>
-                        </MudCardContent>
-                    </MudCard>
-                </MudItem>
+                <article class="@($"lot{(auction.Status is "closed" or "cancelled" ? " is-ended" : "")}")" data-testid="auction-row">
+                    <LotCover Auction="auction" />
+                    <div class="lot-body">
+                        <a href="@($"auctions/{auction.Id}")" class="lot-title" title="@auction.Title">@auction.Title</a>
+                        <LotPrice Auction="auction" />
+                        <div class="lot-foot">
+                            <span>@Bids(auction.BidCount)</span>
+                            <LotClock Auction="auction" />
+                        </div>
+                    </div>
+                </article>
             }
-        </MudGrid>
+        </div>
         @if (_list.NextCursor is not null)
         {
-            <div class="d-flex justify-center mt-4">
+            <div class="d-flex justify-center mt-6">
                 <MudButton Variant="Variant.Outlined" OnClick="_list.MoreAsync">Show more</MudButton>
             </div>
         }
@@ -79,7 +63,8 @@
 @code {
     private LiveList<AuctionSummary> _list = null!;
     private string _query = "";
-    private string _status = "";
+    // Live auctions first: a buyer lands on what can still be bid on; closed ones are one choice away.
+    private string _status = "active";
     private bool _searched;
 
     private ViewState State => _list switch
@@ -108,10 +93,23 @@
 
     private async Task SearchAsync()
     {
-        _searched = !string.IsNullOrWhiteSpace(_query) || !string.IsNullOrEmpty(_status);
+        _searched = !string.IsNullOrWhiteSpace(_query) || _status != "active";
         _list = NewList();
         await _list.MoreAsync();
     }
+
+    private Task ShowEverythingAsync()
+    {
+        _status = "";
+        return SearchAsync();
+    }
+
+    private static string Bids(long count) => count switch
+    {
+        0 => "No bids yet",
+        1 => "1 bid",
+        _ => $"{count} bids",
+    };
 
     private Task SearchOnEnterAsync(KeyboardEventArgs key) => key.Key == "Enter" ? SearchAsync() : Task.CompletedTask;
 

@@ -12,74 +12,94 @@
 }
 else
 {
-    <MudGrid>
-        <MudItem xs="12" md="6">
-            <MudPaper Class="pa-4" Outlined="true">
-                <MudText Typo="Typo.h6" HtmlTag="h2">Live activity</MudText>
-                @if (_activity is { } activity)
+    <div class="health" aria-label="System health">
+        @if (_health is { } health)
+        {
+            @foreach (var item in health.Components)
+            {
+                <span class="health-item" data-testid="health-row">
+                    <span class="@($"dot {(item.State == "ok" ? "is-ok" : "is-bad")}")" aria-hidden="true"></span>
+                    @item.Name <span class="@(item.State == "ok" ? "muted" : "")">@item.State</span>
+                </span>
+            }
+            <span class="health-item">Live-update backlog <span class="num" data-testid="outbox-backlog">@health.OutboxBacklog</span></span>
+        }
+        else
+        {
+            <span class="muted">Checking the services…</span>
+        }
+    </div>
+
+    <div class="admin-grid">
+        <section class="panel">
+            <MudText Typo="Typo.h6" HtmlTag="h2">Right now</MudText>
+            @if (_activity is { } activity)
+            {
+                <div class="figures">
+                    <dl class="figure"><dd data-testid="active-auctions">@activity.ActiveAuctions</dd><dt>@Format.Noun(activity.ActiveAuctions, "live auction", "live auctions")</dt></dl>
+                    <dl class="figure"><dd>@activity.BidsLastFiveMinutes</dd><dt>@Format.Noun(activity.BidsLastFiveMinutes, "bid", "bids") in the last 5 min, automatic ones included</dt></dl>
+                    <dl class="figure"><dd>@activity.OnlineUsers</dd><dt>@Format.Noun(activity.OnlineUsers, "person", "people") signed in</dt></dl>
+                </div>
+                <MudText Typo="Typo.subtitle2" HtmlTag="h3" Class="mb-1">Latest bids</MudText>
+                @if (activity.RecentBids.Count == 0)
                 {
-                    <div class="table-scroll"><MudSimpleTable Dense="true" Class="mb-2">
-                        <tbody>
-                            <tr><th scope="row">Active auctions</th><td data-testid="active-auctions">@activity.ActiveAuctions</td></tr>
-                            <tr><th scope="row">Bids in the last 5 minutes</th><td>@activity.BidsLastFiveMinutes</td></tr>
-                            <tr><th scope="row">Signed-in users online</th><td>@activity.OnlineUsers</td></tr>
-                        </tbody>
-                    </MudSimpleTable></div>
-                    <MudText Typo="Typo.subtitle2" HtmlTag="h3">Recent bids</MudText>
-                    <div class="table-scroll"><MudSimpleTable Dense="true">
-                        <thead><tr><th>Item</th><th>Amount</th><th>When</th></tr></thead>
-                        <tbody>
-                            @foreach (var bid in activity.RecentBids)
-                            {
-                                <tr data-testid="recent-bid">
-                                    <td><MudLink Href="@($"auctions/{bid.AuctionId}")">@bid.Title</MudLink></td>
-                                    <td>@(bid.AmountCents is { } cents ? Format.Dollars(cents) : "outbid at once")</td>
-                                    <td>@Format.Time(bid.AcceptedAt)</td>
-                                </tr>
-                            }
-                        </tbody>
-                    </MudSimpleTable></div>
+                    <p class="muted">No bids yet. Start a simulator run to see some.</p>
                 }
-            </MudPaper>
-        </MudItem>
-        <MudItem xs="12" md="6">
-            <MudPaper Class="pa-4 mb-4" Outlined="true">
-                <MudText Typo="Typo.h6" HtmlTag="h2">System health</MudText>
-                @if (_health is { } health)
+                else
                 {
-                    <div class="table-scroll"><MudSimpleTable Dense="true">
-                        <tbody>
-                            @foreach (var item in health.Components)
-                            {
-                                <tr data-testid="health-row"><th scope="row">@item.Name</th><td>@item.State</td></tr>
-                            }
-                            <tr><th scope="row">Live-update backlog</th><td data-testid="outbox-backlog">@health.OutboxBacklog</td></tr>
-                        </tbody>
-                    </MudSimpleTable></div>
+                <div class="table-scroll is-wide"><MudSimpleTable Dense="true" Elevation="0">
+                    <thead><tr><th>Item</th><th class="num">Amount</th><th>How</th><th class="num">When</th></tr></thead>
+                    <tbody>
+                        @foreach (var bid in activity.RecentBids)
+                        {
+                            <tr data-testid="recent-bid">
+                                <td><MudLink Href="@($"auctions/{bid.AuctionId}")">@bid.Title</MudLink></td>
+                                <td class="num">@if (bid.AmountCents is { } cents)
+                                    {@Format.Dollars(cents)}
+                                    else
+                                    {<span class="muted">private</span>}</td>
+                                <td>@Format.How(bid.Source, bid.AmountCents)</td>
+                                <td class="num">@Format.Recent(bid.AcceptedAt)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </MudSimpleTable></div>
                 }
-            </MudPaper>
-            <MudPaper Class="pa-4" Outlined="true">
-                <MudText Typo="Typo.h6" HtmlTag="h2">Latency, last 5 minutes</MudText>
+            }
+            else
+            {
+                <PageState State="ViewState.Loading" LoadingText="Loading activity…" />
+            }
+        </section>
+
+        <div>
+            <SimulatorPanel View="_simulator" Changed="RefreshAsync" />
+            <section class="panel">
+                <MudText Typo="Typo.h6" HtmlTag="h2">Response times, last 5 minutes</MudText>
                 @if (_kpis is { } kpis)
                 {
-                    <div class="table-scroll"><MudSimpleTable Dense="true">
-                        <thead><tr><th>Measure</th><th>p50</th><th>p95</th><th>Samples</th></tr></thead>
+                    <div class="table-scroll"><MudSimpleTable Dense="true" Elevation="0">
+                        <thead><tr><th>Measure</th><th class="num">Median</th><th class="num">95th pct.</th><th class="num">Samples</th></tr></thead>
                         <tbody>
                             @foreach (var (name, summary) in new[] { ("API request", kpis.ApiRequest), ("Bid", kpis.Bid), ("Engine call", kpis.EngineCall), ("Publish lag", kpis.PublishLag) })
                             {
                                 <tr data-testid="kpi-row">
                                     <th scope="row">@name</th>
-                                    <td>@Ms(summary.P50Ms)</td>
-                                    <td>@Ms(summary.P95Ms)</td>
-                                    <td>@summary.Count</td>
+                                    <td class="num">@Ms(summary.P50Ms)</td>
+                                    <td class="num">@Ms(summary.P95Ms)</td>
+                                    <td class="num">@summary.Count</td>
                                 </tr>
                             }
                         </tbody>
                     </MudSimpleTable></div>
                 }
-            </MudPaper>
-        </MudItem>
-    </MudGrid>
+                else
+                {
+                    <PageState State="ViewState.Loading" LoadingText="Loading response times…" />
+                }
+            </section>
+        </div>
+    </div>
 }
 
 @code {
@@ -88,6 +108,7 @@ else
     private Activity? _activity;
     private AdminHealth? _health;
     private AdminKpis? _kpis;
+    private SimulatorView? _simulator;
     private bool _forbidden;
 
     protected override async Task OnInitializedAsync()
@@ -101,16 +122,22 @@ else
         }
     }
 
-    private static string Ms(long? value) => value is { } ms ? $"{ms} ms" : "not measured";
+    private static string Ms(long? value) => value is { } ms ? $"{ms} ms" : "none yet";
 
-    private async Task RefreshAsync()
+    // Each panel draws as soon as its own answer arrives, so one slow call doesn't hold up the rest.
+    private Task RefreshAsync() => Task.WhenAll(
+        ShowAsync(Api.AdminActivityAsync(), value => _activity = value),
+        ShowAsync(Api.AdminHealthAsync(), value => _health = value),
+        ShowAsync(Api.AdminKpisAsync(), value => _kpis = value),
+        ShowAsync(Api.AdminSimulatorAsync(), value => _simulator = value));
+
+    private async Task ShowAsync<T>(Task<ApiResult<T>> call, Action<T> show)
     {
-        var activity = Api.AdminActivityAsync();
-        var health = Api.AdminHealthAsync();
-        var kpis = Api.AdminKpisAsync();
-        _activity = (await activity).Value ?? _activity;
-        _health = (await health).Value ?? _health;
-        _kpis = (await kpis).Value ?? _kpis;
+        if ((await call).Value is { } value)
+        {
+            show(value);
+            StateHasChanged();
+        }
     }
 
     private async Task PollAsync(CancellationToken stop)
@@ -120,8 +147,7 @@ else
         {
             while (await timer.WaitForNextTickAsync(stop))
             {
-                await RefreshAsync();
-                await InvokeAsync(StateHasChanged);
+                await InvokeAsync(RefreshAsync);
             }
         }
         catch (OperationCanceledException)

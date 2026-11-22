@@ -1,16 +1,170 @@
-.boot { font-family: sans-serif; padding: 1rem; }
-#blazor-error-ui { display: none; position: fixed; bottom: 0; left: 0; right: 0; padding: 0.75rem 1rem; background: #ffe7a6; }
+/* Tokens. Petrol ink on cool paper; brass marks the clock and nothing else. Text colours meet WCAG AA. */
+:root {
+    --ink: #12343b;
+    --ink-soft: #2b4d54;
+    --paper: #f3f5f4;
+    --surface: #ffffff;
+    --line: #d3dcda;
+    --cover: #e2eae8;
+    --brass: #b9861f;
+    --brass-text: #7a5410;
+    --lead: #2e6b45;
+    --alert: #a3261e;
+    --muted: #5b676a;
+    --display: Bahnschrift, "DIN Alternate", "DIN 2014", "Roboto Condensed", "Arial Narrow", system-ui, sans-serif;
+    --body: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    --radius: 6px;
+}
+
+body { background: var(--paper); color: var(--ink); font-family: var(--body); }
+.boot { font-family: var(--body); padding: 1rem; color: var(--muted); }
+#blazor-error-ui { display: none; position: fixed; bottom: 0; left: 0; right: 0; padding: 0.75rem 1rem; background: #ffe7a6; color: var(--ink); }
 #blazor-error-ui .reload { margin-left: 0.5rem; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+/* The router moves focus to each page's heading for screen readers; that focus is not the user's, so it draws no ring. */
+[tabindex="-1"]:focus { outline: none; }
+.muted { color: var(--muted); }
+.num { font-variant-numeric: tabular-nums; }
+
+/* The display face: condensed, engineered, tabular. Prices, clocks, headings and the wordmark. */
+.display, h1, .mud-typography-h4, .mud-typography-h5, .mud-typography-h6 {
+    font-family: var(--display);
+    font-stretch: 87.5%;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.005em;
+}
+h1.mud-typography { font-size: 2.25rem; font-weight: 600; line-height: 1.1; color: var(--ink); }
+h2.mud-typography { font-size: 1.25rem; font-weight: 600; color: var(--ink); }
+
+/* Shell. */
+.appbar.mud-appbar { background: var(--ink); color: #fff; }
+.brand { color: inherit; text-decoration: none; font-family: var(--display); font-stretch: 87.5%; font-weight: 700; font-size: 1.25rem; margin-right: 1.25rem; white-space: nowrap; }
+.nav { display: flex; align-items: stretch; gap: 0.25rem; flex-wrap: wrap; align-self: stretch; }
+.nav a { display: flex; align-items: center; padding: 0 0.6rem; color: #d9e5e3; text-decoration: none; font-weight: 500; border-bottom: 3px solid transparent; border-top: 3px solid transparent; }
+.nav a:hover { color: #fff; }
+.nav a.active { color: #fff; border-bottom-color: var(--brass); }
+.appbar .mud-button-root { text-transform: none; white-space: nowrap; }
+/* On a phone the menu stays one line and scrolls sideways instead of spilling out of the bar. */
+@media (max-width: 599.98px) {
+    .nav { flex-wrap: nowrap; overflow-x: auto; min-width: 0; scrollbar-width: none; }
+    .nav a { white-space: nowrap; padding: 0 0.45rem; }
+    .figures { grid-template-columns: minmax(0, 1fr); gap: 0.5rem; }
+    .figure { display: flex; align-items: baseline; gap: 0.6rem; }
+    .figure dd { font-size: 1.5rem; }
+}
+.table-scroll.is-wide table { min-width: 36rem; }
+.table-scroll.is-wide td:first-child { min-width: 11rem; }
+.page-head { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 1rem; margin-bottom: 1.25rem; }
+.page-head h1 { margin: 0; }
+
+.page-state { display: flex; align-items: center; gap: 0.75rem; padding: 1rem 0; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 1rem 1.25rem; }
+.panel + .panel { margin-top: 1rem; }
+.panel > h2 { margin: 0 0 0.75rem; }
+/* Positioned so a visually hidden header inside stays in the scroll box instead of widening the page. */
+.table-scroll { overflow-x: auto; position: relative; }
+.mud-table-root th { color: var(--muted); font-weight: 500; }
+.panel .mud-simple-table, .table-panel .mud-simple-table { background: transparent; box-shadow: none; border-radius: 0; }
+.mud-simple-table table * tr > th.num, .mud-simple-table table * tr > td.num { text-align: right; }
+.mud-table-root tbody th[scope="row"] { color: var(--ink); font-weight: 600; }
+.mud-simple-table table * tr > td, .mud-simple-table table * tr th { border-bottom-color: var(--line); }
+
+/* Search bar. */
+.searchbar { display: grid; grid-template-columns: minmax(0, 1fr) minmax(10rem, 14rem) auto; gap: 0.75rem 1rem; align-items: end; margin-bottom: 1.5rem; }
+@media (max-width: 599.98px) { .searchbar { grid-template-columns: minmax(0, 1fr) auto; } .searchbar > :first-child { grid-column: 1 / -1; } }
+
+/* A lot: cover, title, then the ticket of price and clock. */
+.lots { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: 1.25rem; }
+.lot { display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; min-width: 0; }
+.lot-cover { position: relative; display: block; aspect-ratio: 4 / 3; background: var(--cover); overflow: hidden; text-decoration: none; }
+.lot-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.lot-cover-type {
+    position: absolute; left: 0; right: 0; bottom: 0; padding: 0.9rem 1rem 1.1rem;
+    font-family: var(--display); font-stretch: 87.5%; font-weight: 600; font-size: 1.75rem; line-height: 1.02;
+    color: rgba(18, 52, 59, 0.62); overflow-wrap: anywhere;
+    display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+}
+.lot-cover .meter { position: absolute; left: 0; right: 0; bottom: 0; }
+.lot.is-ended .lot-cover img { filter: grayscale(1); opacity: 0.7; }
+.lot.is-ended .lot-cover-type { color: rgba(91, 103, 106, 0.75); }
+.lot-body { display: flex; flex-direction: column; gap: 0.25rem; padding: 0.8rem 1rem 1rem; flex: 1; }
+.lot-title { color: var(--ink); font-weight: 600; line-height: 1.3; text-decoration: none; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.lot-title:hover { text-decoration: underline; }
+.lot-foot { display: flex; justify-content: space-between; align-items: baseline; gap: 0.75rem; margin-top: auto; padding-top: 0.35rem; font-size: 0.875rem; color: var(--muted); }
+
+.price { font-family: var(--display); font-stretch: 87.5%; font-variant-numeric: tabular-nums; font-weight: 600; font-size: 1.75rem; line-height: 1.1; color: var(--ink); }
+.price small { font-family: var(--body); font-stretch: normal; font-size: 0.8125rem; font-weight: 400; color: var(--muted); }
+.price-label { font-size: 0.8125rem; color: var(--muted); }
+
+/* The clock: words first, the meter underneath shows how much of the auction has run. */
+.clock { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.clock.is-soon { color: var(--brass-text); font-weight: 600; }
+.meter { display: block; height: 3px; background: rgba(18, 52, 59, 0.12); }
+.meter > span { display: block; height: 100%; background: var(--brass); }
+.meter.is-thick { height: 6px; border-radius: 3px; overflow: hidden; }
+
+/* The auction page: the story on the left, the ticket on the right. */
+.lot-page { display: grid; grid-template-columns: minmax(0, 1fr) minmax(18rem, 24rem); gap: 2rem; align-items: start; }
+@media (max-width: 959.98px) { .lot-page { grid-template-columns: minmax(0, 1fr); } }
+.lot-page h1 { margin: 0 0 0.75rem; overflow-wrap: anywhere; }
+.lot-page .lot-cover { border-radius: var(--radius); max-height: 26rem; }
+.lot-description { max-width: 68ch; line-height: 1.6; margin: 1rem 0 1.5rem; white-space: pre-line; }
+.ticket { position: sticky; top: 4.5rem; background: var(--surface); border: 1px solid var(--line); border-top: 4px solid var(--ink); border-radius: var(--radius); padding: 1.25rem; display: flex; flex-direction: column; gap: 0.75rem; }
+.ticket .price { font-size: 2.75rem; }
+.ticket-row { display: flex; justify-content: space-between; gap: 1rem; font-size: 0.9375rem; }
+.ticket-row .clock { font-size: 1.125rem; }
+.ticket-facts { display: grid; grid-template-columns: auto 1fr; gap: 0.35rem 1rem; font-size: 0.9375rem; margin: 0; }
+.ticket-facts dt { color: var(--muted); }
+.ticket-facts dd { margin: 0; }
+.leading { color: var(--lead); font-weight: 600; }
+.facts { display: grid; grid-template-columns: max-content 1fr; gap: 0.4rem 1.5rem; margin: 0 0 1.5rem; font-size: 0.9375rem; }
+.facts dt { color: var(--muted); }
+.facts dd { margin: 0; }
+.gallery { display: flex; gap: 0.5rem; overflow-x: auto; margin: 0.5rem 0 0; }
+.gallery img { height: 26rem; max-width: 100%; object-fit: contain; border-radius: var(--radius); background: var(--cover); }
+@media (max-width: 599.98px) { .gallery img { height: 16rem; } }
+
+/* Admin. */
+.health { display: flex; flex-wrap: wrap; gap: 0.5rem 1.25rem; align-items: center; padding: 0.65rem 1rem; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); margin-bottom: 1rem; font-size: 0.9375rem; }
+.health-item { display: inline-flex; align-items: center; gap: 0.4rem; }
+.dot { width: 0.6rem; height: 0.6rem; border-radius: 50%; background: var(--muted); flex: none; }
+.dot.is-ok { background: var(--lead); }
+.dot.is-bad { background: var(--alert); }
+.admin-grid { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 1rem; align-items: start; }
+@media (max-width: 959.98px) { .admin-grid { grid-template-columns: minmax(0, 1fr); } }
+.figures { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; margin-bottom: 1rem; }
+.figure dd { margin: 0; font-family: var(--display); font-stretch: 87.5%; font-variant-numeric: tabular-nums; font-size: 2rem; font-weight: 600; line-height: 1.1; }
+.figure dt { color: var(--muted); font-size: 0.875rem; }
+.figures dl, .figure { margin: 0; }
+.id { font-family: var(--body); font-variant-numeric: tabular-nums; font-size: 0.8125rem; color: var(--muted); overflow-wrap: anywhere; }
+.tag { display: inline-block; padding: 0.05rem 0.5rem; border-radius: 999px; font-size: 0.8125rem; background: var(--cover); color: var(--ink); white-space: nowrap; }
+.tag.is-off { background: #f6e3e1; color: var(--alert); }
+.tag.is-live { background: #e3efe7; color: var(--lead); }
+.reason-bar { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; align-items: end; padding: 0.75rem 1rem; margin-bottom: 1rem; background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--brass); border-radius: var(--radius); }
+.reason-bar > * { flex: 1 1 18rem; }
+.reason-bar .mud-input-helper-text { color: var(--muted); }
+.searchbar.is-two { grid-template-columns: minmax(0, 1fr) auto; }
+@media (max-width: 599.98px) { .searchbar.is-two > :first-child { grid-column: auto; } }
+.searchbar .mud-input-control.mud-input-control { margin-bottom: 0; margin-top: 0; }
+.searchbar > .mud-button-root { height: 40px; }
+.page-head .page-sub { flex-basis: 100%; margin: -0.5rem 0 0; }
+.table-panel { padding: 0; }
+.mud-simple-table table * tr > td.actions { text-align: right; }
+.table-panel .mud-table-root th, .table-panel .mud-table-root td { padding: 0.6rem 1rem; vertical-align: top; }
+.cell-title { font-weight: 600; color: var(--ink); overflow-wrap: break-word; }
+.cell-sub { font-size: 0.8125rem; }
+.nowrap { white-space: nowrap; }
+.actions { white-space: nowrap; text-align: right; }
+.actions .mud-button-root + .mud-button-root { margin-left: 0.35rem; }
+
+/* The audit log reads as a ledger: who did what, when, and why, newest first. */
+.audit { list-style: none; margin: 0; padding: 0; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
+.audit-entry { padding: 0.8rem 1.1rem; border-left: 4px solid transparent; }
+.audit-entry + .audit-entry { border-top: 1px solid var(--line); }
+.audit-line { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.25rem 1rem; align-items: baseline; }
+.audit-what .tag { margin: 0 0.25rem; }
+.audit-reason { margin: 0.3rem 0 0.2rem; max-width: 72ch; line-height: 1.5; }
 .draft-image { display: flex; flex-direction: column; align-items: flex-start; }
 
-/* Layout that stays usable from 360 px up: wide tables scroll inside their own box, nothing else is wider than the screen. */
-.brand { color: inherit; text-decoration: none; font-weight: 600; letter-spacing: 0.02em; margin-right: 0.75rem; white-space: nowrap; }
-.page-state { display: flex; align-items: center; gap: 0.75rem; padding: 1rem 0; }
-.auction-card { height: 100%; display: flex; flex-direction: column; }
-.auction-card-picture { display: flex; align-items: center; justify-content: center; aspect-ratio: 4 / 3; background: #f3f1f8; color: #6d6875; overflow: hidden; }
-.auction-card-picture img { width: 100%; height: 100%; object-fit: cover; }
-.auction-card-title { display: block; overflow-wrap: anywhere; margin-bottom: 0.25rem; }
-.gallery { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.5rem 0 1rem; }
-.gallery img { max-width: 100%; height: 220px; object-fit: contain; border-radius: 4px; background: #f3f1f8; }
-.table-scroll { overflow-x: auto; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }

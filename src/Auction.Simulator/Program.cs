@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 using Auction.Simulator;
+using Auction.Simulator.Control;
 
 // simulator run <smoke|realistic|hot-burst> --base-url URL [--seed N] [--report FILE] [--duration SECONDS] [--no-wait-close]
 //
@@ -8,9 +9,18 @@ using Auction.Simulator;
 // VERIFIER_CONNECTION_STRING (the read-only verifier role). Exit codes: 0 the run made progress and every
 // invariant held; 1 an invariant was violated, nothing was accepted, or it couldn't be verified; 2 bad input
 // or another run in progress.
+//
+// simulator serve: the control endpoint for the admin area (ADM-02), with SIMULATOR_CONTROL_TOKEN as its bearer token.
+// simulator health: probes a running control endpoint (for the Compose healthcheck).
+if (args is ["health"] or ["serve", ..])
+{
+    return await ControlServer.RunCommandAsync(args);
+}
+
 if (args is not ["run", var name, .. var rest] || Profile.Named(name) is not { } profile)
 {
     await Console.Error.WriteLineAsync("Usage: simulator run <smoke|realistic|hot-burst> [--base-url URL] [--seed N] [--report FILE] [--duration SECONDS] [--no-wait-close]");
+    await Console.Error.WriteLineAsync("       simulator serve | simulator health");
     return 2;
 }
 
@@ -57,7 +67,8 @@ Console.CancelKeyPress += (_, e) =>
     stop.Cancel();
 };
 
-var report = await new SimulationRunner(profile, options).RunAsync(stop.Token);
+using var runner = new SimulationRunner(profile, options);
+var report = await runner.RunAsync(stop.Token);
 var json = JsonSerializer.Serialize(report, new JsonSerializerOptions(JsonSerializerDefaults.Web) { WriteIndented = true });
 Console.WriteLine(json);
 if (Option("--report") is { } path)

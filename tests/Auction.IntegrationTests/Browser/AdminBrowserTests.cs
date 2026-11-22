@@ -1,11 +1,14 @@
 using System.Net;
 using Auction.IntegrationTests.Api;
 using Auction.IntegrationTests.Database;
+using Auction.IntegrationTests.Simulation;
+using Auction.Migrator;
+using Auction.Simulator.Control;
 using Microsoft.Playwright;
 
 namespace Auction.IntegrationTests.Browser;
 
-/// <summary>The Admin area in a browser (UI-04, ADM-01, INT-02's fourth interface).</summary>
+/// <summary>The Admin area in a browser (UI-04, ADM-01, ADM-02, ADM-03, INT-02's fourth interface).</summary>
 [Collection(Auction.IntegrationTests.Browser.BrowserJourneys.Name)]
 public sealed class AdminBrowserTests(MigratedDatabase db, Browsers browsers)
 {
@@ -55,5 +58,55 @@ public sealed class AdminBrowserTests(MigratedDatabase db, Browsers browsers)
         await Assertions.Expect(admin.GetByTestId("moderation-result")).ToContainTextAsync("Done");
 
         await Assertions.Expect(watcher.GetByTestId("status")).ToHaveTextAsync("Suspended", new() { Timeout = 2_000 });
+
+        await admin.GetByRole(AriaRole.Link, new() { Name = "Audit log" }).ClickAsync();
+        await admin.GetByLabel("Admin name, admin or target id, or action").FillAsync(id.ToString());
+        await admin.GetByRole(AriaRole.Button, new() { Name = "Search" }).ClickAsync();
+        await Assertions.Expect(admin.GetByTestId("audit-row")).ToHaveCountAsync(1);
+        await Assertions.Expect(admin.GetByTestId("audit-row")).ToContainTextAsync("suspend");
+        await Assertions.Expect(admin.GetByTestId("audit-row")).ToContainTextAsync("Checking the photos");
+    }
+
+    [Fact]
+    public async Task An_admin_starts_the_smoke_profile_watches_simulated_bids_arrive_and_stops_it()
+    {
+        if (Environment.GetEnvironmentVariable(Browsers.BaseUrlVariable) is { Length: > 0 })
+        {
+            return;
+        }
+
+        // The same simulator password as the simulator tests: seeding never changes an existing account's password.
+        const string simulatorPassword = "simulator-pass-for-tests";
+        const string token = "control-token-for-browser-tests";
+        await DemoSeed.RunAsync(
+            db.ConnectionStringFor(MigratedDatabase.Migrator),
+            new DemoSeedOptions("admin-pass-for-tests", "demo-pass-for-tests", simulatorPassword),
+            TestContext.Current.CancellationToken);
+        await using var control = await ControlHost.StartAsync(
+            new ControlSettings(await Browsers.SiteAsync(db), simulatorPassword, token, db.ConnectionStringFor(MigratedDatabase.Verifier)));
+        var (host, site) = await db.SiteWithAsync(new Dictionary<string, string>
+        {
+            ["Api:SimulatorAddress"] = control.Address.ToString(),
+            ["Api:SimulatorToken"] = token,
+        });
+        await using var _ = host;
+
+        var admin = await browsers.NewPageAsync(site);
+        await admin.GotoAsync("/sign-in");
+        await admin.GetByLabel("Email", new() { Exact = true }).FillAsync(await db.InsertPasswordAccountAsync("admin", Password));
+        await admin.GetByLabel("Password (seeded accounts only)").FillAsync(Password);
+        await admin.GetByRole(AriaRole.Button, new() { Name = "Sign in", Exact = true }).ClickAsync();
+        await Assertions.Expect(admin.GetByRole(AriaRole.Link, new() { Name = "Sell" })).ToHaveCountAsync(0);
+        await admin.GotoAsync("/admin");
+        await Assertions.Expect(admin.GetByTestId("simulator-state")).ToHaveTextAsync("Idle.");
+
+        await admin.GetByRole(AriaRole.Button, new() { Name = "Start run" }).ClickAsync();
+        await Assertions.Expect(admin.GetByTestId("simulator-state")).ToContainTextAsync("Running smoke");
+        await Assertions.Expect(admin.GetByTestId("recent-bid").Filter(new() { HasText = "Simulated item" }).First)
+            .ToBeVisibleAsync(new() { Timeout = 20_000 });
+
+        await admin.GetByRole(AriaRole.Button, new() { Name = "Stop run" }).ClickAsync();
+        await Assertions.Expect(admin.GetByTestId("simulator-last")).ToContainTextAsync("(stopped early)", new() { Timeout = 30_000 });
+        await Assertions.Expect(admin.GetByTestId("simulator-state")).ToHaveTextAsync("Idle.");
     }
 }

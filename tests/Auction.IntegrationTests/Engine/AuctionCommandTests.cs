@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Auction.Domain;
 using Auction.Engine;
 using Auction.IntegrationTests.Database;
@@ -7,9 +8,35 @@ namespace Auction.IntegrationTests.Engine;
 
 public sealed class AuctionCommandTests(MigratedDatabase db)
 {
+    // A parent span of the test's own, so only this test's command is picked out of a shared listener.
+    private const string TestSourceName = "Auction.IntegrationTests.Engine";
+    private static readonly ActivitySource TestSource = new(TestSourceName);
+
     private readonly AuctionEngine _engine = db.CreateEngine();
     private readonly UserId _seller = UserId.New();
     private readonly CancellationToken _ct = TestContext.Current.CancellationToken;
+
+    [Fact]
+    public async Task Each_command_is_one_transaction_span_with_its_auction_and_outcome_and_its_queries_nested_under_it()
+    {
+        var auction = await ActiveAsync(db, _engine);
+        var spans = new System.Collections.Concurrent.ConcurrentBag<Activity>();
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name is EngineTelemetry.SourceName or "Npgsql" or TestSourceName,
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
+            ActivityStopped = spans.Add,
+        };
+        ActivitySource.AddActivityListener(listener);
+        using var traced = TestSource.StartActivity("bid");
+
+        var bid = await BidAsync(_engine, UserId.New(), auction, 1500);
+
+        Assert.Equal(CommandError.None, bid.Error);
+        var transaction = Assert.Single(spans, s => s.OperationName == EngineTelemetry.TransactionSpan && s.TraceId == traced!.TraceId);
+        Assert.Equal((auction.Value.ToString(), "None"), ((string?)transaction.GetTagItem("auction.id"), (string?)transaction.GetTagItem("auction.outcome")));
+        Assert.Contains(spans, s => s.Source.Name == "Npgsql" && s.ParentSpanId == transaction.SpanId);
+    }
 
     [Fact]
     public async Task Creating_a_draft_stores_it_privately_with_no_event()

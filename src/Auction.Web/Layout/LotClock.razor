@@ -1,0 +1,35 @@
+@implements IDisposable
+
+@* The time left in words, redrawn on its own: every 20 seconds, then every second in the last two minutes. *@
+<span class="@($"clock{(Clock.EndingSoon(Auction, DateTimeOffset.UtcNow) ? " is-soon" : "")}")" data-testid="clock">@Clock.Text(Auction, DateTimeOffset.UtcNow)</span>
+
+@code {
+    [Parameter, EditorRequired]
+    public AuctionSummary Auction { get; set; } = null!;
+
+    private readonly CancellationTokenSource _stop = new();
+
+    protected override void OnInitialized() => _ = TickAsync(_stop.Token);
+
+    private async Task TickAsync(CancellationToken stop)
+    {
+        try
+        {
+            while (!stop.IsCancellationRequested)
+            {
+                await Task.Delay(Clock.RedrawEvery(Auction, DateTimeOffset.UtcNow), stop);
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // The clock left the page.
+        }
+    }
+
+    public void Dispose()
+    {
+        _stop.Cancel();
+        _stop.Dispose();
+    }
+}

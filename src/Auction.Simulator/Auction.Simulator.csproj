@@ -4,6 +4,7 @@
     The load simulator (SIM-01, SIM-02, SIM-05, SIM-16): virtual users that sign in to seeded simulator
     accounts and bid over the public JSON API exactly as a browser would, then an invariant check by the
     separate verifier. It never touches the database except through the verifier's read-only role.
+    `simulator serve` also offers a token-protected control endpoint on the internal network (ADM-02).
   -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
@@ -12,6 +13,8 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- The control endpoint the admin area starts and stops runs through (ADM-02). -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <ProjectReference Include="..\Auction.Verifier\Auction.Verifier.csproj" />
   </ItemGroup>
 

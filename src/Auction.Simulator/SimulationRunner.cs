@@ -21,9 +21,25 @@ public sealed record SimulationOptions(Uri BaseAddress, string Password, int See
 /// Runs a profile in phases: setup (sign in every virtual user and confirm its identity, list and publish the
 /// auctions), load (bidders bid until the duration ends), drain (wait for the auctions to close), verify.
 /// </summary>
-public sealed class SimulationRunner(Profile profile, SimulationOptions options)
+public sealed class SimulationRunner(Profile profile, SimulationOptions options) : IDisposable
 {
     private readonly ConcurrentBag<BidAttempt> _attempts = [];
+    private readonly CancellationTokenSource _stop = new();
+
+    public Profile Profile => profile;
+
+    /// <summary>Bids sent so far, including refused ones.</summary>
+    public int Attempts => _attempts.Count;
+
+    /// <summary>Bids the API accepted so far.</summary>
+    public int Accepted => _attempts.Count(a => a.Status == System.Net.HttpStatusCode.Created);
+
+    /// <summary>Ends the load early; the run still reports and verifies what it did, without waiting for its auctions to close.</summary>
+    public void Stop() => _stop.Cancel();
+
+    public bool Stopped => _stop.IsCancellationRequested;
+
+    public void Dispose() => _stop.Dispose();
 
     public async Task<SimulationReport> RunAsync(CancellationToken cancellationToken)
     {
@@ -51,7 +67,7 @@ public sealed class SimulationRunner(Profile profile, SimulationOptions options)
             }
 
             var loadStarted = TimeProvider.System.GetTimestamp();
-            using (var load = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
+            using (var load = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _stop.Token))
             {
                 load.CancelAfter(duration);
                 // Seeded on purpose, so a run can be repeated; nothing here is security-sensitive.
@@ -179,7 +195,7 @@ public sealed class SimulationRunner(Profile profile, SimulationOptions options)
                 }
             }
 
-            if (!options.WaitForClose || views.TrueForAll(v => v.Status == "closed") || DateTimeOffset.UtcNow > deadline)
+            if (!options.WaitForClose || Stopped || views.TrueForAll(v => v.Status == "closed") || DateTimeOffset.UtcNow > deadline)
             {
                 return views;
             }

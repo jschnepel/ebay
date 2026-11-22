@@ -57,6 +57,9 @@ internal sealed partial class OutboxRelay(
     public async Task<int> PublishBatchAsync(CancellationToken cancellationToken)
     {
         var events = await ReadPendingAsync(dataSource, BatchSize, cancellationToken);
+        // A span per batch that published something (OBS-01); an empty poll every second would only be noise.
+        using var span = events.Count > 0 ? Hosting.Telemetry.Source.StartActivity("outbox.publish") : null;
+        span?.SetTag("outbox.events", events.Count).SetTag("auction.ids", string.Join(',', events.Select(e => e.AuctionId).Distinct()));
         var read = TimeProvider.System.GetTimestamp();
         foreach (var change in events)
         {

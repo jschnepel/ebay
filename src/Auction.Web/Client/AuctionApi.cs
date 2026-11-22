@@ -113,6 +113,16 @@ public sealed class AuctionApi(HttpClient http)
     public Task<ApiResult<object>> SetUserDisabledAsync(Guid id, bool disabled, string reason) =>
         SendAsync<object>(HttpMethod.Post, $"admin/users/{id}/{(disabled ? "disable" : "enable")}", new { reason });
 
+    public Task<ApiResult<Page<AuditEntry>>> AdminAuditAsync(string? query, string? cursor) =>
+        SendAsync<Page<AuditEntry>>(HttpMethod.Get, WithCursor($"admin/audit?q={Uri.EscapeDataString(query ?? "")}", cursor));
+
+    public Task<ApiResult<SimulatorView>> AdminSimulatorAsync() => SendAsync<SimulatorView>(HttpMethod.Get, "admin/simulator");
+
+    public Task<ApiResult<SimulatorRun>> StartSimulatorAsync(string profile) =>
+        SendAsync<SimulatorRun>(HttpMethod.Post, "admin/simulator/runs", new { profile });
+
+    public Task<ApiResult<SimulatorRun>> StopSimulatorAsync() => SendAsync<SimulatorRun>(HttpMethod.Delete, "admin/simulator/runs/current");
+
     private static string WithCursor(string path, string? cursor)
     {
         if (cursor is null)

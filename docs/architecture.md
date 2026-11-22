@@ -170,7 +170,7 @@ src/
   Auction.Api/         minimal APIs in feature folders, auth + sessions, SignalR hub, outbox relay, Redis jobs; serves the WASM app
   Auction.Web/         Blazor WebAssembly + MudBlazor: Buy, Sell and Admin areas
   Auction.Migrator/    EF Core schema model and migrations (with triggers and grants), one-shot runner, demo seed; later reset-demo
-  Auction.Simulator/   CLI virtual users over the public API (smoke, realistic, hot-burst), then the verifier
+  Auction.Simulator/   CLI virtual users over the public API (smoke, realistic, hot-burst), then the verifier; `serve` runs the admin area's control endpoint
   Auction.Verifier/    read-only invariant checker using the reference model
 tests/
   Auction.ReferenceModel/   naive auction rules shared by the verifier and property tests (no engine code)
@@ -274,10 +274,14 @@ Each package is pinned in `Directory.Packages.props` and locked by the lock file
 | Buf (CI only, `bufbuild/buf-action`) | Lint, format and breaking-change checks for the `.proto` contract | Apache-2.0 |
 | Microsoft.Testing.Extensions.TrxReport | Test result files for CI | MIT |
 | Microsoft.Testing.Extensions.CodeCoverage | Line coverage for the CI floor | Microsoft .NET Library licence |
+| OpenTelemetry.Extensions.Hosting, OpenTelemetry.Exporter.OpenTelemetryProtocol, OpenTelemetry.Instrumentation.AspNetCore, .Http, .Runtime | Traces, metrics and logs over OTLP (OBS-01) | Apache-2.0 |
+| Aspire dashboard (container image, optional profile) | Viewing the OTLP telemetry during development | MIT |
 
 ## Deployment view
 
 - **Local / review:** `./run.sh` creates `deploy/.env` with generated secrets if it's missing, then runs `docker compose -f deploy/compose.yaml up` for all services on one host and waits until they're healthy. The migrator adds the demo seed (an admin, a demo seller and buyer, six active auctions) once, to an empty database. Every published port binds to 127.0.0.1 only.
+- **Simulator control (ADM-02):** the `simulator-control` service runs `simulator serve`, with no published port. Only the API calls it, with a bearer token from `.env` (`SIMULATOR_CONTROL_TOKEN`). It and the CLI's `simulator` service share the `simulator-lock` volume, so both see the one run lock.
+- **Telemetry (OBS-01):** with `OTEL_EXPORTER_OTLP_ENDPOINT` set, the API and engine export traces, metrics and logs over OTLP. A bid's trace runs from the API request through the gRPC call to the engine's `auction.transaction` span and its queries. The outbox relay's publish batches are spans too. The `observability` profile adds the standalone Aspire dashboard (UI on 127.0.0.1:18888). Without the endpoint, nothing is registered.
 - **Live (HOST-02, Should):** the same containers on a home server behind the portfolio site's reverse proxy; TLS terminates at that proxy.
 
 **Hosting (HOST-01), as built:** `/health` answers without touching any dependency; `/ready` needs PostgreSQL and the engine (Redis is never a readiness condition). `PATH_BASE` serves pages, API, hub and cookie under one path (the client's links are all relative to its `<base href>`, which the server sets), and `TRUSTED_PROXIES` names the only addresses whose forwarded headers are believed. `docker compose -f deploy/compose.yaml run --rm migrator reset-demo` returns the data to the seeded state without touching any password.
@@ -288,6 +292,7 @@ Each package is pinned in `Directory.Packages.props` and locked by the lock file
 - `DEMO_MODE=true` turns on self-registration with email-only sign-in; nothing in scope has external side effects.
 - An idempotent `reset-demo` command reseeds demo users and auctions; the hosted copy runs it nightly.
 - Works behind a reverse proxy (forwarded headers, WebSocket pass-through) under a configurable path base (`PATH_BASE`) with a path-scoped, app-specific cookie. TLS terminates at the proxy.
+- The key ring that protects the session cookie and antiforgery tokens lives on the `api-keys` volume (`Api:KeysDirectory`), so a rebuilt or replaced API container still accepts the cookies it issued and nobody is signed out by a deploy. The keys are not encrypted at rest; the Docker host already holds the database volume.
 - Demo passwords are generated at deploy time and never committed.
 - **Designed for cloud (not built):**
 

@@ -12,9 +12,13 @@ COPY src/Auction.Contracts/ src/Auction.Contracts/
 COPY src/Auction.Web/ src/Auction.Web/
 COPY src/Auction.Api/ src/Auction.Api/
 RUN dotnet publish src/Auction.Api/Auction.Api.csproj --no-restore -c Release -o /app
+# The chiseled image has no shell to make directories, so the key directory is made here and copied in.
+RUN mkdir /keys
 
 # Chiseled ASP.NET runtime: no shell or package manager, runs as a non-root user, listens on 8080.
 FROM mcr.microsoft.com/dotnet/aspnet:10.0.15-noble-chiseled@sha256:7c625e44e5d588b4d7b2a913e94ca4bd5098ce47442da404829e4c7936a764e1
 WORKDIR /app
 COPY --from=build /app ./
+# Owned by the non-root user, so a volume mounted here starts writable (see Api__KeysDirectory in compose.yaml).
+COPY --from=build --chown=$APP_UID:$APP_UID /keys /var/lib/auction/keys
 ENTRYPOINT ["dotnet", "Auction.Api.dll"]

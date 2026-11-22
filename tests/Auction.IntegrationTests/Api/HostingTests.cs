@@ -26,6 +26,36 @@ public sealed class HostingTests(MigratedDatabase db, Browsers browsers)
     }
 
     [Fact]
+    public async Task A_session_outlives_the_api_instance_that_issued_it_when_the_key_directory_is_kept()
+    {
+        var keys = Directory.CreateTempSubdirectory("auction-keys-");
+        var kept = new Dictionary<string, string> { ["Api:KeysDirectory"] = keys.FullName };
+        string cookie;
+        await using (var first = await db.ApiWithAsync(kept))
+        {
+            using var signUp = await first.Anonymous(handleCookies: false).PostAsJsonAsync(
+                "/api/v1/account/sign-up", new { displayName = "Kept", email = $"{Guid.NewGuid():N}@example.test" }, Ct);
+            Assert.Equal(HttpStatusCode.Created, signUp.StatusCode);
+            cookie = signUp.Headers.GetValues("Set-Cookie").Single(value => value.StartsWith("auction_session=", StringComparison.Ordinal)).Split(';')[0];
+        }
+
+        await using var replacement = await db.ApiWithAsync(kept);
+        await using var freshKeys = await db.ApiWithAsync(new Dictionary<string, string> { ["Api:KeysDirectory"] = Directory.CreateTempSubdirectory("auction-keys-").FullName });
+
+        Assert.NotEmpty(keys.GetFiles("key-*.xml"));
+        Assert.Equal(HttpStatusCode.OK, await MeStatusAsync(replacement, cookie));
+        Assert.Equal(HttpStatusCode.Unauthorized, await MeStatusAsync(freshKeys, cookie));
+    }
+
+    private static async Task<HttpStatusCode> MeStatusAsync(ApiHost host, string cookie)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/account/me");
+        request.Headers.Add("Cookie", cookie);
+        using var response = await host.Anonymous(handleCookies: false).SendAsync(request, Ct);
+        return response.StatusCode;
+    }
+
+    [Fact]
     public async Task Under_a_path_base_the_page_the_api_the_hub_and_the_cookie_all_live_under_it()
     {
         await using var hosted = await db.ApiWithAsync(new Dictionary<string, string> { ["Api:PathBase"] = "/projects/ebay" });
@@ -61,6 +91,24 @@ public sealed class HostingTests(MigratedDatabase db, Browsers browsers)
         Assert.Equal(HttpStatusCode.Created, await SignUpFromAsync(throughProxy, Visitor()));
         Assert.Equal(HttpStatusCode.Created, await SignUpFromAsync(direct, Visitor()));
         Assert.Equal(HttpStatusCode.TooManyRequests, await SignUpFromAsync(direct, Visitor()));
+    }
+
+    [Fact]
+    public async Task A_trusted_range_believes_forwarded_addresses_from_any_proxy_inside_it_and_none_outside()
+    {
+        // A tunnel container's address changes when it restarts, so a deployment trusts its network's range.
+        var limits = new Dictionary<string, string>
+        {
+            ["Api:RateLimits:SignUpPerAddressPerHour"] = "1",
+            ["Api:TrustedProxies"] = "10.79.0.0/16",
+        };
+        await using var inside = await db.ApiWithAsync(new Dictionary<string, string>(limits) { [ApiHost.ClientAddressSetting] = "10.79.4.20" });
+        await using var outside = await db.ApiWithAsync(new Dictionary<string, string>(limits) { [ApiHost.ClientAddressSetting] = $"10.80.{Random.Shared.Next(256)}.{Random.Shared.Next(1, 255)}" });
+
+        Assert.Equal(HttpStatusCode.Created, await SignUpFromAsync(inside, Visitor()));
+        Assert.Equal(HttpStatusCode.Created, await SignUpFromAsync(inside, Visitor()));
+        Assert.Equal(HttpStatusCode.Created, await SignUpFromAsync(outside, Visitor()));
+        Assert.Equal(HttpStatusCode.TooManyRequests, await SignUpFromAsync(outside, Visitor()));
     }
 
     [Fact]
