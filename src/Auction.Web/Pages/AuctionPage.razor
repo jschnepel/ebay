@@ -226,9 +226,14 @@ else
             };
             await LoadAsync();
         }
+        else if (result.Problem!.Status is 502 or 504)
+        {
+            // The engine may already have accepted the bid. Keep its key for the retry.
+            (_bidAccepted, _bidMessage) = (false, "We couldn't confirm your bid. Try again with the same amount.");
+        }
         else
         {
-            // A refusal is final for this key; only "busy" or no connection is worth retrying with it.
+            // A lost connection (0) or a busy service (503) also permits a retry with the same key.
             if (result.Problem!.Status is not (0 or 503))
             {
                 _pending = null;

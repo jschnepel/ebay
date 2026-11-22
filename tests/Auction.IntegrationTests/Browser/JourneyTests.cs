@@ -37,8 +37,11 @@ public sealed class JourneyTests(MigratedDatabase db, Browsers browsers)
         await Assertions.Expect(await buyer.DirectoryRowAsync(title)).ToContainTextAsync("$15.00");
     }
 
-    [Fact]
-    public async Task A_reformatted_bid_recovers_its_acceptance_after_the_reply_is_lost()
+    [Theory]
+    [InlineData(null, "Check the connection")]
+    [InlineData(502, "We couldn't confirm your bid.")]
+    [InlineData(504, "We couldn't confirm your bid.")]
+    public async Task A_reformatted_bid_recovers_its_acceptance_after_the_reply_is_lost(int? gatewayStatus, string expectedMessage)
     {
         var site = await Browsers.SiteAsync(db);
         var seller = await browsers.NewPageAsync(site);
@@ -48,7 +51,7 @@ public sealed class JourneyTests(MigratedDatabase db, Browsers browsers)
         await buyer.SignUpAsync("Buyer");
         await buyer.GotoAsync(auction);
 
-        // Send the real bid to the server, then drop its response before the page sees it.
+        // Let the server commit the real bid before simulating what the browser receives.
         int? firstStatus = null;
         await buyer.RouteAsync("**/api/v1/auctions/*/bids", async route =>
         {
@@ -61,11 +64,18 @@ public sealed class JourneyTests(MigratedDatabase db, Browsers browsers)
             var response = await route.FetchAsync();
             firstStatus = response.Status;
             await response.DisposeAsync();
-            await route.AbortAsync();
+            if (gatewayStatus is int status)
+            {
+                await route.FulfillAsync(new() { Status = status, ContentType = "text/plain", Body = "Upstream unavailable" });
+            }
+            else
+            {
+                await route.AbortAsync();
+            }
         });
         await buyer.BidAsync("50");
         var receipt = buyer.GetByTestId("bid-result");
-        await Assertions.Expect(receipt).ToContainTextAsync("Check the connection");
+        await Assertions.Expect(receipt).ToContainTextAsync(expectedMessage);
         Assert.Equal(201, firstStatus);
         await buyer.UnrouteAllAsync(new() { Behavior = UnrouteBehavior.Wait });
 
