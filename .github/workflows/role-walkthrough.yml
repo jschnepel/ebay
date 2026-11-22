@@ -15,7 +15,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [disposable, hosted]
+        # The hosted origin requires an approved runner. Disposable checks always run.
+        target: ${{ fromJSON(vars.AUCTION_RUN_HOSTED_QA == 'true' && '["disposable","hosted"]' || '["disposable"]') }}
     name: Role checks (${{ matrix.target }})
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
