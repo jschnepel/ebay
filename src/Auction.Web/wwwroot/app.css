@@ -14,3 +14,16 @@
 .gallery { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.5rem 0 1rem; }
 .gallery img { max-width: 100%; height: 220px; object-fit: contain; border-radius: 4px; background: #f3f1f8; }
 .table-scroll { overflow-x: auto; }
+
+/* Preserve bid feedback when MudBlazor applies its disabled button palette. */
+.bid-submit.mud-button-filled-warning {
+    --mud-palette-warning: #ffda44;
+    --mud-palette-warning-darken: #eac333;
+    --mud-palette-warning-text: #272108;
+    --mud-palette-action-disabled-background: var(--mud-palette-warning);
+    --mud-palette-action-disabled: var(--mud-palette-warning-text);
+}
+.bid-submit.mud-button-filled-success {
+    --mud-palette-action-disabled-background: var(--mud-palette-success);
+    --mud-palette-action-disabled: var(--mud-palette-success-text);
+}

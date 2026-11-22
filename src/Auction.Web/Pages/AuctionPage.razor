@@ -59,10 +59,13 @@ else
         }
         else if (!Session.Account.IsAdmin)
         {
+            var button = GetBidButton();
             <MudPaper Class="pa-4 mb-4" Outlined="true">
-                <MudTextField @bind-Value="_amount" Label="@(auction.BidEntry == "proxy" ? "Your maximum ($)" : "Your bid ($)")" Immediate="true"
+                <MudTextField @bind-Value="_amount" Label="@(auction.BidEntry == "proxy" ? "Your maximum ($)" : "Your bid ($)")" Immediate="true" ReadOnly="_busy"
                               HelperText="@($"At least {Format.Dollars(auction.MinimumNextBidCents)}")" />
-                <MudButton Class="mt-2" Variant="Variant.Filled" Color="Color.Primary" OnClick="BidAsync" Disabled="_busy">Place bid</MudButton>
+                <MudButton Class="mt-2 bid-submit" Variant="Variant.Filled" Color="button.Color" OnClick="BidAsync"
+                           Disabled="button.Disabled" data-testid="bid-submit">@button.Label</MudButton>
+                <span class="sr-only" role="status">@(_busy ? button.Label : "")</span>
             </MudPaper>
         }
     }
@@ -210,9 +213,42 @@ else
         await Refresher.DisposeAsync();
     }
 
+    private (string Label, Color Color, bool Disabled) GetBidButton()
+    {
+        var bidderId = Session.Account?.Id;
+        var entered = Format.ParseDollars(_amount);
+        if (_pending is { } pending && pending.BidderId == bidderId)
+        {
+            if (_busy)
+            {
+                return ($"Submitting {Format.Dollars(pending.AmountCents)}…", Color.Warning, true);
+            }
+
+            if (entered == pending.AmountCents)
+            {
+                return ($"Unconfirmed · retry {Format.Dollars(pending.AmountCents)}", Color.Warning, false);
+            }
+        }
+
+        if (_receipt is { } receipt && receipt.BidderId == bidderId)
+        {
+            if (receipt.Reason is null && string.IsNullOrEmpty(_amount))
+            {
+                return ("Accepted", Color.Success, true);
+            }
+
+            if (receipt.Reason is not null && entered == receipt.AmountCents)
+            {
+                return ("Rejected · place bid again", Color.Error, false);
+            }
+        }
+
+        return ("Place bid", Color.Primary, false);
+    }
+
     private async Task BidAsync()
     {
-        if (Session.Account is not { IsAdmin: false } bidder || _auction is not { } auction || auction.Id != Id)
+        if (_busy || Session.Account is not { IsAdmin: false } bidder || _auction is not { } auction || auction.Id != Id)
         {
             return;
         }
@@ -271,6 +307,7 @@ else
         if (result.Succeeded)
         {
             _amount = "";
+            StateHasChanged();
             await LoadAsync();
         }
     }

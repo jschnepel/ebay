@@ -56,6 +56,8 @@ public sealed class JourneyTests(MigratedDatabase db, Browsers browsers)
 
         // Let the server commit the real bid before simulating what the browser receives.
         DateTimeOffset? acceptedAt = null;
+        var releaseReply = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var cancellationToken = TestContext.Current.CancellationToken;
         await buyer.RouteAsync("**/api/v1/auctions/*/bids", async route =>
         {
             if (route.Request.Method != "POST")
@@ -71,6 +73,7 @@ public sealed class JourneyTests(MigratedDatabase db, Browsers browsers)
                 acceptedAt = body.RootElement.GetProperty("decidedAt").GetDateTimeOffset();
             }
             await response.DisposeAsync();
+            await releaseReply.Task.WaitAsync(cancellationToken);
             if (gatewayStatus is int status)
             {
                 await route.FulfillAsync(new() { Status = status, ContentType = "text/plain", Body = "Upstream unavailable" });
@@ -80,19 +83,29 @@ public sealed class JourneyTests(MigratedDatabase db, Browsers browsers)
                 await route.AbortAsync();
             }
         });
-        await buyer.BidAsync("50");
+        var button = buyer.GetByTestId("bid-submit");
+        await SubmitPendingBidAsync(buyer, button, releaseReply);
         var receipt = buyer.GetByTestId("bid-result");
         await Assertions.Expect(receipt).ToContainTextAsync(expectedMessage);
+        await buyer.Mouse.MoveAsync(0, 0);
+        await Assertions.Expect(button).ToHaveTextAsync("Unconfirmed · retry $50.00");
+        await Assertions.Expect(button).ToBeEnabledAsync();
+        await Assertions.Expect(button).ToHaveCSSAsync("background-color", "rgb(255, 218, 68)");
         var originalTime = Assert.IsType<DateTimeOffset>(acceptedAt);
         await buyer.UnrouteAllAsync(new() { Behavior = UnrouteBehavior.Wait });
 
         await buyer.BidAsync("50.00");
+        await Assertions.Expect(button).ToHaveTextAsync("Accepted");
+        await Assertions.Expect(button).ToHaveCSSAsync("background-color", "rgb(46, 125, 50)");
         var time = originalTime.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss 'UTC'", CultureInfo.InvariantCulture);
         await Assertions.Expect(receipt).ToHaveTextAsync($"Accepted · $50.00 · {title} · {time}");
         await Assertions.Expect(buyer.GetByTestId("bid-count")).ToHaveTextAsync("1");
 
         // Once the bidder has received the receipt, another submission is a fresh bid.
         await buyer.BidAsync("50");
+        await buyer.Mouse.MoveAsync(0, 0);
+        await Assertions.Expect(button).ToHaveTextAsync("Rejected · place bid again");
+        await Assertions.Expect(button).ToHaveCSSAsync("background-color", "rgb(179, 38, 30)");
         await Assertions.Expect(receipt).ToContainTextAsync($"Rejected · $50.00 · {title}");
         await Assertions.Expect(receipt.Locator("time")).ToContainTextAsync("UTC");
         await Assertions.Expect(receipt.GetByTestId("bid-reason")).ToHaveTextAsync("Your new maximum must be higher than your current maximum.");
@@ -100,6 +113,21 @@ public sealed class JourneyTests(MigratedDatabase db, Browsers browsers)
         await Assertions.Expect(seller.GetByTestId("bid-result")).ToHaveCountAsync(0);
         await Assertions.Expect(seller.GetByTestId("bid-count")).ToHaveTextAsync("1");
         await Assertions.Expect(seller.GetByTestId("current-price")).ToHaveTextAsync("$15.00");
+    }
+
+    private static async Task SubmitPendingBidAsync(IPage buyer, ILocator button, TaskCompletionSource releaseReply)
+    {
+        try
+        {
+            await buyer.BidAsync("50");
+            await Assertions.Expect(button).ToBeDisabledAsync();
+            await Assertions.Expect(button).ToHaveTextAsync("Submitting $50.00…");
+            await Assertions.Expect(button).ToHaveCSSAsync("background-color", "rgb(255, 218, 68)");
+        }
+        finally
+        {
+            releaseReply.TrySetResult();
+        }
     }
 
     [Fact]

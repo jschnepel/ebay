@@ -43,7 +43,7 @@ internal static partial class BrowserUser
     public static async Task BidAsync(this IPage page, string dollars)
     {
         await page.GetByLabel(new Regex("^Your (maximum|bid)")).FillAsync(dollars);
-        await page.GetByRole(AriaRole.Button, new() { Name = "Place bid" }).ClickAsync();
+        await page.GetByTestId("bid-submit").ClickAsync();
     }
 
     /// <summary>The directory row for <paramref name="title"/>, showing more pages until it appears.</summary>
