@@ -187,3 +187,22 @@ h2.mud-typography { font-size: 1.25rem; font-weight: 600; color: var(--ink); }
 
 /* The fixed-step note in the bid card: the rule, said once, just above the one button that follows it. */
 .step-note { margin: 0 0 0.6rem; font-size: 0.9rem; color: var(--muted); }
+
+/* The notification bell's dropdown: the latest notices over the page, newest first, unread ones in bold. */
+.bell { position: relative; display: flex; align-items: center; }
+.bell-backdrop { position: fixed; inset: 0; z-index: 1300; }
+.bell-panel { position: absolute; top: calc(100% + 0.5rem); right: 0.5rem; z-index: 1301; width: 22rem; max-height: min(32rem, 75vh);
+    display: flex; flex-direction: column; background: var(--surface); color: var(--ink); border: 1px solid var(--line);
+    border-radius: var(--radius); box-shadow: 0 12px 32px rgba(15, 30, 35, 0.18); overflow: hidden; }
+.bell-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.75rem 1rem; border-bottom: 1px solid var(--line); }
+.bell-head h2 { margin: 0; font-size: 1rem; }
+.bell-list { list-style: none; margin: 0; padding: 0; overflow-y: auto; }
+.bell-item { display: flex; flex-direction: column; gap: 0.15rem; width: 100%; padding: 0.65rem 1rem; border: 0; border-bottom: 1px solid var(--line);
+    background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.bell-item:hover, .bell-item:focus-visible { background: rgba(15, 30, 35, 0.05); }
+.bell-item.is-unread .bell-text { font-weight: 600; }
+.bell-item.is-unread .bell-text::before { content: "● "; color: var(--alert); }
+.bell-time { font-size: 0.8rem; }
+.bell-empty { margin: 0; padding: 1rem; }
+.bell-foot { padding: 0.6rem 1rem; border-top: 1px solid var(--line); text-align: center; }
+@media (max-width: 600px) { .bell-panel { position: fixed; top: 3.5rem; left: 0.5rem; right: 0.5rem; width: auto; } }

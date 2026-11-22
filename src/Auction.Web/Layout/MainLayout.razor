@@ -32,10 +32,7 @@
         <MudSpacer />
         @if (Session.Account is { } account)
         {
-            <MudBadge Content="@Notices.Unread" Visible="@(Notices.Unread > 0)" Color="Color.Error" Overlap="true" Class="mr-2">
-                <MudIconButton Icon="@Icons.Material.Filled.Notifications" Color="Color.Inherit" Href="notifications"
-                               aria-label="@($"Notifications, {Notices.Unread} unread")" data-testid="bell" />
-            </MudBadge>
+            <NotificationBell />
             <span hidden data-testid="unread-count">@Notices.Unread</span>
             <MudText Class="mr-2 d-none d-sm-flex" data-testid="signed-in-as">@account.DisplayName</MudText>
             <MudButton Color="Color.Inherit" OnClick="SignOutAsync">Sign out</MudButton>

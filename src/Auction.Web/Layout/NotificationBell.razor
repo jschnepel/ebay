@@ -1,0 +1,130 @@
+@implements IDisposable
+@inject AuctionApi Api
+@inject Notices Notices
+@inject NavigationManager Navigation
+
+@* The bell opens the latest notices over the page you're on; the full history stays on /notifications. *@
+<div class="bell" @onkeydown="OnKeyDown">
+    <MudBadge Content="@Notices.Unread" Visible="@(Notices.Unread > 0)" Color="Color.Error" Overlap="true" Class="mr-2">
+        <MudIconButton Icon="@Icons.Material.Filled.Notifications" Color="Color.Inherit" OnClick="ToggleAsync"
+                       aria-label="@($"Notifications, {Notices.Unread} unread")" aria-expanded="@(_open ? "true" : "false")"
+                       aria-haspopup="dialog" data-testid="bell" />
+    </MudBadge>
+
+    @if (_open)
+    {
+        <div class="bell-backdrop" @onclick="Close"></div>
+        <section class="bell-panel" role="dialog" aria-label="Notifications" data-testid="notice-panel">
+            <header class="bell-head">
+                <h2>Notifications</h2>
+                @if (_items?.Any(i => !i.Read) == true)
+                {
+                    <MudButton Variant="Variant.Text" Color="Color.Primary" Size="Size.Small" OnClick="MarkAllReadAsync" Disabled="_busy">Mark all read</MudButton>
+                }
+            </header>
+
+            @if (_items is null)
+            {
+                <p class="bell-empty muted">Loading…</p>
+            }
+            else if (_items.Count == 0)
+            {
+                <p class="bell-empty muted">Nothing yet. You'll hear here when you're outbid, when your auctions end, and about moderation.</p>
+            }
+            else
+            {
+                <ul class="bell-list">
+                    @foreach (var item in _items)
+                    {
+                        <li>
+                            <button type="button" class="@(item.Read ? "bell-item" : "bell-item is-unread")" @onclick="() => OpenAsync(item)" data-testid="notification">
+                                <span class="bell-text">@NoticeText.For(item)</span>
+                                <span class="bell-time muted">@Format.Recent(item.CreatedAt)</span>
+                            </button>
+                        </li>
+                    }
+                </ul>
+            }
+
+            <footer class="bell-foot">
+                <a href="notifications" @onclick="Close">See all notifications</a>
+            </footer>
+        </section>
+    }
+</div>
+
+@code {
+    // The latest few; the rest are a click away on the full page.
+    private const int Shown = 8;
+
+    private bool _open;
+    private bool _busy;
+    private List<NotificationView>? _items;
+
+    protected override void OnInitialized() => Notices.Changed += OnNoticesChanged;
+
+    private async Task ToggleAsync()
+    {
+        _open = !_open;
+        if (_open)
+        {
+            await LoadAsync();
+        }
+    }
+
+    private void Close() => _open = false;
+
+    private void OnKeyDown(KeyboardEventArgs key)
+    {
+        if (key.Key == "Escape")
+        {
+            Close();
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        var page = await Api.NotificationsAsync(null);
+        _items = page.Value is { } value ? [.. value.Items.Take(Shown)] : [];
+    }
+
+    private async Task OpenAsync(NotificationView item)
+    {
+        Close();
+        if (!item.Read)
+        {
+            await Notices.MarkReadAsync(item.Id);
+        }
+
+        if (item.AuctionId is { } auction)
+        {
+            Navigation.NavigateTo($"auctions/{auction}");
+        }
+    }
+
+    // Marks the notices shown here; the API marks one at a time.
+    private async Task MarkAllReadAsync()
+    {
+        _busy = true;
+        foreach (var item in _items!.Where(i => !i.Read))
+        {
+            await Api.MarkNotificationReadAsync(item.Id);
+        }
+
+        await Notices.RefreshAsync();
+        _busy = false;
+    }
+
+    // A new or newly read notice: while the panel is open, its list follows.
+    private void OnNoticesChanged() => InvokeAsync(async () =>
+    {
+        if (_open)
+        {
+            await LoadAsync();
+        }
+
+        StateHasChanged();
+    });
+
+    public void Dispose() => Notices.Changed -= OnNoticesChanged;
+}
