@@ -222,6 +222,7 @@ internal sealed class ImageBlobConfiguration : IEntityTypeConfiguration<ImageBlo
         });
         builder.HasKey(b => b.Id);
         builder.HasOne<UserRow>().WithMany().HasForeignKey(b => b.OwnerId).OnDelete(DeleteBehavior.Restrict);
+        builder.Property(b => b.Normalized).HasDefaultValue(false);
         // The same bytes from the same owner are one blob, so a retried upload returns it.
         builder.HasIndex(b => new { b.OwnerId, b.Sha256 }).IsUnique();
         builder.HasIndex(b => b.CreatedAt);

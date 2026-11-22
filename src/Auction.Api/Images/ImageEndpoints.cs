@@ -92,12 +92,13 @@ internal static class ImageEndpoints
         }
 
         // The file's own bytes decide its type; a claimed type that disagrees is refused.
-        if (ImageFormat.Identify(data) is not { } info || (body!.ContentType is { } claimed && claimed != info.ContentType))
+        if (await ImageFormat.NormalizeAsync(data, body!.ContentType, http.RequestAborted) is not { } photo)
         {
             return Invalid("contentType", "unsupported_or_mismatched");
         }
 
-        var (result, id) = await store.UploadAsync(http.User.UserIdOf()!.Value, data, info, http.RequestAborted);
+        var info = photo.Info;
+        var (result, id) = await store.UploadAsync(http.User.UserIdOf()!.Value, photo.Data, info, http.RequestAborted);
         var uploaded = id is { } blob ? new UploadedImage(blob, info.ContentType, info.Width, info.Height) : null;
         return result switch
         {

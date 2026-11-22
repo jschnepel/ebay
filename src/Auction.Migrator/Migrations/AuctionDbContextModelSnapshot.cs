@@ -411,6 +411,12 @@ namespace Auction.Migrator.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("height");
 
+                    b.Property<bool>("Normalized")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasColumnName("normalized")
+                        .HasDefaultValue(false);
+
                     b.Property<Guid>("OwnerId")
                         .HasColumnType("uuid")
                         .HasColumnName("owner_id");

@@ -14,6 +14,23 @@ public sealed class ImageApiTests(MigratedDatabase db)
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     [Fact]
+    public async Task Truncated_and_excessive_dimension_images_are_refused_before_storage()
+    {
+        var seller = await (await db.ApiAsync()).SignUpAsync();
+        var png = TestImages.Png();
+        var large = (byte[])png.Clone();
+        System.Buffers.Binary.BinaryPrimitives.WriteInt32BigEndian(large.AsSpan(16), 100_000);
+
+        foreach (var data in new[] { png[..24], large })
+        {
+            using var response = await seller.Http.PostAsJsonAsync("/api/v1/images", TestImages.Upload(data, "image/png"), Ct);
+            await response.AssertProblemAsync(HttpStatusCode.UnprocessableEntity);
+        }
+
+        Assert.Equal(0, await db.ScalarAsync<long>(MigratedDatabase.Migrator, "SELECT count(*) FROM image_blobs WHERE owner_id = $1", seller.Id));
+    }
+
+    [Fact]
     public async Task A_jpeg_a_png_and_a_webp_attach_with_a_cover_and_after_publish_anyone_sees_them()
     {
         var api = await db.ApiAsync();
@@ -75,6 +92,29 @@ public sealed class ImageApiTests(MigratedDatabase db)
         await fake.AssertProblemAsync(HttpStatusCode.UnprocessableEntity);
         await mismatched.AssertProblemAsync(HttpStatusCode.UnprocessableEntity);
         await tooLarge.AssertProblemAsync(HttpStatusCode.RequestEntityTooLarge, "request_too_large");
+    }
+
+    [Fact]
+    public async Task A_legacy_blob_keeps_its_id_and_only_decodable_pixels_are_served()
+    {
+        var seller = await (await db.ApiAsync()).SignUpAsync();
+        var id = Guid.NewGuid();
+        var original = TestImages.Png();
+        byte[] legacy = [.. original, .. "legacy-trailer"u8.ToArray()];
+        const string insert = """
+            INSERT INTO image_blobs (id, owner_id, sha256, content_type, size_bytes, width, height, data)
+            VALUES ($1, $2, $3, 'image/png', $4, 4, 4, $5)
+            """;
+        await db.ExecuteAsync(MigratedDatabase.Migrator, insert, id, seller.Id, System.Security.Cryptography.SHA256.HashData(legacy), legacy.Length, legacy);
+        using var served = await seller.Http.GetAsync(new Uri($"/api/v1/images/{id}", UriKind.Relative), Ct);
+        Assert.Equal(HttpStatusCode.OK, served.StatusCode);
+        var rendition = await served.Content.ReadAsByteArrayAsync(Ct);
+        Assert.False(rendition.AsSpan().EndsWith("legacy-trailer"u8));
+
+        var invalidId = Guid.NewGuid();
+        var truncated = original[..24];
+        await db.ExecuteAsync(MigratedDatabase.Migrator, insert, invalidId, seller.Id, System.Security.Cryptography.SHA256.HashData(truncated), truncated.Length, truncated);
+        Assert.Equal(HttpStatusCode.NotFound, await seller.Http.StatusOfGetAsync($"/api/v1/images/{invalidId}"));
     }
 
     [Fact]
@@ -158,7 +198,7 @@ public sealed class ImageApiTests(MigratedDatabase db)
         await using var limited = await db.ApiWithAsync(new Dictionary<string, string>
         {
             ["Images:UploadsPerHour"] = "3",
-            ["Images:UserQuotaBytes"] = "4000",
+            ["Images:UserQuotaBytes"] = "5000",
             ["Images:TotalQuotaBytes"] = "1000000000000",
         });
         var uploader = await limited.SignUpAsync();
@@ -171,7 +211,7 @@ public sealed class ImageApiTests(MigratedDatabase db)
             rates.Add(upload.StatusCode);
         }
 
-        // Each upload is about 1.6 kB: of five racing uploads against a 4,000-byte quota, exactly two fit
+        // Each upload is about 2.2 kB: of five racing uploads against a 5,000-byte quota, exactly two fit
         // (a refused upload doesn't count toward the hourly limit).
         var racing = await Task.WhenAll(Enumerable.Range(0, 5).Select(async _ =>
         {
@@ -191,8 +231,8 @@ public sealed class ImageApiTests(MigratedDatabase db)
         var global = await db.ScalarAsync<long>(MigratedDatabase.Migrator, "SELECT bytes_used FROM global_quota WHERE id = 1");
         await small.DisposeAsync();
 
-        // Room for exactly two more 1.6 kB images in the whole demo, whatever is stored already.
-        await using var capped = await db.ApiWithAsync(new Dictionary<string, string> { ["Images:TotalQuotaBytes"] = (global + 3500).ToString(System.Globalization.CultureInfo.InvariantCulture) });
+        // Room for exactly two more 2.2 kB images in the whole demo, whatever is stored already.
+        await using var capped = await db.ApiWithAsync(new Dictionary<string, string> { ["Images:TotalQuotaBytes"] = (global + 5000).ToString(System.Globalization.CultureInfo.InvariantCulture) });
         var users = new[] { await capped.SignUpAsync(), await capped.SignUpAsync(), await capped.SignUpAsync() };
 
         var racing = await Task.WhenAll(users.Select(async user =>

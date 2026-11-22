@@ -225,6 +225,8 @@ public sealed class ImageBlobRow
 
     public int Height { get; set; }
 
+    public bool Normalized { get; set; }
+
     public byte[] Data { get; set; } = [];
 
     public DateTimeOffset CreatedAt { get; set; }

@@ -1,44 +1,41 @@
-using System.Buffers.Binary;
+using System.Security.Cryptography;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Formats;
+using SixLabors.ImageSharp.Formats.Jpeg;
+using SixLabors.ImageSharp.Formats.Png;
+using SixLabors.ImageSharp.Formats.Webp;
+using SixLabors.ImageSharp.PixelFormats;
 
 namespace Auction.IntegrationTests.Api;
 
-/// <summary>
-/// Small images with real headers, each with a unique tail so no two uploads share content (the server
-/// stores the same bytes from the same owner once). The server reads only signatures and headers.
-/// </summary>
+/// <summary>Decodable photos with distinct pixels, including incompressible samples for storage quotas.</summary>
 internal static class TestImages
 {
-    // A complete, decodable 1×1 PNG, so a browser can show it.
-    private static readonly byte[] OnePixelPng = Convert.FromBase64String(
-        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=");
-
-    public static byte[] Png(int extraBytes = 0) => [.. OnePixelPng, .. Unique(extraBytes)];
-
-    public static byte[] Jpeg(int extraBytes = 0)
+    public static byte[] Png(int extraBytes = 0)
     {
-        byte[] header =
-        [
-            0xFF, 0xD8,
-            0xFF, 0xE0, 0x00, 0x10, (byte)'J', (byte)'F', (byte)'I', (byte)'F', 0x00, 0x01, 0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00,
-            0xFF, 0xC0, 0x00, 0x11, 0x08, 0x00, 0x02, 0x00, 0x03, 0x03, 0x01, 0x22, 0x00, 0x02, 0x11, 0x01, 0x03, 0x11, 0x01,
-        ];
-        return [.. header, .. Unique(extraBytes), 0xFF, 0xD9];
+        if (extraBytes > ImageQuotaSample)
+        {
+            return [.. Encode(new PngEncoder(), 4), .. new byte[extraBytes]];
+        }
+
+        return Encode(new PngEncoder(), extraBytes == 0 ? 4 : 23);
     }
 
-    public static byte[] WebP(int extraBytes = 0)
-    {
-        var bits = new byte[4];
-        BinaryPrimitives.WriteUInt32LittleEndian(bits, (uint)((4 - 1) | ((5 - 1) << 14)));
-        byte[] body = [.. "VP8L"u8, 0x05, 0x00, 0x00, 0x00, 0x2F, .. bits, .. Unique(extraBytes)];
-        var size = new byte[4];
-        BinaryPrimitives.WriteUInt32LittleEndian(size, (uint)(body.Length + 4));
-        return [.. "RIFF"u8, .. size, .. "WEBP"u8, .. body];
-    }
+    private const int ImageQuotaSample = 1500;
 
-    /// <summary>Bytes that claim nothing: no image signature at all.</summary>
-    public static byte[] NotAnImage() => [.. "just text, named .png"u8, .. Unique(0)];
+    public static byte[] Jpeg() => Encode(new JpegEncoder(), 4);
+
+    public static byte[] WebP() => Encode(new WebpEncoder(), 4);
+
+    public static byte[] NotAnImage() => "just text, named .png"u8.ToArray();
 
     public static object Upload(byte[] data, string contentType) => new { contentType, dataBase64 = Convert.ToBase64String(data) };
 
-    private static byte[] Unique(int extra) => [.. Guid.NewGuid().ToByteArray(), .. new byte[extra]];
+    private static byte[] Encode(IImageEncoder encoder, int side)
+    {
+        using var image = Image.LoadPixelData<Rgba32>(RandomNumberGenerator.GetBytes(side * side * 4), side, side);
+        using var output = new MemoryStream();
+        image.Save(output, encoder);
+        return output.ToArray();
+    }
 }

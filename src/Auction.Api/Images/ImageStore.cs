@@ -52,8 +52,8 @@ public sealed class ImageStore(NpgsqlDataSource dataSource, ImageOptions options
     private const string LockTotalSql = "SELECT bytes_used FROM auction.global_quota WHERE id = 1 FOR UPDATE";
 
     private const string InsertSql = """
-        INSERT INTO auction.image_blobs (id, owner_id, sha256, content_type, size_bytes, width, height, data)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        INSERT INTO auction.image_blobs (id, owner_id, sha256, content_type, size_bytes, width, height, data, normalized)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true)
         """;
 
     // One statement: the user's counters and the global total move together.
@@ -72,7 +72,7 @@ public sealed class ImageStore(NpgsqlDataSource dataSource, ImageOptions options
     private const string ServeSql = """
         SELECT b.content_type, b.data, encode(b.sha256, 'hex'), b.owner_id,
                EXISTS (SELECT 1 FROM auction.auction_images l JOIN auction.auctions a ON a.id = l.auction_id
-                       WHERE l.blob_id = b.id AND a.status <> 'draft')
+                       WHERE l.blob_id = b.id AND a.status <> 'draft'), b.normalized
         FROM auction.image_blobs b WHERE b.id = $1
         """;
 
@@ -130,7 +130,20 @@ public sealed class ImageStore(NpgsqlDataSource dataSource, ImageOptions options
         }
 
         var image = Read(reader);
-        return image.Public || image.Owner == viewer?.Value ? image.Image : null;
+        if (!image.Public && image.Owner != viewer?.Value)
+        {
+            return null;
+        }
+
+        if (reader.GetBoolean(5))
+        {
+            return image.Image;
+        }
+
+        // Older blobs and demo seeds keep their IDs and quotas. Serve only a newly encoded rendition.
+        await reader.DisposeAsync();
+        var photo = await ImageFormat.NormalizeAsync(image.Image.Data, image.Image.ContentType, cancellationToken);
+        return photo is null ? null : image.Image with { Data = photo.Data, ETag = $"\"{Convert.ToHexString(SHA256.HashData(photo.Data))}\"" };
     }
 
     /// <summary>Deletes unattached blobs past their lifetime, in batches; returns how many went.</summary>
