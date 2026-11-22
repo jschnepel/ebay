@@ -32,7 +32,8 @@ else
         {
             <MudTextField @bind-Value="_reserve" Label="Reserve ($)" Immediate="true" HelperText="Hidden from bidders; they only see whether it's met." />
         }
-        <MudSelect T="string" @bind-Value="_bidEntry" Label="Bidding">
+        <MudSelect T="string" @bind-Value="_bidEntry" Label="Bidding"
+                   HelperText="@(_bidEntry == "proxy" ? "Bidders set a private maximum and the system bids for them, one step at a time." : "Bidders can only bid the next step: the current price plus your increment.")">
             <MudSelectItem T="string" Value="@("proxy")">Proxy: bidders enter a private maximum</MudSelectItem>
             <MudSelectItem T="string" Value="@("fixed_increment")">Fixed steps of one increment</MudSelectItem>
         </MudSelect>

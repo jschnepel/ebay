@@ -116,10 +116,22 @@ else
                 else if (!Session.Account.IsAdmin)
                 {
                     <div>
-                        <MudTextField @bind-Value="_amount" Label="@(auction.BidEntry == "proxy" ? "Your maximum ($)" : "Your bid ($)")" Immediate="true"
-                                      Variant="Variant.Outlined" InputMode="@(InputMode.@decimal)" OnKeyDown="BidOnEnterAsync"
-                                      HelperText="@($"At least {Format.Dollars(auction.MinimumNextBidCents)}")" />
-                        <MudButton Class="mt-2" Variant="Variant.Filled" Color="Color.Primary" FullWidth="true" Size="Size.Large" OnClick="BidAsync" Disabled="_busy">Place bid</MudButton>
+                        @if (auction.BidEntry == "proxy")
+                        {
+                            <MudTextField @bind-Value="_amount" Label="Your maximum ($)" Immediate="true"
+                                          Variant="Variant.Outlined" InputMode="@(InputMode.@decimal)" OnKeyDown="BidOnEnterAsync"
+                                          HelperText="@($"At least {Format.Dollars(auction.MinimumNextBidCents)}. The system bids for you, up to your maximum.")" />
+                            <MudButton Class="mt-2" Variant="Variant.Filled" Color="Color.Primary" FullWidth="true" Size="Size.Large" OnClick="BidAsync" Disabled="_busy">Place bid</MudButton>
+                        }
+                        else
+                        {
+                            @* Fixed steps accept only the exact next step, so there is nothing to type: one button bids it. *@
+                            <p class="step-note" data-testid="fixed-step-note">
+                                Fixed steps of @Format.Dollars(auction.IncrementCents): each bid raises the price by exactly one step.
+                            </p>
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth="true" Size="Size.Large"
+                                       OnClick="() => BidNextStepAsync(auction)" Disabled="_busy" data-testid="bid-next-step">Bid @Format.Dollars(auction.MinimumNextBidCents)</MudButton>
+                        }
                         @if (_bidMessage is not null)
                         {
                             <MudAlert Class="mt-2" Dense="true" Severity="@(_bidAccepted ? Severity.Success : Severity.Error)" data-testid="bid-result">@_bidMessage</MudAlert>
@@ -141,10 +153,14 @@ else
 
     private AuctionDetail? _auction;
     private List<BidView>? _bids;
+
     private string? _error;
     private string _amount = "";
     private string? _bidMessage;
     private bool _bidAccepted;
+
+    // The last refusal's code, so a fixed-step bid that lost the race can say so.
+    private string? _lastCode;
     private bool _busy;
 
     // One key per intended bid: a retry of the same amount reuses it, so it can't be placed twice.
@@ -236,6 +252,21 @@ else
 
     private Task BidOnEnterAsync(KeyboardEventArgs key) => key.Key == "Enter" && !_busy ? BidAsync() : Task.CompletedTask;
 
+    // The step shown on the button; if someone took it first, the card shows the new step instead of an error.
+    private async Task BidNextStepAsync(AuctionDetail auction)
+    {
+        _amount = Format.DollarsInput(auction.MinimumNextBidCents);
+        await BidAsync();
+        if (!_bidAccepted && _lastCode is "wrong_amount" or "below_minimum")
+        {
+            await LoadAsync();
+            if (_auction is { } fresh)
+            {
+                _bidMessage = $"Someone bid first. The next step is now {Format.Dollars(fresh.MinimumNextBidCents)}.";
+            }
+        }
+    }
+
     private async Task BidAsync()
     {
         if (Format.ParseDollars(_amount) is not { } cents)
@@ -256,7 +287,7 @@ else
         if (result.Succeeded)
         {
             _pending = null;
-            _amount = "";
+            (_amount, _lastCode) = ("", null);
             (_bidAccepted, _bidMessage) = (true, result.Value!.YouLead == true ? "Bid placed. You are the highest bidder." : "Bid placed, but another bidder's maximum is higher.");
             await LoadAsync();
         }
@@ -268,7 +299,7 @@ else
                 _pending = null;
             }
 
-            (_bidAccepted, _bidMessage) = (false, result.Message);
+            (_bidAccepted, _bidMessage, _lastCode) = (false, result.Message, result.Problem!.Code);
         }
     }
 }

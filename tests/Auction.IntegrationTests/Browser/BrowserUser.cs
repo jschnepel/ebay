@@ -55,6 +55,9 @@ internal static partial class BrowserUser
         await page.GetByRole(AriaRole.Button, new() { Name = "Place bid" }).ClickAsync();
     }
 
+    /// <summary>On a fixed-step auction, bids the next step with the card's one button.</summary>
+    public static Task BidNextStepAsync(this IPage page) => page.GetByTestId("bid-next-step").ClickAsync();
+
     /// <summary>The directory row for <paramref name="title"/>, showing more pages until it appears.</summary>
     public static async Task<ILocator> DirectoryRowAsync(this IPage page, string title)
     {
