@@ -35,7 +35,7 @@ Prerequisites: OpenSSL 1.1.1 or newer and Docker with Compose v2 (on Windows, us
 ./run.sh
 ```
 
-Then open <http://localhost:8080>. The first run creates `deploy/.env` with a generated value for every secret, prints the admin password once and keeps the seeded accounts' passwords in `deploy/.demo-credentials` (both git-ignored). It builds the images, applies the migrations, adds the demo accounts and six active auctions, and waits until every service is healthy. Create your own account on the sign-in page with a display name and an email; sign in from a second browser as another user to bid against yourself. To see live bidding, run the simulator (below).
+Then open <http://localhost:8080>. The first run creates `deploy/.env` with a generated value for every secret and keeps the seeded accounts' passwords in `deploy/.demo-credentials` (both git-ignored). It builds the images, applies the migrations, adds the demo accounts and six active auctions, and waits until every service is healthy. Create your own account on the sign-in page with a display name and an email; sign in from a second browser as another user to bid against yourself. To see live bidding, run the simulator (below).
 
 The first run provisions separate API and engine certificates under `deploy/secrets/`. Each service pins its peer's certificate. Engine commands require the API identity and the account role for that operation. The certificates last one year. To rotate them, stop the stack, move the entire secrets directory to a protected backup location, and rerun `./run.sh` to provision both identities together.
 

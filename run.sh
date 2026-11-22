@@ -2,7 +2,7 @@
 # The one command: ./run.sh
 #
 # On the first run it creates deploy/.env from deploy/.env.example with a generated value for every
-# required secret, prints the admin password once and keeps it in deploy/.demo-credentials (both files
+# required secret and keeps the seeded accounts' passwords in deploy/.demo-credentials (both files
 # are git-ignored). Then it builds and starts the whole stack and waits until it is healthy.
 # Needs Docker with Compose v2 (on Windows, run it from Git Bash or WSL).
 set -eu
@@ -40,7 +40,7 @@ if [ ! -f "$env_file" ]; then
         echo "buyer@auction.test  $demo_password"
     } > "$credentials"
     echo "Created $env_file with generated secrets."
-    echo "Admin sign-in: admin@auction.test / $admin_password (kept in $credentials)"
+    echo "Demo sign-in credentials are in $credentials."
 fi
 
 # Secrets added after an existing .env was created are appended, so an older .env keeps working.
