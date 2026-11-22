@@ -119,6 +119,10 @@ else
         await Session.LoadAsync();
         if (_watching != Id)
         {
+            _pending = null;
+            _amount = "";
+            _bidMessage = null;
+            _busy = false;
             if (_watching is { } previous)
             {
                 await Live.UnwatchAsync(previous);
@@ -204,6 +208,11 @@ else
 
         _busy = true;
         var result = await Api.BidAsync(Id, cents, pending.Key);
+        if (_pending != pending)
+        {
+            return; // The bidder moved to another auction while the request was in flight.
+        }
+
         _busy = false;
         if (result.Succeeded)
         {
