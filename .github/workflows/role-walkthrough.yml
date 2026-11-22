@@ -125,7 +125,7 @@ jobs:
           dotnet build tests/Auction.IntegrationTests --no-restore -c Release
           pwsh tests/Auction.IntegrationTests/bin/Release/net10.0/playwright.ps1 install --with-deps chromium
       - name: Test the upload API and seller photo controls
-        run: dotnet test --project tests/Auction.IntegrationTests --no-build -c Release --report-trx --results-directory "$RUNNER_TEMP/photo-results" -- --filter-class '*Image*Tests'
+        run: dotnet test --project tests/Auction.IntegrationTests --no-build -c Release --report-trx --results-directory "$RUNNER_TEMP/photo-results" -- --filter-class '*Image*'
       - name: Record individual outcomes
         if: always()
         shell: bash
