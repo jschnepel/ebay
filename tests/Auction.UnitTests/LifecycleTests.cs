@@ -253,9 +253,9 @@ public sealed class LifecycleTests
         var fresh = Active(Terms());
         var withBid = WithBids(fresh, (A, 10m));
 
-        Assert.Equal(AuctionStatus.Cancelled, Lifecycle.CancelByOwner(fresh, Seller).State.Status); // control
-        Assert.Equal(LifecycleError.HasBids, Lifecycle.CancelByOwner(withBid, Seller).Error);
-        Assert.Equal(LifecycleError.NotOwner, Lifecycle.CancelByOwner(fresh, A).Error);
+        Assert.Equal(AuctionStatus.Cancelled, Lifecycle.CancelByOwner(fresh, Seller, End.AddTicks(-1)).State.Status);
+        Assert.Equal(LifecycleError.HasBids, Lifecycle.CancelByOwner(withBid, Seller, During).Error);
+        Assert.Equal(LifecycleError.NotOwner, Lifecycle.CancelByOwner(fresh, A, During).Error);
     }
 
     [Theory]
@@ -266,7 +266,30 @@ public sealed class LifecycleTests
     {
         var state = Active(Terms()) with { Status = status };
 
-        Assert.Equal(LifecycleError.InvalidState, Lifecycle.CancelByOwner(state, Seller).Error);
+        Assert.Equal(LifecycleError.InvalidState, Lifecycle.CancelByOwner(state, Seller, During).Error);
+    }
+
+    [Theory]
+    [InlineData(AuctionStatus.Scheduled, 0)]
+    [InlineData(AuctionStatus.Scheduled, 200)]
+    [InlineData(AuctionStatus.Active, 0)]
+    [InlineData(AuctionStatus.Active, 200)]
+    public void An_expired_empty_auction_closes_without_bids_even_if_the_owner_cancels_first(AuctionStatus status, int millisecondsAfterEnd)
+    {
+        var state = Active(Terms()) with { Status = status };
+        var now = End.AddMilliseconds(millisecondsAfterEnd);
+
+        var cancelFirst = Lifecycle.CancelByOwner(state, Seller, now);
+        Assert.Equal(LifecycleError.InvalidState, cancelFirst.Error);
+        Assert.Same(state, cancelFirst.State);
+        var closed = Lifecycle.Close(cancelFirst.State, now).State;
+        Assert.Equal(CloseOutcome.NoBids, closed.Outcome);
+
+        var closeFirst = Lifecycle.Close(state, now).State;
+        var lateCancel = Lifecycle.CancelByOwner(closeFirst, Seller, now);
+        Assert.Equal(LifecycleError.InvalidState, lateCancel.Error);
+        Assert.Same(closeFirst, lateCancel.State);
+        Assert.Equal(closed, lateCancel.State);
     }
 
     [Theory]
@@ -277,7 +300,7 @@ public sealed class LifecycleTests
     {
         var state = WithBids(Active(Terms()), (A, 50m)) with { Status = status };
 
-        var result = Lifecycle.CancelByAdmin(state);
+        var result = Lifecycle.CancelByAdmin(state, End.AddTicks(-1));
 
         Assert.Equal(AuctionStatus.Cancelled, result.State.Status);
         Assert.Equal((state.CurrentPrice, state.LeaderId, state.AcceptedBidCount), (result.State.CurrentPrice, result.State.LeaderId, result.State.AcceptedBidCount));
@@ -292,7 +315,31 @@ public sealed class LifecycleTests
     {
         var state = Active(Terms()) with { Status = status };
 
-        Assert.Equal(LifecycleError.InvalidState, Lifecycle.CancelByAdmin(state).Error);
+        Assert.Equal(LifecycleError.InvalidState, Lifecycle.CancelByAdmin(state, During).Error);
+    }
+
+    [Theory]
+    [InlineData(AuctionStatus.Active, 0)]
+    [InlineData(AuctionStatus.Active, 200)]
+    [InlineData(AuctionStatus.Suspended, 0)]
+    [InlineData(AuctionStatus.Suspended, 200)]
+    public void An_expired_auction_with_a_winning_bid_sells_even_if_the_admin_cancels_first(AuctionStatus status, int millisecondsAfterEnd)
+    {
+        var state = WithBids(Active(Terms()), (A, 50m)) with { Status = status };
+        var now = End.AddMilliseconds(millisecondsAfterEnd);
+
+        var cancelFirst = Lifecycle.CancelByAdmin(state, now);
+        Assert.Equal(LifecycleError.InvalidState, cancelFirst.Error);
+        Assert.Same(state, cancelFirst.State);
+        var closed = Lifecycle.Close(cancelFirst.State, now).State;
+        Assert.Equal(CloseOutcome.Sold, closed.Outcome);
+        Assert.Equal(A, closed.LeaderId);
+
+        var closeFirst = Lifecycle.Close(state, now).State;
+        var lateCancel = Lifecycle.CancelByAdmin(closeFirst, now);
+        Assert.Equal(LifecycleError.InvalidState, lateCancel.Error);
+        Assert.Same(closeFirst, lateCancel.State);
+        Assert.Equal(closed, lateCancel.State);
     }
 
     [Fact]

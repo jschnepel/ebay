@@ -99,8 +99,8 @@ public static class Lifecycle
         return Ok(state with { Status = AuctionStatus.Closed, Outcome = DecideOutcome(state) });
     }
 
-    /// <summary>Owner-only, from Scheduled or Active, before any accepted bid.</summary>
-    public static LifecycleResult CancelByOwner(AuctionState state, UserId actorId)
+    /// <summary>The owner can cancel a scheduled or active auction before its deadline and first accepted bid.</summary>
+    public static LifecycleResult CancelByOwner(AuctionState state, UserId actorId, DateTimeOffset now)
     {
         ArgumentNullException.ThrowIfNull(state);
         if (actorId != state.SellerId)
@@ -108,7 +108,7 @@ public static class Lifecycle
             return Fail(state, LifecycleError.NotOwner);
         }
 
-        if (state.Status is not (AuctionStatus.Scheduled or AuctionStatus.Active))
+        if (state.Status is not (AuctionStatus.Scheduled or AuctionStatus.Active) || now >= state.Terms.EndsAt)
         {
             return Fail(state, LifecycleError.InvalidState);
         }
@@ -131,15 +131,18 @@ public static class Lifecycle
     }
 
     /// <summary>
-    /// Admin moderation: cancels a Scheduled, Active or Suspended auction, even after bids. The history,
+    /// Admin moderation: cancels a Scheduled, Active or Suspended auction before its deadline, even after bids. The history,
     /// price and leader stay as they were; there is no outcome and no winner.
     /// </summary>
-    public static LifecycleResult CancelByAdmin(AuctionState state)
+    public static LifecycleResult CancelByAdmin(AuctionState state, DateTimeOffset now)
     {
         ArgumentNullException.ThrowIfNull(state);
-        return state.Status is AuctionStatus.Scheduled or AuctionStatus.Active or AuctionStatus.Suspended
-            ? Ok(state with { Status = AuctionStatus.Cancelled })
-            : Fail(state, LifecycleError.InvalidState);
+        if (state.Status is not (AuctionStatus.Scheduled or AuctionStatus.Active or AuctionStatus.Suspended) || now >= state.Terms.EndsAt)
+        {
+            return Fail(state, LifecycleError.InvalidState);
+        }
+
+        return Ok(state with { Status = AuctionStatus.Cancelled });
     }
 
     /// <summary>Admin moderation: Active → Suspended. The end time is not extended.</summary>

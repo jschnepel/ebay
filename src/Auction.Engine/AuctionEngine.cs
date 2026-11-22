@@ -107,9 +107,9 @@ public sealed class AuctionEngine(NpgsqlDataSource dataSource, EngineOptions opt
                 : (CommandError.NotFound, (IReadOnlyList<NpgsqlBatchCommand>?)null)), cancellationToken);
 
     public Task<CommandOutcome> CancelAsync(CommandContext context, AuctionId auctionId, CancellationToken cancellationToken) =>
-        RunAsync(context, auctionId, RequestHash.Of("cancel", auctionId), (auction, _) =>
+        RunAsync(context, auctionId, RequestHash.Of("cancel", auctionId), (auction, now) =>
         {
-            var result = Lifecycle.CancelByOwner(auction.State, context.Actor);
+            var result = Lifecycle.CancelByOwner(auction.State, context.Actor, now);
             return result.Succeeded
                 ? Accept(auction, new AuctionChange(result.State, [], "auction.cancelled"))
                 : Refuse(auctionId, ToError(result.Error));
@@ -151,7 +151,7 @@ public sealed class AuctionEngine(NpgsqlDataSource dataSource, EngineOptions opt
 
     /// <summary>Admin: cancels a Scheduled, Active or Suspended auction, even after bids; the history stays.</summary>
     public Task<CommandOutcome> AdminCancelAsync(CommandContext context, AuctionId auctionId, string reason, CancellationToken cancellationToken) =>
-        ModerateAsync(context, auctionId, new Moderation("cancel", reason, (state, _) => Lifecycle.CancelByAdmin(state), "auction.cancelled"), cancellationToken);
+        ModerateAsync(context, auctionId, new Moderation("cancel", reason, Lifecycle.CancelByAdmin, "auction.cancelled"), cancellationToken);
 
     private Task<CommandOutcome> ModerateAsync(CommandContext context, AuctionId auctionId, Moderation moderation, CancellationToken cancellationToken)
     {

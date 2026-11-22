@@ -29,12 +29,14 @@ public sealed class CloseWorkerTests(SweepDatabase sweep) : IClassFixture<SweepD
     public async Task An_auction_with_no_bids_closes_as_no_bids_at_its_end()
     {
         var now = await _db.NowAsync();
-        var id = await ActiveAsync(_engine, UserId.New(), Terms(now, duration: TimeSpan.FromSeconds(2)));
+        var seller = UserId.New();
+        var id = await ActiveAsync(_engine, seller, Terms(now, duration: TimeSpan.FromSeconds(2)));
 
         await SweepAsync();
         Assert.Equal("active", await StatusAsync(id));
 
         await _db.WaitUntilAsync(now.AddSeconds(2.2));
+        Assert.Equal(CommandError.InvalidState, (await _engine.CancelAsync(As(seller), id, _ct)).Error);
         await SweepAsync();
 
         Assert.Equal(("closed", "no_bids"), (await StatusAsync(id), await OutcomeAsync(id)));
@@ -60,6 +62,8 @@ public sealed class CloseWorkerTests(SweepDatabase sweep) : IClassFixture<SweepD
         Assert.True((await BidAsync(_engine, bidder, id, bidCents)).Succeeded);
 
         await _db.WaitUntilAsync(now.AddSeconds(2.2));
+        var lateCancel = await _engine.AdminCancelAsync(As(UserId.New()), id, "Reviewing this listing", _ct);
+        Assert.Equal(CommandError.InvalidState, lateCancel.Error);
         await SweepAsync();
 
         Assert.Equal(("closed", outcome), (await StatusAsync(id), await OutcomeAsync(id)));
