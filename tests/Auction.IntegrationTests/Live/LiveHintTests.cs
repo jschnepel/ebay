@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net;
 using System.Threading.Channels;
 using Auction.IntegrationTests.Api;
@@ -67,7 +68,7 @@ public sealed class LiveHintTests(MigratedDatabase db)
     }
 
     [Fact]
-    public async Task An_event_left_unpublished_by_a_stopped_relay_is_published_when_a_relay_runs()
+    public async Task A_bid_event_marked_pending_again_sends_the_same_version_twice()
     {
         var api = await db.ApiAsync();
         var seller = await api.SignUpAsync();
@@ -83,23 +84,15 @@ public sealed class LiveHintTests(MigratedDatabase db)
         var version = (await api.Anonymous().GetJsonAsync($"/api/v1/auctions/{id}")).GetProperty("version").GetInt64();
         Assert.Equal(version, (await watcher.NextForAsync(id, Bound, minimumVersion: version)).Version);
 
-        // As if the relay had sent nothing and stopped before stamping it.
-        await db.ExecuteAsync(
-            MigratedDatabase.Api, "UPDATE outbox_events SET published_at = NULL WHERE auction_id = $1 AND auction_version = $2", id, version);
+        // Receiving the hint can precede the relay's write. Finish the first publication before simulating a lost stamp.
+        await WaitForPublicationAsync(id, version);
+        var reset = await db.ExecuteAsync(MigratedDatabase.Api,
+            "UPDATE outbox_events SET published_at = NULL WHERE auction_id = $1 AND auction_version = $2 AND published_at IS NOT NULL", id, version);
+        Assert.Equal(1, reset);
 
         Assert.Equal(version, (await watcher.NextForAsync(id, Bound, minimumVersion: version)).Version);
 
-        // The relay stamps an event just after sending it.
-        var deadline = DateTime.UtcNow + Bound;
-        DateTime? stamped;
-        do
-        {
-            stamped = await db.ScalarAsync<DateTime?>(
-                MigratedDatabase.Migrator, "SELECT published_at FROM outbox_events WHERE auction_id = $1 AND auction_version = $2", id, version);
-        }
-        while (stamped is null && DateTime.UtcNow < deadline);
-
-        Assert.NotNull(stamped);
+        await WaitForPublicationAsync(id, version);
     }
 
     [Theory]
@@ -118,6 +111,17 @@ public sealed class LiveHintTests(MigratedDatabase db)
 
         await refused.AssertProblemAsync(HttpStatusCode.Forbidden, "foreign_origin");
         Assert.Equal(HttpStatusCode.OK, accepted.StatusCode);
+    }
+
+    private async Task WaitForPublicationAsync(Guid auctionId, long version)
+    {
+        var clock = Stopwatch.StartNew();
+        while (await db.ScalarAsync<DateTime?>(MigratedDatabase.Migrator,
+            "SELECT published_at FROM outbox_events WHERE auction_id = $1 AND auction_version = $2", auctionId, version) is null)
+        {
+            Assert.True(clock.Elapsed < Bound, $"The relay did not stamp auction {auctionId}, version {version}, within {Bound.TotalSeconds} seconds.");
+            await Task.Delay(25, TestContext.Current.CancellationToken);
+        }
     }
 
     private static async Task<long> InsertEventAsync(Npgsql.NpgsqlConnection connection, Guid auctionId, long version)
