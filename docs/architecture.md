@@ -171,6 +171,7 @@ src/
   Auction.Web/         Blazor WebAssembly + MudBlazor: Buy, Sell and Admin areas
   Auction.Migrator/    EF Core schema model and migrations (with triggers and grants), one-shot runner, demo seed; later reset-demo
   Auction.Simulator/   CLI virtual users over the public API (smoke, realistic, hot-burst), then the verifier; `serve` runs the admin area's control endpoint
+                       and, in the demo, the always-on live marketplace (Live/, with its photo catalogue in Catalogue/)
   Auction.Verifier/    read-only invariant checker using the reference model
 tests/
   Auction.ReferenceModel/   naive auction rules shared by the verifier and property tests (no engine code)
@@ -199,7 +200,8 @@ All tables live in the `auction` schema, owned by the `migrator` role. Money is 
 | `notifications` | Outbid and closing notices per user | The `api` role may only set `read_at` | engine; read state by the API |
 | `admin_audit` | Every admin action with its reason | | engine |
 | `user_limits` | Per-user draft and publish counters, locked `FOR UPDATE` | | engine |
-| `users` | Accounts: display name, email, kind (self-registered, seeded, simulator, admin), password hash | Email unique ignoring letter case; every kind but self-registered must have a password hash. Only the `api` role can read it, so no other role sees an email | api (insert only) |
+| `users` | Accounts: display name, email, kind (self-registered, visitor admin, seeded, simulator, admin), password hash | Email unique ignoring letter case; every kind but the two visitors create (self-registered and visitor admin, demo only) must have a password hash. Only the `api` role can read it, so no other role sees an email | api (insert only) |
+| `demo_resets` | Demo resets (ADM-04): requested (by an admin's display name, cleared when done) or scheduled, and when each completed | At most one waits at a time (a partial unique index); the `api` role may only insert a request and read | migrator (the demo-clock) |
 
 Session tables arrive with step 12 and image tables with step 13; each comes with its own grants and tests.
 
@@ -283,6 +285,8 @@ Each package is pinned in `Directory.Packages.props` and locked by the lock file
 
 - **Local / review:** `./run.sh` creates `deploy/.env` with generated secrets if it's missing, then runs `docker compose -f deploy/compose.yaml up` for all services on one host and waits until they're healthy. The migrator adds the demo seed (an admin, a demo seller and buyer, six active auctions) once, to an empty database. Every published port binds to 127.0.0.1 only.
 - **Simulator control (ADM-02):** the `simulator-control` service runs `simulator serve`, with no published port. Only the API calls it, with a bearer token from `.env` (`SIMULATOR_CONTROL_TOKEN`). It and the CLI's `simulator` service share the `simulator-lock` volume, so both see the one run lock.
+- **Live marketplace (SIM-02):** with `LIVE_SIMULATION=true` (the demo), `simulator serve` also keeps about 40 photographed listings live from 24 simulated sellers while the 50 simulated bidders bid on every active auction. Each cycle it reads the site through the public API rather than trusting memory, so it replaces cancelled listings, skips disabled accounts and sellers at their daily limit, and signs in again and refills after a reset. A short run takes the run lock from it and gives it back afterwards; an admin's pause lasts at most 30 minutes. The verifier checks everything since it started every five minutes.
+- **Demo reset (ADM-04):** the `demo-clock` service (the migrator image, `migrator demo-clock`) runs `reset-demo` every day at `DEMO_RESET_AT_UTC` and whenever an admin's request waits in `demo_resets` (the API may only insert and read there), then clears Redis, which holds only caches, so no removed session stays valid. Its health check reads a heartbeat file it touches on every check.
 - **Telemetry (OBS-01):** with `OTEL_EXPORTER_OTLP_ENDPOINT` set, the API and engine export traces, metrics and logs over OTLP. A bid's trace runs from the API request through the gRPC call to the engine's `auction.transaction` span and its queries. The outbox relay's publish batches are spans too. The `observability` profile adds the standalone Aspire dashboard (UI on 127.0.0.1:18888). Without the endpoint, nothing is registered.
 - **Live (HOST-02, Should):** the same containers on a home server behind the portfolio site's reverse proxy; TLS terminates at that proxy.
 

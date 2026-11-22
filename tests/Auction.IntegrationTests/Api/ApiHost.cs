@@ -52,13 +52,13 @@ public sealed class ApiHost(string connectionString, Uri engineAddress, bool dem
         ["Api:RateLimits:WritesPerUserPerMinute"] = "100000",
     };
 
-    /// <summary>A new self-registered user, signed in on their own client.</summary>
-    public async Task<ApiUser> SignUpAsync(string? displayName = null)
+    /// <summary>A new self-registered account, signed in on its own client: a user, or with role "admin" a visitor admin.</summary>
+    public async Task<ApiUser> SignUpAsync(string? displayName = null, string? role = null)
     {
         var http = Anonymous();
         var email = $"{Guid.NewGuid():N}@example.test";
         using var response = await http.PostAsJsonAsync(
-            "/api/v1/account/sign-up", new { displayName = displayName ?? "Test user", email }, TestContext.Current.CancellationToken);
+            "/api/v1/account/sign-up", new { displayName = displayName ?? "Test user", email, role }, TestContext.Current.CancellationToken);
         Assert.Equal(System.Net.HttpStatusCode.Created, response.StatusCode);
         var account = await response.Content.ReadFromJsonAsync<JsonElement>(TestContext.Current.CancellationToken);
         return new ApiUser(http, account.GetProperty("id").GetGuid(), email);

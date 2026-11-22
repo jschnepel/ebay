@@ -43,7 +43,10 @@ else
                         <time class="muted nowrap" datetime="@entry.At.ToString("O")">@Format.Time(entry.At)</time>
                     </div>
                     <p class="audit-reason">@entry.Reason</p>
-                    <div class="id">@entry.TargetId</div>
+                    @if (entry.TargetId != Guid.Empty)
+                    {
+                        <div class="id">@entry.TargetId</div>
+                    }
                 </li>
             }
         </ol>
@@ -74,8 +77,8 @@ else
     // Actions that take something away read red; the ones that give it back read green.
     private static string Tone(string action) => action switch
     {
-        "suspend" or "cancel" or "disable" => "is-off",
-        "resume" or "enable" => "is-live",
+        "suspend" or "cancel" or "disable" or "live_marketplace_paused" => "is-off",
+        "resume" or "enable" or "live_marketplace_resumed" => "is-live",
         _ => "",
     };
 

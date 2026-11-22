@@ -27,7 +27,12 @@ public sealed class UiQualityTests(MigratedDatabase db, Browsers browsers)
                 .Select(v => $"{path}: {v.Id} ({v.Impact}) {string.Join(" | ", v.Nodes.Take(2).Select(n => n.Html))}"));
         }
 
-        await ScanAsync("/sign-in", "Create an account");
+        await ScanAsync("/sign-in", "New here?");
+        await page.OpenCreateAccountAsync();
+        await page.GetByText("Account type").WaitForAsync();
+        problems.AddRange((await page.RunAxe()).Violations
+            .Where(v => v.Impact is "serious" or "critical")
+            .Select(v => $"create account: {v.Id} ({v.Impact}) {string.Join(" | ", v.Nodes.Take(2).Select(n => n.Html))}"));
         await page.SignUpAsync("Accessible seller");
         var auction = await page.ListAndPublishAsync($"Axe item {Guid.NewGuid():N}"[..17], "5.00", "6.00");
         await ScanAsync("/", "Auctions");

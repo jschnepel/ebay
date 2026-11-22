@@ -4,6 +4,9 @@ namespace Auction.Migrator;
 
 internal static partial class MigratorLog
 {
+    [LoggerMessage(10, LogLevel.Information, "Demo clock idle: DEMO_MODE is off, so the demo is never reset")]
+    public static partial void DemoClockIdle(ILogger logger);
+
     [LoggerMessage(1, LogLevel.Error, "MIGRATOR_CONNECTION_STRING is not set")]
     public static partial void ConnectionStringMissing(ILogger logger);
 

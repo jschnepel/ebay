@@ -72,7 +72,7 @@ trap finish EXIT
 
 # A leftover stack from an interrupted run would make the tests start from someone else's data.
 compose down -v --remove-orphans >/dev/null 2>&1 || true
-compose up -d --build --wait api redis simulator-control
+compose up -d --build --wait api redis simulator-control demo-clock
 
 dotnet build tests/Auction.StackTests -c Release
 

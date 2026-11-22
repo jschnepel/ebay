@@ -1,8 +1,8 @@
 @inject AuctionApi Api
 
-@* Starts and stops a simulator profile; the page around it refreshes the state every second. *@
+@* The live marketplace and the short load runs; the page around it refreshes the state every second. *@
 <section class="panel mb-4" data-testid="simulator-panel">
-    <MudText Typo="Typo.h6" HtmlTag="h2">Load simulator</MudText>
+    <MudText Typo="Typo.h6" HtmlTag="h2">Simulator</MudText>
     @if (View is null)
     {
         <PageState State="ViewState.Loading" LoadingText="Asking the simulator…" />
@@ -14,31 +14,61 @@
     else
     {
         var run = View.Run;
-        <MudText Class="mb-2" data-testid="simulator-state">@StateText(run)</MudText>
-        @if (run is { State: "idle" })
+        @if (run?.Live is { } live)
         {
-            <div class="d-flex flex-wrap align-center gap-2">
-                <MudSelect T="string" @bind-Value="_profile" Label="Profile" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Style="min-width: 12rem">
-                    @foreach (var profile in View.Profiles)
-                    {
-                        <MudSelectItem Value="@profile">@profile</MudSelectItem>
-                    }
-                </MudSelect>
-                <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="_busy" OnClick="StartAsync">Start run</MudButton>
+            <div class="sim-block" data-testid="live-marketplace">
+                <h3 class="sim-heading">Live marketplace</h3>
+                <p class="sim-line" data-testid="live-state">@LiveText(live, run)</p>
+                @if (live.LastVerifiedAt is { } checkedAt)
+                {
+                    <p class="sim-line muted">
+                        Last integrity check @Format.Recent(checkedAt): @(live.LastVerifyPassed == true ? "every invariant held" : "it found a problem; see the simulator's log").
+                    </p>
+                }
+
+                @if (live.State == "running")
+                {
+                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" Disabled="_busy" OnClick="PauseLiveAsync">Pause for 30 minutes</MudButton>
+                }
+                else if (live.ResumesAt is not null)
+                {
+                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" Disabled="_busy" OnClick="ResumeLiveAsync">Resume now</MudButton>
+                }
             </div>
         }
-        else
-        {
-            <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Disabled="@(_busy || run?.State == "stopping")" OnClick="StopAsync">Stop run</MudButton>
-        }
 
-        @if (run?.Last is { } last)
-        {
-            <MudText Typo="Typo.body2" Class="mt-2" data-testid="simulator-last">
-                Last run: @last.Profile, @last.Accepted bids accepted, @(last.Passed ? "every invariant held" : $"failed: {last.Error}")@(last.StoppedEarly ? " (stopped early)" : "").
-                Finished at @Format.Recent(last.FinishedAt).
-            </MudText>
-        }
+        <div class="sim-block">
+            <h3 class="sim-heading">Load runs</h3>
+            <MudText Class="mb-2" data-testid="simulator-state">@StateText(run)</MudText>
+            @if (run is { State: "idle" })
+            {
+                <div class="d-flex flex-wrap align-center gap-2">
+                    <MudSelect T="string" @bind-Value="_profile" Label="Profile" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Style="min-width: 12rem">
+                        @foreach (var profile in View.Profiles)
+                        {
+                            <MudSelectItem Value="@profile">@profile</MudSelectItem>
+                        }
+                    </MudSelect>
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="_busy" OnClick="StartAsync">Start run</MudButton>
+                </div>
+                @if (run.Live is not null)
+                {
+                    <p class="sim-line muted mt-2">A run pauses the live marketplace while it uses the simulated accounts; it resumes afterwards.</p>
+                }
+            }
+            else
+            {
+                <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Disabled="@(_busy || run?.State == "stopping")" OnClick="StopAsync">Stop run</MudButton>
+            }
+
+            @if (run?.Last is { } last)
+            {
+                <MudText Typo="Typo.body2" Class="mt-2" data-testid="simulator-last">
+                    Last run: @last.Profile, @last.Accepted bids accepted, @(last.Passed ? "every invariant held" : $"failed: {last.Error}")@(last.StoppedEarly ? " (stopped early)" : "").
+                    Finished at @Format.Recent(last.FinishedAt).
+                </MudText>
+            }
+        </div>
     }
 
     @if (_message is not null)
@@ -66,9 +96,24 @@
         _ => "Idle.",
     };
 
+    private static string LiveText(SimulatorLive live, SimulatorRun run) => live switch
+    {
+        { State: "running" } => $"Running{Since(live)}: {live.ListingsLive} {Format.Noun(live.ListingsLive, "listing", "listings")} live, "
+            + $"{live.BidsAccepted:N0} {Format.Noun(live.BidsAccepted, "bid", "bids")} so far.",
+        { ResumesAt: { } resumesAt } => $"Paused until {Format.Time(resumesAt)}; it resumes on its own.",
+        _ when run.State != "idle" => $"Paused while the {run.Profile} run uses the simulated accounts.",
+        _ => "Starting…",
+    };
+
+    private static string Since(SimulatorLive live) => live.Since is { } since ? $" since {Format.Time(since)}" : "";
+
     private Task StartAsync() => SendAsync(() => Api.StartSimulatorAsync(_profile));
 
     private Task StopAsync() => SendAsync(Api.StopSimulatorAsync);
+
+    private Task PauseLiveAsync() => SendAsync(Api.PauseLiveAsync);
+
+    private Task ResumeLiveAsync() => SendAsync(Api.ResumeLiveAsync);
 
     private async Task SendAsync(Func<Task<ApiResult<SimulatorRun>>> send)
     {

@@ -261,3 +261,18 @@ public sealed class GlobalQuotaRow
 
     public long BytesUsed { get; set; }
 }
+
+/// <summary>
+/// A demo reset (ADM-04): requested by an admin (their display name, kept as text because the reset removes
+/// visitor accounts) or run on the daily schedule (no requester), and completed by the demo-clock.
+/// </summary>
+public sealed class DemoResetRow
+{
+    public Guid Id { get; set; }
+
+    public DateTimeOffset RequestedAt { get; set; }
+
+    public string? RequestedBy { get; set; }
+
+    public DateTimeOffset? CompletedAt { get; set; }
+}

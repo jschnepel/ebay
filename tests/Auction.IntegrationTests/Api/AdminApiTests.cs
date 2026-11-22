@@ -20,6 +20,7 @@ public sealed class AdminApiTests(MigratedDatabase db)
     [InlineData("/api/v1/admin/users")]
     [InlineData("/api/v1/admin/simulator")]
     [InlineData("/api/v1/admin/audit")]
+    [InlineData("/api/v1/admin/demo")]
     public async Task Admin_routes_are_not_found_for_anyone_but_an_admin(string route)
     {
         var api = await db.ApiAsync();
@@ -234,6 +235,40 @@ public sealed class AdminApiTests(MigratedDatabase db)
         Assert.False(view.GetProperty("available").GetBoolean());
         await start.AssertProblemAsync(HttpStatusCode.ServiceUnavailable, "simulator_unavailable");
         await stop.AssertProblemAsync(HttpStatusCode.ServiceUnavailable, "simulator_unavailable");
+    }
+
+    [Fact]
+    public async Task An_admin_asks_for_a_demo_reset_once_and_a_second_request_waits_for_the_first()
+    {
+        await db.ExecuteAsync(MigratedDatabase.Migrator, "DELETE FROM demo_resets");
+        var api = await db.ApiAsync();
+        var admin = await api.SignUpAsync("Visiting admin", role: "admin");
+        var user = await api.SignUpAsync();
+
+        using var notAdmin = await user.Http.PostAsJsonAsync("/api/v1/admin/demo/reset", new { }, Ct);
+        using var first = await admin.Http.PostAsJsonAsync("/api/v1/admin/demo/reset", new { }, Ct);
+        using var second = await admin.Http.PostAsJsonAsync("/api/v1/admin/demo/reset", new { }, Ct);
+        var state = await admin.Http.GetJsonAsync("/api/v1/admin/demo");
+
+        Assert.Equal((HttpStatusCode.NotFound, HttpStatusCode.Accepted), (notAdmin.StatusCode, first.StatusCode));
+        await second.AssertProblemAsync(HttpStatusCode.Conflict, "reset_pending");
+        Assert.Equal("Visiting admin", await db.ScalarAsync<string>(MigratedDatabase.Migrator, "SELECT requested_by FROM demo_resets WHERE completed_at IS NULL"));
+        Assert.True(state.GetProperty("resetPending").GetBoolean());
+        var next = state.GetProperty("nextScheduledAt").GetDateTimeOffset();
+        Assert.InRange(next, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddDays(1));
+        Assert.Equal(TimeSpan.FromHours(9), next.UtcDateTime.TimeOfDay);
+        await db.ExecuteAsync(MigratedDatabase.Migrator, "DELETE FROM demo_resets");
+    }
+
+    [Fact]
+    public async Task Outside_demo_mode_there_is_no_demo_reset()
+    {
+        var api = await db.ApiAsync(demoMode: false);
+        var admin = await AdminAsync(api);
+
+        using var reset = await admin.PostAsJsonAsync("/api/v1/admin/demo/reset", new { }, Ct);
+
+        Assert.Equal(HttpStatusCode.NotFound, reset.StatusCode);
     }
 
     private static Task<HttpResponseMessage> ModerateAsync(HttpClient admin, Guid id, string action, string reason) =>

@@ -6,7 +6,7 @@ namespace Auction.StackTests;
 [Collection(StackRuns.Name)]
 public sealed class ContainerTests(StackUnderTest stack)
 {
-    private static readonly string[] LongRunning = ["postgres", "redis", "engine", "api", "simulator-control"];
+    private static readonly string[] LongRunning = ["postgres", "redis", "engine", "api", "simulator-control", "demo-clock"];
 
     [Fact]
     public async Task Every_service_is_running_and_healthy_and_the_migrator_finished_cleanly()
@@ -28,6 +28,7 @@ public sealed class ContainerTests(StackUnderTest stack)
     [InlineData("engine")]
     [InlineData("migrator")]
     [InlineData("simulator-control")]
+    [InlineData("demo-clock")]
     public async Task An_application_container_runs_as_a_user_other_than_root(string service)
     {
         var user = (await StackUnderTest.DockerAsync("inspect", "--format", "{{.Config.User}}", await stack.ContainerOfAsync(service))).Trim();
@@ -52,7 +53,7 @@ public sealed class ContainerTests(StackUnderTest stack)
         foreach (var service in LongRunning)
         {
             var bindings = await HostBindingsAsync(service);
-            if (service is "engine" or "simulator-control")
+            if (service is "engine" or "simulator-control" or "demo-clock")
             {
                 Assert.Empty(bindings);
             }

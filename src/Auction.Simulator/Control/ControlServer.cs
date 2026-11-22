@@ -10,12 +10,16 @@ namespace Auction.Simulator.Control;
 
 /// <summary>
 /// <c>simulator serve</c>: the control endpoint the API calls to start and stop runs for the admin area
-/// (ADM-02). It listens on the internal network only, and every route but <c>/health</c> needs the shared
-/// token as a bearer token; without it the answer is 401.
+/// (ADM-02), and to pause and resume the live marketplace. It listens on the internal network only, and every
+/// route but <c>/health</c> needs the shared token as a bearer token; without it the answer is 401. With
+/// LIVE_SIMULATION=true the live marketplace starts with the service.
 /// </summary>
 public static class ControlServer
 {
     public const string TokenVariable = "SIMULATOR_CONTROL_TOKEN";
+
+    /// <summary>How long an admin's pause of the live marketplace lasts before it resumes on its own.</summary>
+    public static readonly TimeSpan LivePause = TimeSpan.FromMinutes(30);
 
     /// <summary>The shortest token accepted, so a placeholder can't protect the endpoint by accident.</summary>
     public const int MinTokenLength = 16;
@@ -39,7 +43,10 @@ public static class ControlServer
         }
 
         var settings = new ControlSettings(
-            site, Environment.GetEnvironmentVariable("SIMULATOR_PASSWORD") ?? "", token, Environment.GetEnvironmentVariable("VERIFIER_CONNECTION_STRING"));
+            site, Environment.GetEnvironmentVariable("SIMULATOR_PASSWORD") ?? "", token, Environment.GetEnvironmentVariable("VERIFIER_CONNECTION_STRING"))
+        {
+            StartLive = string.Equals(Environment.GetEnvironmentVariable("LIVE_SIMULATION"), "true", StringComparison.OrdinalIgnoreCase),
+        };
         await using var app = Build(settings, args);
         await app.RunAsync();
         return 0;
@@ -55,6 +62,7 @@ public static class ControlServer
         var builder = WebApplication.CreateBuilder(args);
         builder.Logging.ClearProviders().AddJsonConsole();
         builder.Services.AddSingleton(settings);
+        builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddSingleton<RunHost>();
         builder.Services.AddProblemDetails();
 
@@ -66,6 +74,18 @@ public static class ControlServer
         runs.MapDelete("/current", (RunHost host) => host.Stop()
             ? (IResult)TypedResults.Accepted("/runs/current", host.Status())
             : Problem(StatusCodes.Status409Conflict, "not_running", "No simulator run is in progress."));
+        var live = app.MapGroup("/live").AddEndpointFilter(RequireTokenAsync);
+        live.MapPost("", (RunHost host) => host.StartLive()
+            ? (IResult)TypedResults.Accepted("/runs/current", host.Status())
+            : Problem(StatusCodes.Status409Conflict, "live_unavailable", "The live marketplace can't start."));
+        live.MapDelete("", (RunHost host) => host.PauseLive(LivePause)
+            ? (IResult)TypedResults.Accepted("/runs/current", host.Status())
+            : Problem(StatusCodes.Status409Conflict, "live_not_running", "The live marketplace isn't running."));
+        if (settings.StartLive)
+        {
+            app.Services.GetRequiredService<RunHost>().StartLive();
+        }
+
         return app;
     }
 

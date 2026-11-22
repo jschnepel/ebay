@@ -13,6 +13,9 @@ services:
   migrator:
     <<: *release
     image: ${IMAGE_REGISTRY:-ghcr.io/jschnepel}/auction-migrator:${IMAGE_TAG:?set IMAGE_TAG to the commit's image tag}
+  demo-clock:
+    <<: *release
+    image: ${IMAGE_REGISTRY:-ghcr.io/jschnepel}/auction-migrator:${IMAGE_TAG:?set IMAGE_TAG to the commit's image tag}
   engine:
     <<: *release
     image: ${IMAGE_REGISTRY:-ghcr.io/jschnepel}/auction-engine:${IMAGE_TAG:?set IMAGE_TAG to the commit's image tag}

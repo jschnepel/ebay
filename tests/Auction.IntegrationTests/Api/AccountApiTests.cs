@@ -58,6 +58,77 @@ public sealed class AccountApiTests(MigratedDatabase db)
         Assert.True(errors.TryGetProperty("email", out _));
     }
 
+    [Fact]
+    public async Task A_visitor_who_signs_up_as_admin_gets_the_admin_area_and_signs_back_in_with_the_email()
+    {
+        var api = await db.ApiAsync();
+        var admin = await api.SignUpAsync("Grace", role: "admin");
+
+        Assert.Equal("visitor_admin", (await admin.Http.GetJsonAsync("/api/v1/account/me")).GetProperty("kind").GetString());
+        Assert.Equal(HttpStatusCode.OK, await admin.Http.StatusOfGetAsync("/api/v1/admin/activity"));
+
+        using var signedOut = await admin.Http.PostAsync(new Uri("/api/v1/account/sign-out", UriKind.Relative), null, _ct);
+        var (http, response) = await api.SignInAsync(admin.Email);
+        using (response)
+        {
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        }
+
+        Assert.Equal(HttpStatusCode.OK, await http.StatusOfGetAsync("/api/v1/admin/activity"));
+    }
+
+    [Fact]
+    public async Task A_visitor_admin_cannot_bid_sell_or_upload()
+    {
+        var api = await db.ApiAsync();
+        var seller = await api.SignUpAsync();
+        var auction = await seller.PublishedAsync();
+        var admin = await api.SignUpAsync(role: "admin");
+
+        using var draft = await admin.Http.PostCommandAsync("/api/v1/auctions", ApiCalls.Terms());
+        using var bid = await admin.Http.BidAsync(auction, 10_000);
+        using var upload = await admin.Http.PostAsJsonAsync("/api/v1/images", TestImages.Upload(TestImages.Png(), "image/png"), _ct);
+
+        Assert.Equal(
+            (HttpStatusCode.Forbidden, HttpStatusCode.Forbidden, HttpStatusCode.Forbidden),
+            (draft.StatusCode, bid.StatusCode, upload.StatusCode));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("user")]
+    public async Task Sign_up_without_a_role_or_as_a_user_creates_a_user(string? role)
+    {
+        var api = await db.ApiAsync();
+        var user = await api.SignUpAsync(role: role);
+
+        Assert.Equal("self_registered", (await user.Http.GetJsonAsync("/api/v1/account/me")).GetProperty("kind").GetString());
+        Assert.Equal(HttpStatusCode.NotFound, await user.Http.StatusOfGetAsync("/api/v1/admin/activity"));
+    }
+
+    [Fact]
+    public async Task An_unknown_role_is_a_validation_error()
+    {
+        var api = await db.ApiAsync();
+
+        using var response = await api.Anonymous().PostAsJsonAsync(
+            "/api/v1/account/sign-up", new { displayName = "Eve", email = $"{Guid.NewGuid():N}@example.test", role = "owner" }, _ct);
+
+        await response.AssertProblemAsync(HttpStatusCode.UnprocessableEntity);
+        Assert.Equal("invalid", (await response.JsonAsync()).GetProperty("errors").GetProperty("role")[0].GetString());
+    }
+
+    [Fact]
+    public async Task Outside_demo_mode_no_role_can_be_chosen()
+    {
+        var hardened = await db.ApiAsync(demoMode: false);
+
+        using var response = await hardened.Anonymous().PostAsJsonAsync(
+            "/api/v1/account/sign-up", new { displayName = "Mallory", email = $"{Guid.NewGuid():N}@example.test", role = "admin" }, _ct);
+
+        await response.AssertProblemAsync(HttpStatusCode.Forbidden, "sign_up_closed");
+    }
+
     [Theory]
     [InlineData("seeded")]
     [InlineData("simulator")]

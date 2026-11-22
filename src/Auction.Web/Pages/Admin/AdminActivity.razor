@@ -74,6 +74,7 @@ else
 
         <div>
             <SimulatorPanel View="_simulator" Changed="RefreshAsync" />
+            <DemoResetPanel State="_demo" Changed="RefreshAsync" />
             <section class="panel">
                 <MudText Typo="Typo.h6" HtmlTag="h2">Response times, last 5 minutes</MudText>
                 @if (_kpis is { } kpis)
@@ -109,6 +110,7 @@ else
     private AdminHealth? _health;
     private AdminKpis? _kpis;
     private SimulatorView? _simulator;
+    private DemoState? _demo;
     private bool _forbidden;
 
     protected override async Task OnInitializedAsync()
@@ -129,7 +131,8 @@ else
         ShowAsync(Api.AdminActivityAsync(), value => _activity = value),
         ShowAsync(Api.AdminHealthAsync(), value => _health = value),
         ShowAsync(Api.AdminKpisAsync(), value => _kpis = value),
-        ShowAsync(Api.AdminSimulatorAsync(), value => _simulator = value));
+        ShowAsync(Api.AdminSimulatorAsync(), value => _simulator = value),
+        ShowAsync(Api.DemoStateAsync(), value => _demo = value));
 
     private async Task ShowAsync<T>(Task<ApiResult<T>> call, Action<T> show)
     {

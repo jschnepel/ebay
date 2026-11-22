@@ -316,6 +316,37 @@ namespace Auction.Migrator.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Auction.Migrator.Schema.DemoResetRow", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("completed_at");
+
+                    b.Property<DateTimeOffset>("RequestedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("requested_at");
+
+                    b.Property<string>("RequestedBy")
+                        .HasColumnType("text")
+                        .HasColumnName("requested_by");
+
+                    b.HasKey("Id")
+                        .HasName("pk_demo_resets");
+
+                    b.HasIndex("CompletedAt")
+                        .HasDatabaseName("ix_demo_resets_completed_at");
+
+                    b.ToTable("demo_resets", "auction", t =>
+                        {
+                            t.HasCheckConstraint("ck_demo_resets_requested_by", "char_length(requested_by) BETWEEN 1 AND 50");
+                        });
+                });
+
             modelBuilder.Entity("Auction.Migrator.Schema.GlobalQuotaRow", b =>
                 {
                     b.Property<int>("Id")
@@ -755,9 +786,9 @@ namespace Auction.Migrator.Migrations
 
                             t.HasCheckConstraint("ck_users_email", "char_length(email) BETWEEN 3 AND 254");
 
-                            t.HasCheckConstraint("ck_users_kind", "kind IN ('self_registered', 'seeded', 'simulator', 'admin')");
+                            t.HasCheckConstraint("ck_users_kind", "kind IN ('self_registered', 'visitor_admin', 'seeded', 'simulator', 'admin')");
 
-                            t.HasCheckConstraint("ck_users_password", "kind = 'self_registered' OR password_hash IS NOT NULL");
+                            t.HasCheckConstraint("ck_users_password", "kind IN ('self_registered', 'visitor_admin') OR password_hash IS NOT NULL");
                         });
                 });
 

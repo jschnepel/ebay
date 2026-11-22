@@ -12,8 +12,18 @@ public sealed record SimulatorStartRequest(string? Profile);
 public sealed record SimulatorOutcome(
     Guid RunId, string Profile, DateTimeOffset StartedAt, DateTimeOffset FinishedAt, bool StoppedEarly, bool Passed, int Accepted, string? Error);
 
-/// <summary>The simulator's state: idle, running or stopping, the current run's progress, and the last outcome.</summary>
-public sealed record SimulatorRun(string State, Guid? RunId, string? Profile, DateTimeOffset? StartedAt, int Attempts, int Accepted, SimulatorOutcome? Last);
+/// <summary>The live marketplace: running or paused (until when, if an admin paused it), its size and its last check.</summary>
+public sealed record SimulatorLive(
+    string State, DateTimeOffset? Since, DateTimeOffset? ResumesAt, int ListingsLive, int BidsAccepted, DateTimeOffset? LastVerifiedAt, bool? LastVerifyPassed);
+
+/// <summary>
+/// The simulator's state: idle, running or stopping, the current run's progress, the last outcome, and the
+/// live marketplace (null where it isn't enabled).
+/// </summary>
+public sealed record SimulatorRun(string State, Guid? RunId, string? Profile, DateTimeOffset? StartedAt, int Attempts, int Accepted, SimulatorOutcome? Last)
+{
+    public SimulatorLive? Live { get; init; }
+}
 
 /// <summary>What the admin area shows: whether the simulator can be reached, the profiles an admin may start, and its state.</summary>
 public sealed record SimulatorView(bool Available, IReadOnlyList<string> Profiles, SimulatorRun? Run);
@@ -21,7 +31,8 @@ public sealed record SimulatorView(bool Available, IReadOnlyList<string> Profile
 /// <summary>
 /// Starts and stops simulator runs for the admin area (ADM-02) through the simulator's control endpoint on
 /// the internal network, with the shared token. Under DEMO_MODE only the smoke and realistic profiles may
-/// start. Each start and stop is audited like any other admin action.
+/// start. Each start and stop is audited like any other admin action, as is pausing or resuming the live
+/// marketplace (a pause lasts at most 30 minutes; the simulator then resumes it on its own).
 /// </summary>
 internal sealed class SimulatorControl(HttpClient http, ApiOptions options, NpgsqlDataSource database)
 {
@@ -66,12 +77,38 @@ internal sealed class SimulatorControl(HttpClient http, ApiOptions options, Npgs
         return await AnswerAsync(status, run, http, "simulator_stop", $"Stopped the {run?.Profile} profile");
     }
 
+    public async Task<IResult> PauseLiveAsync(HttpContext http)
+    {
+        var (status, run) = await SendAsync(HttpMethod.Delete, "live", null, http.RequestAborted);
+        return await LiveAnswerAsync(status, run, http, "live_marketplace_paused", "Paused the live marketplace for up to 30 minutes");
+    }
+
+    public async Task<IResult> ResumeLiveAsync(HttpContext http)
+    {
+        var (status, run) = await SendAsync(HttpMethod.Post, "live", null, http.RequestAborted);
+        return await LiveAnswerAsync(status, run, http, "live_marketplace_resumed", "Resumed the live marketplace");
+    }
+
+    private async Task<IResult> LiveAnswerAsync(HttpStatusCode status, SimulatorRun? run, HttpContext http, string action, string reason)
+    {
+        switch (status)
+        {
+            case HttpStatusCode.Accepted:
+                await AuditAsync(http.User.UserIdOf()!.Value.Value, action, "live_marketplace", Guid.Empty, reason, http.RequestAborted);
+                return TypedResults.Accepted((string?)null, run);
+            case HttpStatusCode.Conflict:
+                return Problems.Of(StatusCodes.Status409Conflict, "live_not_running", "The live marketplace isn't running.");
+            default:
+                return Problems.Of(StatusCodes.Status503ServiceUnavailable, "simulator_unavailable", "The simulator can't be reached.");
+        }
+    }
+
     private async Task<IResult> AnswerAsync(HttpStatusCode status, SimulatorRun? run, HttpContext http, string action, string reason)
     {
         switch (status)
         {
             case HttpStatusCode.Accepted when run?.RunId is { } runId:
-                await AuditAsync(http.User.UserIdOf()!.Value.Value, action, runId, reason, http.RequestAborted);
+                await AuditAsync(http.User.UserIdOf()!.Value.Value, action, "simulator_run", runId, reason, http.RequestAborted);
                 return TypedResults.Accepted((string?)null, run);
             case HttpStatusCode.Conflict when action == "simulator_start":
                 return Problems.Of(StatusCodes.Status409Conflict, "run_in_progress", "A simulator run is already in progress.");
@@ -108,13 +145,14 @@ internal sealed class SimulatorControl(HttpClient http, ApiOptions options, Npgs
         }
     }
 
-    private async Task AuditAsync(Guid adminId, string action, Guid runId, string reason, CancellationToken cancellationToken)
+    private async Task AuditAsync(Guid adminId, string action, string targetType, Guid targetId, string reason, CancellationToken cancellationToken)
     {
         await using var command = database.CreateCommand(
-            "INSERT INTO auction.admin_audit (admin_id, action, target_type, target_id, reason, at) VALUES ($1, $2, 'simulator_run', $3, $4, now())");
+            "INSERT INTO auction.admin_audit (admin_id, action, target_type, target_id, reason, at) VALUES ($1, $2, $3, $4, $5, now())");
         command.Parameters.Add(new() { Value = adminId });
         command.Parameters.Add(new() { Value = action });
-        command.Parameters.Add(new() { Value = runId });
+        command.Parameters.Add(new() { Value = targetType });
+        command.Parameters.Add(new() { Value = targetId });
         command.Parameters.Add(new() { Value = reason });
         await command.ExecuteNonQueryAsync(cancellationToken);
     }

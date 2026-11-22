@@ -7,7 +7,14 @@ namespace Auction.Api.Accounts;
 internal static class AccountKinds
 {
     public const string SelfRegistered = "self_registered";
+
+    /// <summary>An admin a visitor created for themself at sign-up; only under DEMO_MODE.</summary>
+    public const string VisitorAdmin = "visitor_admin";
+
     public const string Admin = "admin";
+
+    /// <summary>Accounts a visitor created at sign-up, which sign in with their email alone under DEMO_MODE.</summary>
+    public static bool IsVisitor(string kind) => kind is SelfRegistered or VisitorAdmin;
 }
 
 internal sealed record Account(UserId Id, string DisplayName, string Kind, string? PasswordHash, bool Disabled);
@@ -20,7 +27,7 @@ internal sealed class AccountStore(NpgsqlDataSource dataSource)
 
     // The unique index on normalized_email decides a race between two sign-ups for one email.
     private const string RegisterSql =
-        "INSERT INTO auction.users (id, email, normalized_email, display_name, kind) VALUES ($1, $2, $3, $4, 'self_registered') " +
+        "INSERT INTO auction.users (id, email, normalized_email, display_name, kind) VALUES ($1, $2, $3, $4, $5) " +
         "ON CONFLICT (normalized_email) DO NOTHING";
 
     // One transaction: the change and its audit row land together or not at all.
@@ -61,8 +68,8 @@ internal sealed class AccountStore(NpgsqlDataSource dataSource)
         return await command.ExecuteNonQueryAsync(cancellationToken) == 1;
     }
 
-    /// <summary>Creates a self-registered account, or returns null when the email is already taken.</summary>
-    public async Task<Account?> RegisterAsync(string email, string displayName, CancellationToken cancellationToken)
+    /// <summary>Creates a visitor's account of the given kind, or returns null when the email is already taken.</summary>
+    public async Task<Account?> RegisterAsync(string email, string displayName, string kind, CancellationToken cancellationToken)
     {
         var id = UserId.New();
         await using var command = dataSource.CreateCommand(RegisterSql);
@@ -70,8 +77,9 @@ internal sealed class AccountStore(NpgsqlDataSource dataSource)
         command.Parameters.Add(new NpgsqlParameter { Value = email.Trim() });
         command.Parameters.Add(new NpgsqlParameter { Value = Normalize(email) });
         command.Parameters.Add(new NpgsqlParameter { Value = displayName });
+        command.Parameters.Add(new NpgsqlParameter { Value = kind });
         return await command.ExecuteNonQueryAsync(cancellationToken) == 1
-            ? new Account(id, displayName, AccountKinds.SelfRegistered, null, false)
+            ? new Account(id, displayName, kind, null, false)
             : null;
     }
 }

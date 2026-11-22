@@ -22,7 +22,7 @@ public sealed record AdminHealth(IReadOnlyList<HealthItem> Components, long Outb
 public sealed record AdminKpiView(int WindowSeconds, LatencySummary ApiRequest, LatencySummary Bid, LatencySummary EngineCall, LatencySummary PublishLag);
 
 /// <summary>
-/// The admin area (UI-04, ADM-01, ADM-02, ADM-03). Every route answers 404 to anyone who isn't an admin, so its existence
+/// The admin area (UI-04, ADM-01, ADM-02, ADM-03, ADM-04). Every route answers 404 to anyone who isn't an admin, so its existence
 /// isn't revealed. Moderation goes to the engine with the admin as the actor and a required reason, which
 /// the engine audits; disabling a user is the API's own write, audited in the same transaction.
 /// </summary>
@@ -54,7 +54,27 @@ internal static class AdminEndpoints
             .Produces<SimulatorRun>(StatusCodes.Status202Accepted).ProducesProblem(StatusCodes.Status409Conflict).ProducesProblem(StatusCodes.Status503ServiceUnavailable);
         admin.MapDelete("/simulator/runs/current", (SimulatorControl simulator, HttpContext http) => simulator.StopAsync(http))
             .Produces<SimulatorRun>(StatusCodes.Status202Accepted).ProducesProblem(StatusCodes.Status409Conflict).ProducesProblem(StatusCodes.Status503ServiceUnavailable);
+        admin.MapPost("/simulator/live", (SimulatorControl simulator, HttpContext http) => simulator.ResumeLiveAsync(http))
+            .Produces<SimulatorRun>(StatusCodes.Status202Accepted).ProducesProblem(StatusCodes.Status409Conflict).ProducesProblem(StatusCodes.Status503ServiceUnavailable);
+        admin.MapDelete("/simulator/live", (SimulatorControl simulator, HttpContext http) => simulator.PauseLiveAsync(http))
+            .Produces<SimulatorRun>(StatusCodes.Status202Accepted).ProducesProblem(StatusCodes.Status409Conflict).ProducesProblem(StatusCodes.Status503ServiceUnavailable);
+        admin.MapGet("/demo", async (DemoResets resets, CancellationToken cancellationToken) => TypedResults.Ok(await resets.StateAsync(cancellationToken)))
+            .Produces<DemoState>();
+        admin.MapPost("/demo/reset", ResetDemoAsync).Produces<DemoState>(StatusCodes.Status202Accepted).ProducesProblem(StatusCodes.Status409Conflict);
         return api;
+    }
+
+    // Only the demo has resets; elsewhere the route doesn't exist.
+    private static async Task<IResult> ResetDemoAsync(HttpContext http, DemoResets resets, ApiOptions options)
+    {
+        if (!options.DemoMode)
+        {
+            return Problems.Of(StatusCodes.Status404NotFound, "not_found", "Not found.");
+        }
+
+        return await resets.RequestAsync(http.User.Identity?.Name ?? "Admin", http.RequestAborted)
+            ? TypedResults.Accepted((string?)null, await resets.StateAsync(http.RequestAborted))
+            : Problems.Of(StatusCodes.Status409Conflict, "reset_pending", "A reset is already on its way.");
     }
 
     private static async ValueTask<object?> AdminOnlyAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next) =>

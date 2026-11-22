@@ -32,4 +32,9 @@ public static class SimulatorAccounts
     public const string SellerEmail = "sim-seller@auction.test";
 
     public static string BidderEmail(int index) => $"sim-{index:000}@auction.test";
+
+    /// <summary>The live marketplace's sellers, seeded beside the short runs' single seller.</summary>
+    public const int LiveSellers = 24;
+
+    public static string LiveSellerEmail(int index) => $"sim-seller-{index:00}@auction.test";
 }

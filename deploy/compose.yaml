@@ -95,6 +95,8 @@ services:
       # The SignalR backplane (and, later, caches and rate limits). The API starts and bids work without it.
       ConnectionStrings__Redis: redis:6379,abortConnect=false
       Api__DemoMode: ${DEMO_MODE:-true}
+      # When the demo-clock resets the demo each day (UTC); the admin area shows the next one.
+      Api__DemoResetAtUtc: ${DEMO_RESET_AT_UTC:-09:00}
       # Behind the portfolio site's reverse proxy: the path it serves the app under, and the proxy's address.
       Api__PathBase: ${PATH_BASE:-}
       Api__TrustedProxies: ${TRUSTED_PROXIES:-}
@@ -158,6 +160,8 @@ services:
       BASE_URL: http://api:8080
       SIMULATOR_PASSWORD: ${SIMULATOR_PASSWORD:-}
       SIMULATOR_CONTROL_TOKEN: ${SIMULATOR_CONTROL_TOKEN:?set SIMULATOR_CONTROL_TOKEN in deploy/.env}
+      # The always-on live marketplace (listings with photos, simulated sellers and bidders) runs in the demo.
+      LIVE_SIMULATION: ${DEMO_MODE:-true}
       VERIFIER_CONNECTION_STRING: Host=postgres;Database=${POSTGRES_DB:-auction};Username=verifier;Password=${VERIFIER_DB_PASSWORD};GSS Encryption Mode=Disable
     volumes:
       - simulator-lock:/tmp
@@ -175,6 +179,38 @@ services:
       resources:
         limits:
           cpus: "1.0"
+          memory: 256m
+
+  # The demo's reset (ADM-04): reset-demo every day at DEMO_RESET_AT_UTC and whenever an admin asks from the
+  # Admin area, then a clear of Redis so nobody stays signed in on a removed session. It connects as the
+  # schema owner, like the migrator, and has no port. Outside DEMO_MODE it does nothing.
+  demo-clock:
+    build:
+      context: ..
+      dockerfile: src/Auction.Migrator/Dockerfile
+    command: ["demo-clock"]
+    environment:
+      MIGRATOR_CONNECTION_STRING: Host=postgres;Database=${POSTGRES_DB:-auction};Username=migrator;Password=${MIGRATOR_DB_PASSWORD};GSS Encryption Mode=Disable
+      REDIS_CONNECTION: redis:6379,abortConnect=false
+      DEMO_MODE: ${DEMO_MODE:-true}
+      DEMO_RESET_AT_UTC: ${DEMO_RESET_AT_UTC:-09:00}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      DEMO_PASSWORD: ${DEMO_PASSWORD:-}
+      SIMULATOR_PASSWORD: ${SIMULATOR_PASSWORD:-}
+    depends_on:
+      migrator:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "dotnet", "Auction.Migrator.dll", "demo-clock-health"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 20s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
           memory: 256m
 
   # Optional developer tool (OBS-01), off unless the "observability" profile is on: the standalone Aspire

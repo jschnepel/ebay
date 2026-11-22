@@ -119,6 +119,7 @@ public sealed class HostingTests(MigratedDatabase db, Browsers browsers)
         var page = await browsers.NewPageAsync(new Uri(address, "/projects/ebay/"));
 
         await page.GotoAsync("sign-in");
+        await page.OpenCreateAccountAsync();
         await page.GetByLabel("Display name").FillAsync("Under a path");
         await page.GetByLabel("Email for the new account").FillAsync($"{Guid.NewGuid():N}@example.test");
         await page.GetByRole(AriaRole.Button, new() { Name = "Create account" }).ClickAsync();
@@ -179,6 +180,27 @@ public sealed class ResetDemoTests(ResetDatabase reset) : IClassFixture<ResetDat
         Assert.Equal((0L, 0L, 6L), (first.SelfRegistered, first.Bids, first.ActiveAuctions));
         Assert.Equal(hashes, await db.ScalarAsync<string>(MigratedDatabase.Migrator, "SELECT string_agg(email || password_hash, ',' ORDER BY email) FROM users"));
         Assert.True(await db.ScalarAsync<bool>(MigratedDatabase.Migrator, "SELECT min(ends_at) > now() + interval '5 minutes' FROM auctions"));
+    }
+
+    [Fact]
+    public async Task Reset_removes_visitor_accounts_of_both_roles_and_reenables_seeded_and_simulator_accounts()
+    {
+        var db = reset.Db;
+        var connection = db.ConnectionStringFor(MigratedDatabase.Migrator);
+        await DemoSeed.RunAsync(connection, Passwords, TestContext.Current.CancellationToken);
+        await db.ExecuteAsync(
+            MigratedDatabase.Migrator,
+            """
+            INSERT INTO users (id, email, normalized_email, display_name, kind) VALUES
+                (gen_random_uuid(), 'user@example.test', 'USER@EXAMPLE.TEST', 'User', 'self_registered'),
+                (gen_random_uuid(), 'boss@example.test', 'BOSS@EXAMPLE.TEST', 'Boss', 'visitor_admin');
+            UPDATE users SET disabled_at = now() WHERE normalized_email IN ('SIM-001@AUCTION.TEST', 'BUYER@AUCTION.TEST');
+            """);
+
+        await DemoSeed.ResetAsync(connection, Passwords, TestContext.Current.CancellationToken);
+
+        Assert.Equal(0L, await db.ScalarAsync<long>(MigratedDatabase.Migrator, "SELECT count(*) FROM users WHERE kind IN ('self_registered', 'visitor_admin')"));
+        Assert.Equal(0L, await db.ScalarAsync<long>(MigratedDatabase.Migrator, "SELECT count(*) FROM users WHERE disabled_at IS NOT NULL"));
     }
 
     private static async Task<(long SelfRegistered, long Bids, long ActiveAuctions, string? Titles)> StateAsync(MigratedDatabase db) => (

@@ -52,7 +52,7 @@ for name in SIMULATOR_CONTROL_TOKEN; do
     fi
 done
 
-docker compose -f deploy/compose.yaml up -d --build --wait api redis simulator-control
+docker compose -f deploy/compose.yaml up -d --build --wait api redis simulator-control demo-clock
 
 # A PORT set in the shell wins over deploy/.env, as it does for Compose.
 port=${PORT:-$(sed -n 's/^PORT=\([0-9]*\).*/\1/p' "$env_file")}

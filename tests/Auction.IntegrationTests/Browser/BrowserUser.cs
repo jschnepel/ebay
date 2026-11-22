@@ -6,17 +6,26 @@ namespace Auction.IntegrationTests.Browser;
 /// <summary>The steps a person takes in the browser, written once so each journey reads as a story.</summary>
 internal static partial class BrowserUser
 {
-    /// <summary>Signs up a new demo account on the sign-in page, waits until the header shows it, and returns its email.</summary>
-    public static async Task<string> SignUpAsync(this IPage page, string displayName)
+    /// <summary>
+    /// Creates a new demo account from the sign-in page (as a user, or with <paramref name="role"/> "Admin" an
+    /// admin), waits until the header shows it, and returns its email.
+    /// </summary>
+    public static async Task<string> SignUpAsync(this IPage page, string displayName, string role = "User")
     {
         var email = $"{Guid.NewGuid():N}@example.test";
         await page.GotoAsync("/sign-in");
+        await page.OpenCreateAccountAsync();
         await page.GetByLabel("Display name").FillAsync(displayName);
         await page.GetByLabel("Email for the new account").FillAsync(email);
+        await page.GetByRole(AriaRole.Radio, new() { Name = role }).CheckAsync();
         await page.GetByRole(AriaRole.Button, new() { Name = "Create account" }).ClickAsync();
         await Assertions.Expect(page.GetByTestId("signed-in-as")).ToHaveTextAsync(displayName);
         return email;
     }
+
+    /// <summary>On the sign-in page, switches from signing in to creating an account.</summary>
+    public static Task OpenCreateAccountAsync(this IPage page) =>
+        page.GetByRole(AriaRole.Button, new() { Name = "Create account" }).ClickAsync();
 
     /// <summary>Lists an item from the Sell area and publishes it; returns the auction's page path.</summary>
     public static async Task<string> ListAndPublishAsync(this IPage page, string title, string openingDollars, string reserveDollars)

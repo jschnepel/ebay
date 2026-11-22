@@ -18,6 +18,11 @@ public sealed record DemoSeedOptions(string AdminPassword, string DemoPassword, 
     public const string SimulatorSellerEmail = "sim-seller@auction.test";
 
     public static string SimulatorBidderEmail(int index) => string.Create(System.Globalization.CultureInfo.InvariantCulture, $"sim-{index:000}@auction.test");
+
+    /// <summary>The live marketplace's sellers (sim-seller-01 to sim-seller-24), reserved for the simulator like the rest.</summary>
+    public const int SimulatorLiveSellers = 24;
+
+    public static string SimulatorLiveSellerEmail(int index) => string.Create(System.Globalization.CultureInfo.InvariantCulture, $"sim-seller-{index:00}@auction.test");
 }
 
 /// <summary>What one seed run added; zero everywhere when the data was already there.</summary>
@@ -98,14 +103,16 @@ public static class DemoSeed
         return new DemoSeedResult(accounts, auctions);
     }
 
-    // Everything visitors made goes; the seeded, simulator and admin accounts (and their passwords) stay.
+    // Everything visitors made goes, their accounts of both roles too; the seeded, simulator and admin accounts
+    // (and their passwords) stay, enabled again if an admin had disabled them.
     // TRUNCATE doesn't fire the append-only and frozen-image triggers, and only the schema owner may run it.
     private const string ResetSql = """
         TRUNCATE auction.bids, auction.proxy_maxima, auction.idempotency_records, auction.outbox_events, auction.notifications,
                  auction.admin_audit, auction.auction_images, auction.image_blobs, auction.upload_quotas, auction.sessions,
                  auction.user_limits, auction.auctions;
         UPDATE auction.global_quota SET bytes_used = 0 WHERE id = 1;
-        DELETE FROM auction.users WHERE kind = 'self_registered';
+        DELETE FROM auction.users WHERE kind IN ('self_registered', 'visitor_admin');
+        UPDATE auction.users SET disabled_at = NULL WHERE disabled_at IS NOT NULL;
         """;
 
     /// <summary>
@@ -130,6 +137,13 @@ public static class DemoSeed
         return await RunAsync(connectionString, options, cancellationToken);
     }
 
+    private static readonly string[] LiveSellerNames =
+    [
+        "Maya R.", "Owen T.", "Priya K.", "Lucas M.", "Hana S.", "Diego F.", "Amara O.", "Felix B.",
+        "Sofia L.", "Kenji W.", "Nadia H.", "Theo G.", "Zara P.", "Mateo C.", "Ines D.", "Arjun V.",
+        "Clara N.", "Samir A.", "Elena J.", "Noah E.", "Leila Q.", "Marcus Y.", "Ruth I.", "Tomas Z.",
+    ];
+
     private static IEnumerable<(string Email, string Name, string Kind, string Password)> Accounts(DemoSeedOptions options)
     {
         yield return (DemoSeedOptions.AdminEmail, "Admin", "admin", options.AdminPassword);
@@ -141,6 +155,12 @@ public static class DemoSeed
         }
 
         yield return (DemoSeedOptions.SimulatorSellerEmail, "Simulated seller", "simulator", simulator);
+        for (var i = 1; i <= DemoSeedOptions.SimulatorLiveSellers; i++)
+        {
+            // A person-like name for the live marketplace, still labelled as simulated wherever it appears (SIM-02).
+            yield return (DemoSeedOptions.SimulatorLiveSellerEmail(i), $"{LiveSellerNames[i - 1]} (simulated)", "simulator", simulator);
+        }
+
         for (var i = 1; i <= DemoSeedOptions.SimulatorBidders; i++)
         {
             yield return (DemoSeedOptions.SimulatorBidderEmail(i), string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Simulated bidder {i:00}"), "simulator", simulator);

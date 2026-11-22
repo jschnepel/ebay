@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Npgsql;
 
@@ -63,6 +64,8 @@ internal static class ApiHosting
         builder.Services.AddSingleton<AdminReader>();
         builder.Services.AddSingleton<RedisHealth>();
         builder.Services.AddHttpClient<SimulatorControl>(SimulatorControl.Configure);
+        builder.Services.AddSingleton<DemoResets>();
+        builder.Services.TryAddSingleton(TimeProvider.System);
         builder.Services.AddSingleton<Presence>();
         builder.Services.AddHostedService(services => services.GetRequiredService<Presence>());
 

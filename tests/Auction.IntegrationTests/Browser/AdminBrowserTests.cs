@@ -15,6 +15,58 @@ public sealed class AdminBrowserTests(MigratedDatabase db, Browsers browsers)
     private const string Password = "admin-browser-password";
 
     [Fact]
+    public async Task A_visitor_creating_an_admin_account_lands_in_the_admin_area_without_buy_or_sell()
+    {
+        var site = await Browsers.SiteAsync(db);
+        var page = await browsers.NewPageAsync(site);
+
+        await page.SignUpAsync("Visiting admin", role: "Admin");
+
+        await page.WaitForURLAsync(new System.Text.RegularExpressions.Regex("/admin$"));
+        await Assertions.Expect(page.GetByRole(AriaRole.Link, new() { Name = "Activity" })).ToBeVisibleAsync();
+        await Assertions.Expect(page.GetByRole(AriaRole.Link, new() { Name = "Sell" })).ToHaveCountAsync(0);
+        await Assertions.Expect(page.GetByRole(AriaRole.Link, new() { Name = "My bids" })).ToHaveCountAsync(0);
+    }
+
+    [Fact]
+    public async Task An_admin_asks_for_a_demo_reset_only_after_confirming()
+    {
+        await db.ExecuteAsync(MigratedDatabase.Migrator, "DELETE FROM demo_resets");
+        var site = await Browsers.SiteAsync(db);
+        var page = await browsers.NewPageAsync(site);
+        await page.SignUpAsync("Resetting admin", role: "Admin");
+        await page.WaitForURLAsync(new System.Text.RegularExpressions.Regex("/admin$"));
+        var panel = page.GetByTestId("demo-reset-panel");
+        await Assertions.Expect(panel).ToContainTextAsync("every day");
+
+        await panel.GetByRole(AriaRole.Button, new() { Name = "Reset demo now" }).ClickAsync();
+        await page.GetByRole(AriaRole.Button, new() { Name = "Cancel" }).ClickAsync();
+        Assert.Equal(0L, await db.ScalarAsync<long>(MigratedDatabase.Migrator, "SELECT count(*) FROM demo_resets"));
+
+        await panel.GetByRole(AriaRole.Button, new() { Name = "Reset demo now" }).ClickAsync();
+        await Assertions.Expect(page.GetByText("Reset the demo now?")).ToBeVisibleAsync();
+        await page.GetByRole(AriaRole.Button, new() { Name = "Reset demo", Exact = true }).ClickAsync();
+
+        await Assertions.Expect(page.GetByTestId("demo-reset-state")).ToContainTextAsync("Reset requested");
+        Assert.Equal("Resetting admin", await db.ScalarAsync<string>(MigratedDatabase.Migrator, "SELECT requested_by FROM demo_resets WHERE completed_at IS NULL"));
+        await db.ExecuteAsync(MigratedDatabase.Migrator, "DELETE FROM demo_resets");
+    }
+
+    [Fact]
+    public async Task A_visitor_creating_a_user_account_sees_no_admin_link()
+    {
+        var site = await Browsers.SiteAsync(db);
+        var page = await browsers.NewPageAsync(site);
+
+        await page.SignUpAsync("Visiting user");
+
+        await Assertions.Expect(page.GetByRole(AriaRole.Link, new() { Name = "Sell" })).ToBeVisibleAsync();
+        await Assertions.Expect(page.GetByRole(AriaRole.Link, new() { Name = "Activity" })).ToHaveCountAsync(0);
+        await page.GotoAsync("/admin");
+        await Assertions.Expect(page.GetByTestId("state-forbidden")).ToBeVisibleAsync();
+    }
+
+    [Fact]
     public async Task An_admin_sees_new_bids_without_a_reload_and_a_suspension_reaches_an_open_auction_page()
     {
         if (Environment.GetEnvironmentVariable(Browsers.BaseUrlVariable) is { Length: > 0 })

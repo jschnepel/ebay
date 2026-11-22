@@ -10,6 +10,24 @@ public sealed class DemoSeedTests(MigratedDatabase db)
     private static readonly DemoSeedOptions Passwords = new("admin-pass-for-tests", "demo-pass-for-tests");
 
     [Fact]
+    public async Task The_seed_adds_24_live_sellers_as_simulator_accounts_once_each_labelled_simulated()
+    {
+        var connection = db.ConnectionStringFor(MigratedDatabase.Migrator);
+        var options = Passwords with { SimulatorPassword = "simulator-pass-for-tests" };
+        await DemoSeed.RunAsync(connection, options, TestContext.Current.CancellationToken);
+
+        var again = await DemoSeed.RunAsync(connection, options, TestContext.Current.CancellationToken);
+
+        Assert.Equal(0, again.AccountsAdded);
+        var sellers = Enumerable.Range(1, DemoSeedOptions.SimulatorLiveSellers).Select(DemoSeedOptions.SimulatorLiveSellerEmail).ToArray();
+        Assert.Equal("sim-seller-01@auction.test", sellers[0]);
+        Assert.Equal((24L, 24L, 24L), (
+            await db.ScalarAsync<long>(MigratedDatabase.Migrator, "SELECT count(*) FROM users WHERE email = ANY($1) AND kind = 'simulator'", (object)sellers),
+            await db.ScalarAsync<long>(MigratedDatabase.Migrator, "SELECT count(DISTINCT display_name) FROM users WHERE email = ANY($1)", (object)sellers),
+            await db.ScalarAsync<long>(MigratedDatabase.Migrator, "SELECT count(*) FROM users WHERE email = ANY($1) AND display_name LIKE '% (simulated)'", (object)sellers)));
+    }
+
+    [Fact]
     public async Task Seeding_twice_adds_the_accounts_and_auctions_once_and_keeps_the_first_passwords()
     {
         await DemoSeed.RunAsync(db.ConnectionStringFor(MigratedDatabase.Migrator), Passwords, TestContext.Current.CancellationToken);

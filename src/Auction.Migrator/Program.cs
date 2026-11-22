@@ -36,6 +36,19 @@ if (seed && (string.IsNullOrWhiteSpace(adminPassword) || string.IsNullOrWhiteSpa
     return 2;
 }
 
+// "demo-clock" (ADM-04) runs beside the stack in demo mode: reset-demo daily at DEMO_RESET_AT_UTC (default 09:00)
+// and whenever an admin asks, then clears REDIS_CONNECTION. Outside demo mode it does nothing and waits, so
+// Compose doesn't restart it in a loop.
+if (args.Contains("demo-clock-health"))
+{
+    return DemoClock.Health();
+}
+
+if (args.Contains("demo-clock"))
+{
+    return await DemoClock.RunCommandAsync(connectionString, logger, cancellation.Token);
+}
+
 try
 {
     await DatabaseMigrator.MigrateAsync(connectionString, loggerFactory, cancellation.Token);

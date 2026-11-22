@@ -33,6 +33,6 @@ internal static class Principal
 
     public static string KindOf(this ClaimsPrincipal user) => user.FindFirstValue(KindClaim) ?? "";
 
-    /// <summary>Admin accounts have admin privileges only: they never bid, sell or publish.</summary>
-    public static bool IsAdmin(this ClaimsPrincipal user) => user.KindOf() == AccountKinds.Admin;
+    /// <summary>Admin accounts (seeded, or created by a visitor under DEMO_MODE) have admin privileges only: they never bid, sell or publish.</summary>
+    public static bool IsAdmin(this ClaimsPrincipal user) => user.KindOf() is AccountKinds.Admin or AccountKinds.VisitorAdmin;
 }

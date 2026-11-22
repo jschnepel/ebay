@@ -83,7 +83,7 @@ compose() {
 }
 
 start() {
-    compose "$1" up -d --wait api redis simulator-control
+    compose "$1" up -d --wait api redis simulator-control demo-clock
 }
 
 # The public site answers: ready (PostgreSQL and the engine reachable), the page, sign-in and the API.

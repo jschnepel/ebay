@@ -54,6 +54,7 @@ public sealed class JourneyTests(MigratedDatabase db, Browsers browsers)
         // As if the first sign-up's answer was lost and the visitor tries again from a fresh browser.
         var retry = await browsers.NewPageAsync(site);
         await retry.GotoAsync("/sign-in");
+        await retry.OpenCreateAccountAsync();
         await retry.GetByLabel("Display name").FillAsync("Returning user");
         await retry.GetByLabel("Email for the new account").FillAsync(email);
         await retry.GetByRole(AriaRole.Button, new() { Name = "Create account" }).ClickAsync();

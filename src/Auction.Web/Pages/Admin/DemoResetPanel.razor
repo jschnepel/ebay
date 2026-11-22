@@ -1,0 +1,69 @@
+@inject AuctionApi Api
+@inject IDialogService Dialogs
+
+@* The demo's daily reset, and a reset on demand for when something has broken it (ADM-04). *@
+<section class="panel mb-4" data-testid="demo-reset-panel">
+    <MudText Typo="Typo.h6" HtmlTag="h2">Demo reset</MudText>
+    @if (State is { } state)
+    {
+        <p class="sim-line" data-testid="demo-reset-state">
+            @if (state.ResetPending || _requested)
+            {
+                <span>Reset requested. It runs within a few seconds and signs everyone out, you included.</span>
+            }
+            else
+            {
+                <span>The demo returns to its starting state every day; the next reset is at @Format.Time(state.NextScheduledAt).</span>
+                @if (state.LastResetAt is { } last)
+                {
+                    <span> The last one ran @Format.Recent(last).</span>
+                }
+            }
+        </p>
+        @if (!state.ResetPending && !_requested)
+        {
+            <MudButton Variant="Variant.Outlined" Color="Color.Error" Disabled="_busy" OnClick="ConfirmAsync">Reset demo now</MudButton>
+        }
+    }
+    else
+    {
+        <PageState State="ViewState.Loading" LoadingText="Checking the reset schedule…" />
+    }
+
+    @if (_message is not null)
+    {
+        <MudAlert Class="mt-2" Severity="Severity.Error" data-testid="demo-reset-message">@_message</MudAlert>
+    }
+</section>
+
+@code {
+    [Parameter]
+    public DemoState? State { get; set; }
+
+    /// <summary>Asks the page to fetch the state again after a request.</summary>
+    [Parameter]
+    public EventCallback Changed { get; set; }
+
+    private bool _busy;
+    private bool _requested;
+    private string? _message;
+
+    private async Task ConfirmAsync()
+    {
+        var confirmed = await Dialogs.ShowMessageBoxAsync(
+            "Reset the demo now?",
+            "Everyone is signed out, and every visitor's account, bid and listing is removed. The seeded accounts stay, and the live marketplace starts again from an empty site.",
+            yesText: "Reset demo", cancelText: "Cancel");
+        if (confirmed != true)
+        {
+            return;
+        }
+
+        _busy = true;
+        var result = await Api.ResetDemoAsync();
+        _busy = false;
+        _requested = result.Succeeded;
+        _message = result.Succeeded ? null : result.Message;
+        await Changed.InvokeAsync();
+    }
+}

@@ -4,7 +4,8 @@ namespace Auction.Web.Client;
 
 public sealed record Account(Guid Id, string DisplayName, string Kind)
 {
-    public bool IsAdmin => Kind == "admin";
+    /// <summary>The seeded admin, or an admin a visitor created in the demo: both see only the admin area.</summary>
+    public bool IsAdmin => Kind is "admin" or "visitor_admin";
 }
 
 public sealed record Page<T>(IReadOnlyList<T> Items, string? NextCursor);
@@ -120,7 +121,16 @@ public sealed record AuditEntry(long Id, DateTimeOffset At, Guid AdminId, string
 public sealed record SimulatorOutcome(
     Guid RunId, string Profile, DateTimeOffset StartedAt, DateTimeOffset FinishedAt, bool StoppedEarly, bool Passed, int Accepted, string? Error);
 
-public sealed record SimulatorRun(string State, Guid? RunId, string? Profile, DateTimeOffset? StartedAt, int Attempts, int Accepted, SimulatorOutcome? Last);
+public sealed record SimulatorLive(
+    string State, DateTimeOffset? Since, DateTimeOffset? ResumesAt, int ListingsLive, int BidsAccepted, DateTimeOffset? LastVerifiedAt, bool? LastVerifyPassed);
+
+public sealed record SimulatorRun(string State, Guid? RunId, string? Profile, DateTimeOffset? StartedAt, int Attempts, int Accepted, SimulatorOutcome? Last)
+{
+    /// <summary>The always-on live marketplace; null where it isn't enabled.</summary>
+    public SimulatorLive? Live { get; init; }
+}
+
+public sealed record DemoState(bool ResetPending, DateTimeOffset? LastResetAt, DateTimeOffset NextScheduledAt);
 
 public sealed record SimulatorView(bool Available, IReadOnlyList<string> Profiles, SimulatorRun? Run);
 

@@ -4,47 +4,66 @@
 @inject Session Session
 @inject NavigationManager Navigation
 
-<PageTitle>Sign in</PageTitle>
-<MudText Typo="Typo.h4" HtmlTag="h1" Class="mb-4">Sign in</MudText>
+<PageTitle>@(_creating ? "Create an account" : "Sign in")</PageTitle>
 
-<MudGrid>
-    <MudItem xs="12" md="6">
-        <MudPaper Class="pa-4" Outlined="true">
-            <MudText Typo="Typo.h6" HtmlTag="h2">Create an account</MudText>
-            <MudText Typo="Typo.body2" Class="mb-2">A display name and an email are enough in the demo.</MudText>
-            <MudTextField @bind-Value="_displayName" Label="Display name" Immediate="true" MaxLength="50" />
-            <MudTextField @bind-Value="_signUpEmail" Label="Email for the new account" InputType="InputType.Email" Immediate="true" />
-            <MudButton Class="mt-3" Variant="Variant.Filled" Color="Color.Primary" OnClick="SignUpAsync" Disabled="_busy">Create account</MudButton>
-        </MudPaper>
-    </MudItem>
-    <MudItem xs="12" md="6">
-        <MudPaper Class="pa-4" Outlined="true">
-            <MudText Typo="Typo.h6" HtmlTag="h2">Sign back in</MudText>
-            <MudText Typo="Typo.body2" Class="mb-2">Demo accounts sign in with their email; seeded accounts need their password.</MudText>
-            <MudTextField @bind-Value="_signInEmail" Label="Email" InputType="InputType.Email" Immediate="true" />
-            <MudTextField @bind-Value="_password" Label="Password (seeded accounts only)" InputType="InputType.Password" Immediate="true" />
-            <MudButton Class="mt-3" Variant="Variant.Filled" Color="Color.Primary" OnClick="SignInAsync" Disabled="_busy">Sign in</MudButton>
-        </MudPaper>
-    </MudItem>
-</MudGrid>
+<section class="panel auth-panel" aria-labelledby="auth-heading">
+    @if (_creating)
+    {
+        <h1 id="auth-heading" class="auth-title">Create an account</h1>
+        <p class="muted auth-lede">A display name and an email are enough in the demo. You’ll be signed in straight away.</p>
+        <MudTextField @bind-Value="_displayName" Label="Display name" Immediate="true" MaxLength="50" Variant="Variant.Outlined" Margin="Margin.Dense" />
+        <MudTextField @bind-Value="_signUpEmail" Label="Email for the new account" InputType="InputType.Email" Immediate="true" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mt-3" />
 
-@if (_error is not null)
-{
-    <MudAlert Class="mt-4" Severity="Severity.Error" data-testid="sign-in-error">@_error</MudAlert>
-}
+        <fieldset class="role-choice">
+            <legend>Account type</legend>
+            <MudRadioGroup @bind-Value="_role">
+                <div class="role-option">
+                    <MudRadio Value="@("user")" Color="Color.Primary">User</MudRadio>
+                    <span class="muted">Browse, bid and sell.</span>
+                </div>
+                <div class="role-option">
+                    <MudRadio Value="@("admin")" Color="Color.Primary">Admin</MudRadio>
+                    <span class="muted">Run the site: live activity, moderation, users and the simulator. Admins don’t bid or sell.</span>
+                </div>
+            </MudRadioGroup>
+        </fieldset>
 
-@if (_existingEmail is not null)
-{
-    @* A retried sign-up whose first attempt succeeded lands here: the account exists, so offer to use it. *@
-    <MudButton Class="mt-2" Variant="Variant.Outlined" OnClick="SignInExistingAsync" Disabled="_busy">Sign in as @_existingEmail</MudButton>
-}
+        <MudButton Class="mt-2" Variant="Variant.Filled" Color="Color.Primary" FullWidth="true" OnClick="SignUpAsync" Disabled="_busy">Create account</MudButton>
+        <p class="auth-switch">Already have an account? <MudButton Variant="Variant.Text" Color="Color.Primary" OnClick="ShowSignIn">Sign in instead</MudButton></p>
+    }
+    else
+    {
+        <h1 id="auth-heading" class="auth-title">Sign in</h1>
+        <p class="muted auth-lede">Demo accounts sign in with their email. Seeded accounts also need their password.</p>
+        <MudTextField @bind-Value="_signInEmail" Label="Email" InputType="InputType.Email" Immediate="true" Variant="Variant.Outlined" Margin="Margin.Dense" />
+        <MudTextField @bind-Value="_password" Label="Password (seeded accounts only)" InputType="InputType.Password" Immediate="true" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mt-3" />
+        <MudButton Class="mt-4" Variant="Variant.Filled" Color="Color.Primary" FullWidth="true" OnClick="SignInAsync" Disabled="_busy">Sign in</MudButton>
+        <div class="auth-switch">
+            <span class="muted">New here?</span>
+            <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="ShowCreate">Create account</MudButton>
+        </div>
+    }
+
+    @if (_error is not null)
+    {
+        <MudAlert Class="mt-4" Severity="Severity.Error" data-testid="sign-in-error">@_error</MudAlert>
+    }
+
+    @if (_existingEmail is not null)
+    {
+        @* A retried sign-up whose first attempt succeeded lands here: the account exists, so offer to use it. *@
+        <MudButton Class="mt-2" Variant="Variant.Outlined" OnClick="SignInExistingAsync" Disabled="_busy">Sign in as @_existingEmail</MudButton>
+    }
+</section>
 
 @code {
     [SupplyParameterFromQuery(Name = "returnUrl")]
     public string? ReturnUrl { get; set; }
 
+    private bool _creating;
     private string _displayName = "";
     private string _signUpEmail = "";
+    private string _role = "user";
     private string _signInEmail = "";
     private string _password = "";
     private string? _error;
@@ -52,10 +71,14 @@
 
     private string? _existingEmail;
 
+    private void ShowCreate() => (_creating, _error, _existingEmail) = (true, null, null);
+
+    private void ShowSignIn() => (_creating, _error, _existingEmail) = (false, null, null);
+
     private async Task SignUpAsync()
     {
         var email = _signUpEmail.Trim();
-        await RunAsync(() => Api.SignUpAsync(_displayName, email));
+        await RunAsync(() => Api.SignUpAsync(_displayName, email, _role));
         if (_error is not null && _lastProblem?.Code == "email_taken")
         {
             _existingEmail = email;
@@ -85,9 +108,12 @@
             return;
         }
 
-        Session.SignedIn(result.Value!);
-        // Return addresses are paths within the app; they resolve against the page's base, so the app works under a path base.
-        Navigation.NavigateTo(IsLocalPath(ReturnUrl) ? ReturnUrl!.TrimStart('/') : "./");
+        var account = result.Value!;
+        Session.SignedIn(account);
+        // Admins have only the admin area. Return addresses are paths within the app; they resolve against
+        // the page's base, so the app works under a path base.
+        var next = IsLocalPath(ReturnUrl) ? ReturnUrl!.TrimStart('/') : "./";
+        Navigation.NavigateTo(account.IsAdmin ? "admin" : next);
     }
 
     // Only a path on this site: "//host" and "/\host" would leave it.

@@ -10,16 +10,16 @@ using Microsoft.AspNetCore.SignalR;
 namespace Auction.Api.Accounts;
 
 /// <summary>
-/// Sign-up, sign-in and sign-out (AUTH-01). Under DEMO_MODE a visitor signs up with a display name and an
-/// email and signs back in with the email alone; seeded, simulator and admin accounts always need their
-/// password. Outside DEMO_MODE only password accounts sign in.
+/// Sign-up, sign-in and sign-out (AUTH-01). Under DEMO_MODE a visitor signs up with a display name, an email
+/// and a role (user, the default, or admin) and signs back in with the email alone; seeded, simulator and the
+/// seeded admin account always need their password. Outside DEMO_MODE only password accounts sign in.
 /// </summary>
 internal static class AccountEndpoints
 {
     public const int DisplayNameMaxLength = 50;
     public const int EmailMaxLength = 254;
 
-    public sealed record SignUpRequest(string? DisplayName, string? Email);
+    public sealed record SignUpRequest(string? DisplayName, string? Email, string? Role);
 
     public sealed record SignInRequest(string? Email, string? Password);
 
@@ -62,6 +62,17 @@ internal static class AccountEndpoints
             errors["email"] = ["invalid"];
         }
 
+        var kind = body.Role switch
+        {
+            null or "user" => AccountKinds.SelfRegistered,
+            "admin" => AccountKinds.VisitorAdmin,
+            _ => null,
+        };
+        if (kind is null)
+        {
+            errors["role"] = ["invalid"];
+        }
+
         if (errors.Count > 0)
         {
             return Problems.Validation(errors);
@@ -69,7 +80,7 @@ internal static class AccountEndpoints
 
         // Sign-up takes no Idempotency-Key: a retry after a lost response gets 409, and signing in with
         // the same email reaches the account the first attempt created.
-        var account = await accounts.RegisterAsync(email, displayName, cancellationToken);
+        var account = await accounts.RegisterAsync(email, displayName, kind!, cancellationToken);
         if (account is null)
         {
             return Problems.Of(
@@ -124,7 +135,7 @@ internal static class AccountEndpoints
 
     private static bool MaySignIn(Account account, string? password, IPasswordHasher<Account> hasher, ApiOptions options) =>
         string.IsNullOrEmpty(password)
-            ? options.DemoMode && account.Kind == AccountKinds.SelfRegistered && account.PasswordHash is null
+            ? options.DemoMode && AccountKinds.IsVisitor(account.Kind) && account.PasswordHash is null
             : account.PasswordHash is { } hash && hasher.VerifyHashedPassword(account, hash, password) != PasswordVerificationResult.Failed;
 
     // One active session per account (AUTH-02): this sign-in ends every other one, and any page still open on

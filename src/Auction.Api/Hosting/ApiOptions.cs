@@ -62,6 +62,9 @@ public sealed class ApiOptions
     /// </summary>
     public Uri? SimulatorAddress { get; init; }
 
+    /// <summary>When the demo-clock resets the demo each day (UTC), as DEMO_RESET_AT_UTC tells it; shown in the admin area.</summary>
+    public TimeOnly DemoResetAtUtc { get; init; } = new(9, 0);
+
     /// <summary>The bearer token the simulator's control endpoint requires.</summary>
     public string SimulatorToken { get; init; } = "";
 

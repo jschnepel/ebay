@@ -14,6 +14,30 @@ public sealed class BrowserTests(StackUnderTest stack)
     private static readonly LocatorAssertionsToHaveTextOptions WithinBound = new() { Timeout = 2_000 };
 
     [Fact]
+    public async Task The_live_marketplace_fills_the_first_page_with_photographed_listings_within_two_minutes()
+    {
+        var visitor = await stack.NewPageAsync();
+        var deadline = DateTimeOffset.UtcNow.AddMinutes(2);
+        var photographed = 0;
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            await visitor.GotoAsync("/");
+            await Assertions.Expect(visitor.GetByTestId("state-loading")).ToHaveCountAsync(0);
+            await visitor.WaitForLoadStateAsync(LoadState.NetworkIdle);
+            photographed = await visitor.EvaluateAsync<int>(
+                "() => [...document.querySelectorAll('img[data-testid=cover]')].filter(i => i.complete && i.naturalWidth > 0).length");
+            if (photographed >= 12)
+            {
+                break;
+            }
+
+            await Task.Delay(5_000, TestContext.Current.CancellationToken);
+        }
+
+        Assert.True(photographed >= 12, $"only {photographed} listings with a loaded photo after two minutes");
+    }
+
+    [Fact]
     public async Task A_seller_lists_two_buyers_bid_and_every_open_browser_follows_the_price_without_a_reload()
     {
         var seller = await stack.NewPageAsync();

@@ -22,6 +22,11 @@ public sealed class RunLock : IDisposable
         {
             return null;
         }
+        catch (UnauthorizedAccessException)
+        {
+            // On Windows a lock file still being deleted after its last holder closed it refuses access.
+            return null;
+        }
     }
 
     public void Dispose() => _file.Dispose();

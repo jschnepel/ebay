@@ -18,4 +18,9 @@
     <ProjectReference Include="..\Auction.Verifier\Auction.Verifier.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- The live marketplace's catalogue and its free-to-reuse photos (credited in Catalogue/CREDITS.md). -->
+    <None Include="Catalogue\**\*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

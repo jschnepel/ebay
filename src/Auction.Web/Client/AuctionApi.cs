@@ -15,8 +15,9 @@ public sealed class AuctionApi(HttpClient http)
 
     public async Task<Account?> MeAsync() => (await SendAsync<Account>(HttpMethod.Get, "account/me")).Value;
 
-    public Task<ApiResult<Account>> SignUpAsync(string displayName, string email) =>
-        SendAsync<Account>(HttpMethod.Post, "account/sign-up", new { displayName, email });
+    /// <summary>Creates a demo account; <paramref name="role"/> is "user" or "admin".</summary>
+    public Task<ApiResult<Account>> SignUpAsync(string displayName, string email, string role) =>
+        SendAsync<Account>(HttpMethod.Post, "account/sign-up", new { displayName, email, role });
 
     public Task<ApiResult<Account>> SignInAsync(string email, string? password) =>
         SendAsync<Account>(HttpMethod.Post, "account/sign-in", new { email, password = string.IsNullOrEmpty(password) ? null : password });
@@ -122,6 +123,16 @@ public sealed class AuctionApi(HttpClient http)
         SendAsync<SimulatorRun>(HttpMethod.Post, "admin/simulator/runs", new { profile });
 
     public Task<ApiResult<SimulatorRun>> StopSimulatorAsync() => SendAsync<SimulatorRun>(HttpMethod.Delete, "admin/simulator/runs/current");
+
+    /// <summary>Pauses the live marketplace for up to 30 minutes.</summary>
+    public Task<ApiResult<SimulatorRun>> PauseLiveAsync() => SendAsync<SimulatorRun>(HttpMethod.Delete, "admin/simulator/live");
+
+    public Task<ApiResult<SimulatorRun>> ResumeLiveAsync() => SendAsync<SimulatorRun>(HttpMethod.Post, "admin/simulator/live");
+
+    public Task<ApiResult<DemoState>> DemoStateAsync() => SendAsync<DemoState>(HttpMethod.Get, "admin/demo");
+
+    /// <summary>Asks for the demo to return to its starting state now; the demo-clock service runs it within seconds.</summary>
+    public Task<ApiResult<DemoState>> ResetDemoAsync() => SendAsync<DemoState>(HttpMethod.Post, "admin/demo/reset", new { });
 
     private static string WithCursor(string path, string? cursor)
     {

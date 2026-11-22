@@ -183,11 +183,11 @@ internal sealed class UserConfiguration : IEntityTypeConfiguration<UserRow>
     {
         builder.ToTable("users", table =>
         {
-            table.HasCheckConstraint("ck_users_kind", "kind IN ('self_registered', 'seeded', 'simulator', 'admin')");
+            table.HasCheckConstraint("ck_users_kind", "kind IN ('self_registered', 'visitor_admin', 'seeded', 'simulator', 'admin')");
             table.HasCheckConstraint("ck_users_email", "char_length(email) BETWEEN 3 AND 254");
             table.HasCheckConstraint("ck_users_display_name", "char_length(display_name) BETWEEN 1 AND 50");
-            // Only self-registered accounts may sign in without a password (and only under DEMO_MODE).
-            table.HasCheckConstraint("ck_users_password", "kind = 'self_registered' OR password_hash IS NOT NULL");
+            // Only accounts visitors created may sign in without a password (and only under DEMO_MODE).
+            table.HasCheckConstraint("ck_users_password", "kind IN ('self_registered', 'visitor_admin') OR password_hash IS NOT NULL");
         });
         builder.HasKey(u => u.Id);
         builder.HasIndex(u => u.NormalizedEmail).IsUnique();
@@ -268,5 +268,16 @@ internal sealed class GlobalQuotaConfiguration : IEntityTypeConfiguration<Global
         builder.HasKey(q => q.Id);
         builder.Property(q => q.Id).ValueGeneratedNever();
         builder.HasData(new GlobalQuotaRow { Id = 1, BytesUsed = 0 });
+    }
+}
+
+internal sealed class DemoResetConfiguration : IEntityTypeConfiguration<DemoResetRow>
+{
+    public void Configure(EntityTypeBuilder<DemoResetRow> builder)
+    {
+        builder.ToTable("demo_resets", table => table.HasCheckConstraint("ck_demo_resets_requested_by", "char_length(requested_by) BETWEEN 1 AND 50"));
+        builder.HasKey(r => r.Id);
+        // At most one request waits at a time: see DemoResetSchemaSql.OnePending.
+        builder.HasIndex(r => r.CompletedAt).HasDatabaseName("ix_demo_resets_completed_at");
     }
 }
