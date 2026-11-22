@@ -3,4 +3,7 @@
 **/TestResults/
 .git/
 deploy/.env
+deploy/.demo-credentials
+deploy/secrets/
+deploy/.tls-*/
 _private/

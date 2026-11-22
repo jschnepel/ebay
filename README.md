@@ -28,13 +28,15 @@ Built bottom-up, one tested layer at a time ([build plan](docs/build-plan.md)).
 
 ## Run it
 
-Prerequisites: Docker with Compose v2 (on Windows, use Git Bash or WSL).
+Prerequisites: OpenSSL 1.1.1 or newer and Docker with Compose v2 (on Windows, use Git Bash or WSL).
 
 ```bash
 ./run.sh
 ```
 
 Then open <http://localhost:8080>. The first run creates `deploy/.env` with a generated value for every secret, prints the admin password once and keeps the seeded accounts' passwords in `deploy/.demo-credentials` (both git-ignored). It builds the images, applies the migrations, adds the demo accounts and six active auctions, and waits until every service is healthy. Create your own account on the sign-in page with a display name and an email; sign in from a second browser as another user to bid against yourself. To see live bidding, run the simulator (below).
+
+The first run provisions separate API and engine certificates under `deploy/secrets/`. Each service pins its peer's certificate. Engine commands require the API identity and the account role for that operation. The certificates last one year. To rotate them, stop the stack, move the entire secrets directory to a protected backup location, and rerun `./run.sh` to provision both identities together.
 
 To use other host ports, set them in the shell or in `deploy/.env` (`PORT=9080 ./run.sh`). To return the demo to its seeded state (visitors' accounts, bids and uploads removed; seeded passwords kept): `docker compose -f deploy/compose.yaml run --rm migrator reset-demo`. Behind a reverse proxy, set `PATH_BASE` (for example `/projects/ebay`) and `TRUSTED_PROXIES` in `deploy/.env`. Stop with `docker compose -f deploy/compose.yaml down`, adding `-v` to delete the data. [`Auction.Api.http`](src/Auction.Api/Auction.Api.http) walks the same journey over plain HTTP.
 

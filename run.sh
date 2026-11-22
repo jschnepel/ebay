@@ -43,6 +43,7 @@ if [ ! -f "$env_file" ]; then
     echo "Admin sign-in: admin@auction.test / $admin_password (kept in $credentials)"
 fi
 
+sh deploy/prepare-engine-tls.sh
 docker compose -f deploy/compose.yaml up -d --build --wait api redis
 
 # A PORT set in the shell wins over deploy/.env, as it does for Compose.

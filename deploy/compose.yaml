@@ -5,6 +5,7 @@ name: auction
 
 services:
   postgres:
+    networks: [default, engine-store]
     image: postgres:18@sha256:2ea8630df176ad090ec92136dee850397c5af8781e4bcf2e4162593691c61bbc
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-auction}
@@ -52,6 +53,8 @@ services:
   # The auction engine: the only writer of auction state. gRPC on the internal network only (no published
   # port); the API is its only caller.
   engine:
+    networks: [commands, engine-store]
+    env_file: ./secrets/engine.env
     build:
       context: ..
       dockerfile: src/Auction.Engine/Dockerfile
@@ -82,12 +85,14 @@ services:
   # role) and commands forwarded to the engine. The only application port published, bound to 127.0.0.1
   # for the reverse proxy in front of it.
   api:
+    networks: [default, commands]
+    env_file: ./secrets/api.env
     build:
       context: ..
       dockerfile: src/Auction.Api/Dockerfile
     environment:
       ConnectionStrings__Api: Host=postgres;Database=${POSTGRES_DB:-auction};Username=api;Password=${API_DB_PASSWORD};GSS Encryption Mode=Disable
-      Api__EngineAddress: http://engine:8080
+      Api__EngineAddress: https://engine:8080
       # The SignalR backplane (and, later, caches and rate limits). The API starts and bids work without it.
       ConnectionStrings__Redis: redis:6379,abortConnect=false
       Api__DemoMode: ${DEMO_MODE:-true}
@@ -146,6 +151,12 @@ services:
         limits:
           cpus: "0.5"
           memory: 256m
+
+networks:
+  commands:
+    internal: true
+  engine-store:
+    internal: true
 
 volumes:
   pgdata:

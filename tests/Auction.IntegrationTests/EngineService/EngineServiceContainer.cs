@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using Auction.Contracts.V1;
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
@@ -22,12 +24,14 @@ public sealed class EngineServiceContainer : IAsyncDisposable
 
     private readonly IContainer _container;
     private readonly GrpcChannel _channel;
+    private readonly X509Certificate2 _identity = X509CertificateLoader.LoadPkcs12(
+        Convert.FromBase64String(TestIdentity.Api.Identity), null, X509KeyStorageFlags.EphemeralKeySet);
 
     private EngineServiceContainer(IContainer container)
     {
         _container = container;
-        Address = new Uri($"http://{container.Hostname}:{container.GetMappedPublicPort(GrpcPort)}");
-        _channel = GrpcChannel.ForAddress(Address);
+        Address = new Uri($"https://{container.Hostname}:{container.GetMappedPublicPort(GrpcPort)}");
+        _channel = Channel(_identity);
         Commands = new AuctionCommandService.AuctionCommandServiceClient(_channel);
         Health = new Health.HealthClient(_channel);
     }
@@ -45,6 +49,8 @@ public sealed class EngineServiceContainer : IAsyncDisposable
         var container = new ContainerBuilder(image)
             .WithNetwork(network)
             .WithEnvironment("ConnectionStrings__Engine", connectionString)
+            .WithEnvironment("EngineTls__Identity", TestIdentity.Engine.Identity)
+            .WithEnvironment("EngineTls__PeerSha256", TestIdentity.Api.Pin)
             .WithEnvironment("Engine__CloseWorkerEnabled", "false")
             .WithEnvironment("Engine__LockTimeout", "00:00:10")
             .WithPortBinding(GrpcPort, assignRandomHostPort: true)
@@ -54,11 +60,30 @@ public sealed class EngineServiceContainer : IAsyncDisposable
         return new EngineServiceContainer(container);
     }
 
+    public GrpcChannel ChannelWithoutIdentity() => Channel(null);
+
+    private GrpcChannel Channel(X509Certificate2? identity)
+    {
+        var handler = new HttpClientHandler
+        {
+            ServerCertificateCustomValidationCallback = (_, cert, _, _) => cert?.GetCertHashString(HashAlgorithmName.SHA256) == TestIdentity.Engine.Pin,
+        };
+        if (identity is not null)
+        {
+            handler.ClientCertificates.Add(identity);
+        }
+
+        var http = new HttpClient(handler);
+        http.DefaultRequestHeaders.Add("x-auction-role", "participant");
+        return GrpcChannel.ForAddress(Address, new GrpcChannelOptions { HttpClient = http, DisposeHttpClient = true });
+    }
+
     public async Task<string> LogsAsync() => (await _container.GetLogsAsync()).Stdout;
 
     public async ValueTask DisposeAsync()
     {
         _channel.Dispose();
+        _identity.Dispose();
         await _container.DisposeAsync();
     }
 

@@ -5,6 +5,7 @@ using Auction.Api.Images;
 using Auction.Api.Live;
 using Auction.Api.Notifications;
 using Auction.Contracts.V1;
+using Auction.Transport;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.HttpOverrides;
@@ -49,11 +50,14 @@ internal static class ApiHosting
         builder.Services.AddSingleton<AuctionReader>();
         builder.Services.AddSingleton<IPasswordHasher<Account>, PasswordHasher<Account>>();
 
+        builder.Services.AddSingleton<PeerIdentity>();
         builder.Services.AddGrpcClient<AuctionCommandService.AuctionCommandServiceClient>((services, client) =>
-            client.Address = services.GetRequiredService<ApiOptions>().EngineAddress);
+            client.Address = services.GetRequiredService<ApiOptions>().EngineAddress)
+            .ConfigurePrimaryHttpMessageHandler(services => services.GetRequiredService<PeerIdentity>().CreateClientHandler());
         builder.Services.AddTransient<EngineGateway>();
         builder.Services.AddGrpcClient<Grpc.Health.V1.Health.HealthClient>((services, client) =>
-            client.Address = services.GetRequiredService<ApiOptions>().EngineAddress);
+            client.Address = services.GetRequiredService<ApiOptions>().EngineAddress)
+            .ConfigurePrimaryHttpMessageHandler(services => services.GetRequiredService<PeerIdentity>().CreateClientHandler());
 
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddMetrics();

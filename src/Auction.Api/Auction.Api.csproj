@@ -18,6 +18,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="..\Auction.Contracts\PeerIdentity.cs" Link="Hosting\PeerIdentity.cs" />
     <Protobuf Include="..\Auction.Contracts\auction\v1\auction.proto" ProtoRoot="..\Auction.Contracts" GrpcServices="Client" Access="Internal" Link="Protos\auction.proto" />
   </ItemGroup>
 

@@ -3,6 +3,7 @@
 *.pem
 *.key
 secrets/
+deploy/.tls-*/
 
 # OS / editor
 .DS_Store

@@ -1,4 +1,6 @@
+using Auction.Transport;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
+using Microsoft.AspNetCore.Server.Kestrel.Https;
 using Microsoft.Extensions.Options;
 using Npgsql;
 
@@ -10,9 +12,12 @@ internal static class EngineHosting
     {
         builder.Logging.ClearProviders().AddJsonConsole(json => json.IncludeScopes = true);
 
-        // gRPC over plaintext HTTP/2 on the internal network; the engine is never exposed publicly.
-        builder.WebHost.ConfigureKestrel(kestrel =>
-            kestrel.ConfigureEndpointDefaults(endpoint => endpoint.Protocols = HttpProtocols.Http2));
+        builder.Services.AddSingleton<PeerIdentity>();
+        builder.WebHost.ConfigureKestrel((context, kestrel) =>
+        {
+            var identity = kestrel.ApplicationServices.GetRequiredService<PeerIdentity>();
+            kestrel.ListenAnyIP(context.Configuration.GetValue("Engine:Port", 8080), endpoint => ConfigureTls(endpoint, identity));
+        });
 
         builder.Services.AddOptions<EngineOptions>()
             .Bind(builder.Configuration.GetSection("Engine"))
@@ -26,9 +31,22 @@ internal static class EngineHosting
         builder.Services.AddSingleton<AuctionEngine>();
         builder.Services.AddHostedService<CloseWorker>();
 
-        builder.Services.AddGrpc(grpc => grpc.Interceptors.Add<CorrelationInterceptor>());
+        builder.Services.AddGrpc(grpc => grpc.Interceptors.Add<CorrelationInterceptor>())
+            .AddServiceOptions<AuctionCommandGrpcService>(grpc => grpc.Interceptors.Add<CommandAuthorization>());
         builder.Services.AddGrpcHealthChecks().AddCheck<DatabaseHealthCheck>("postgres");
         return builder;
+    }
+
+    private static void ConfigureTls(ListenOptions endpoint, PeerIdentity identity)
+    {
+        endpoint.Protocols = HttpProtocols.Http2;
+        endpoint.UseHttps(https =>
+        {
+            https.ServerCertificate = identity.Certificate;
+            // Only health probes may omit the client certificate.
+            https.ClientCertificateMode = ClientCertificateMode.AllowCertificate;
+            https.ClientCertificateValidation = (peer, _, _) => identity.Trusts(peer);
+        });
     }
 
     public static WebApplication MapEngine(this WebApplication app)

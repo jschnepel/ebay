@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using Auction.Transport;
 using Grpc.Core;
 using Grpc.Health.V1;
 using Grpc.Net.Client;
@@ -12,12 +14,14 @@ internal static class HealthProbe
 {
     public const string Argument = "--health-check";
 
-    private static readonly char[] PortSeparators = [';', ','];
-
     public static async Task<int> RunAsync()
     {
-        var port = Environment.GetEnvironmentVariable("ASPNETCORE_HTTP_PORTS")?.Split(PortSeparators)[0] ?? "8080";
-        using var channel = GrpcChannel.ForAddress($"http://127.0.0.1:{port}");
+        var configuration = new ConfigurationBuilder().AddEnvironmentVariables().Build();
+        using var identity = new PeerIdentity(configuration);
+        var pin = identity.Certificate.GetCertHashString(HashAlgorithmName.SHA256);
+        using var handler = new HttpClientHandler { ServerCertificateCustomValidationCallback = (_, peer, _, _) => PeerIdentity.Matches(peer, pin) };
+        var port = configuration.GetValue("Engine:Port", 8080);
+        using var channel = GrpcChannel.ForAddress($"https://127.0.0.1:{port}", new GrpcChannelOptions { HttpHandler = handler });
         try
         {
             var reply = await new Health.HealthClient(channel)

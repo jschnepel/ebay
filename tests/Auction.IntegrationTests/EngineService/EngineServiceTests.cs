@@ -14,6 +14,20 @@ public sealed class EngineServiceTests(MigratedDatabase db)
     private readonly CancellationToken _ct = TestContext.Current.CancellationToken;
 
     [Fact]
+    public async Task The_engine_requires_the_api_identity_and_a_moderator_role()
+    {
+        var engine = await db.EngineServiceAsync();
+        var cancel = new V1.AdminCancelRequest { AuctionId = Guid.NewGuid().ToString(), ActorId = UserId.New().ToString(), Reason = "Review" };
+        using var anonymous = engine.ChannelWithoutIdentity();
+        var unauthenticated = new V1.AuctionCommandService.AuctionCommandServiceClient(anonymous);
+        var missing = await Assert.ThrowsAsync<RpcException>(async () => await unauthenticated.AdminCancelAsync(cancel, cancellationToken: _ct));
+        var wrongRole = await Assert.ThrowsAsync<RpcException>(async () => await engine.Commands.AdminCancelAsync(cancel, cancellationToken: _ct));
+
+        Assert.Equal(StatusCode.Unauthenticated, missing.StatusCode);
+        Assert.Equal(StatusCode.PermissionDenied, wrongRole.StatusCode);
+    }
+
+    [Fact]
     public async Task The_health_service_reports_serving()
     {
         var engine = await db.EngineServiceAsync();

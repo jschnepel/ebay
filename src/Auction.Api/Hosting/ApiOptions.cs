@@ -51,7 +51,7 @@ public sealed class ApiOptions
     public TimeSpan EndingSoonWindow { get; init; } = TimeSpan.FromHours(1);
 
     public bool IsValid() =>
-        EngineAddress is { IsAbsoluteUri: true }
+        EngineAddress is { IsAbsoluteUri: true } && EngineAddress.Scheme == Uri.UriSchemeHttps
         && EngineDeadline > TimeSpan.Zero
         && DefaultPageSize >= 1
         && MaxPageSize >= DefaultPageSize

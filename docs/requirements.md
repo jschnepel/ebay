@@ -55,6 +55,7 @@ Intent-based standards at Tier 2 (no real money, safety or hardware), with .NET 
 | COR-05 | Immutable accepted history; per-auction sequence; monotonic version | Engineering |
 | API-01 | Documented REST (OpenAPI) and gRPC (.proto) contracts that match the running services; bidder identity never comes from the browser | Implied |
 | API-03 | Deterministic pagination, bounded payloads, Problem Details | Engineering |
+| SEC-02 | Engine commands use mutual TLS and trust actor assertions only from the pinned API identity. | Engineering |
 | SEC-01 | Identity cookie auth (HttpOnly, `SameSite=Strict`, same origin), real accounts (seeded and self-registered); cross-site request protection by **unsafe endpoints that accept only JSON (image upload included: images travel as base64 inside JSON, UI-05) plus an `Origin` check**, with no antiforgery tokens (Microsoft's guidance for same-origin JSON APIs; a recorded deviation from the packs, [ADR-0003](decisions/0003-same-origin-csrf-model.md)) | Implied |
 | AUTH-01 | **Sign-up and sign-in.** The sign-in page has an email field and a **New account** button. New account asks only for a display name and an email; the user is signed in straight away. Under `DEMO_MODE`, **self-registered** accounts sign in with **email only**, no password. **Seeded, simulator and admin accounts always need a password**, generated at deploy time and never committed; admins can't be self-registered (see §5.2 Accounts). Seeded account emails and passwords are never published (no README listing); visitors create their own account. Emails are unique (case-insensitive) and never shown to other users | Engineering |
 | AUTH-02 | **One active session per account.** Signing in from a new browser or device ends every other session of that account: its next request is rejected (401; revocation deletes the session's Redis cache entry in the same step, and with Redis down the check reads PostgreSQL), and an open page is told live that it was signed out because the account signed in elsewhere | Engineering |
@@ -104,7 +105,6 @@ Intent-based standards at Tier 2 (no real money, safety or hardware), with .NET 
 
 | ID | Requirement | Type |
 |---|---|---|
-| SEC-02 | Validated mTLS API→engine; accept actor assertions only from the API service identity | Engineering |
 | OUT-03 | Quarantine permanent schema failures; audited replay preserving event identity | Engineering |
 | REL-03 | Acknowledged commits survive tested process crashes (intact storage) | Engineering |
 | REL-05 | Alerts on backlog and storage pressure; throttle before exhaustion | Engineering |
@@ -308,7 +308,7 @@ Every row needs a test. Rows marked **control** are the known-good cases that ma
 | User | See the winner's display name | a Closed auction they sold or won | 200 (control) |
 | User or anonymous | See the winner's identity | a Closed auction they didn't sell or win | anonymous label only; outcome and final price are public |
 | Lifecycle worker (system) | Activate / close | due auctions | yes |
-| Anything except the API service | Call | the engine's gRPC | unreachable (internal Compose network only; mTLS is a Could) |
+| Anything except the API service | Call | the engine's gRPC | commands require the pinned API client certificate and a permitted role assertion |
 | Anything except the API service | Call | the simulator's control endpoint | 401 without the shared control token; not published outside the internal network |
 
 ## 8. Non-functional targets

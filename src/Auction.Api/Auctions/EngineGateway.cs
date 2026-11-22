@@ -37,7 +37,7 @@ internal sealed partial class EngineGateway(
     public async Task<IResult> SendAsync(HttpContext http, Func<CallOptions, Task<CommandResult>> call, Func<CommandResult, IResult> accepted)
     {
         var callOptions = new CallOptions(
-            headers: new Metadata { { CorrelationHeader, http.TraceIdentifier } },
+            headers: new Metadata { { CorrelationHeader, http.TraceIdentifier }, { "x-auction-role", http.User.IsAdmin() ? "admin" : "participant" } },
             deadline: DateTime.UtcNow + options.EngineDeadline,
             cancellationToken: http.RequestAborted);
         CommandResult result;

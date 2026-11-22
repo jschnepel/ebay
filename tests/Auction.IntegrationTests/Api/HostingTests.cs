@@ -17,7 +17,7 @@ public sealed class HostingTests(MigratedDatabase db, Browsers browsers)
     public async Task Health_is_liveness_only_and_ready_needs_postgresql_and_the_engine()
     {
         var api = await db.ApiAsync();
-        await using var noEngine = await db.ApiWithAsync(new Dictionary<string, string> { ["Api:EngineAddress"] = "http://127.0.0.1:9" });
+        await using var noEngine = await db.ApiWithAsync(new Dictionary<string, string> { ["Api:EngineAddress"] = "https://127.0.0.1:9" });
 
         Assert.Equal(HttpStatusCode.OK, await api.Anonymous().StatusOfGetAsync("/health"));
         Assert.Equal(HttpStatusCode.OK, await api.Anonymous().StatusOfGetAsync("/ready"));

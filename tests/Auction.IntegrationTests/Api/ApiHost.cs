@@ -1,6 +1,7 @@
 using System.Net.Http.Json;
 using System.Text.Json;
 using Auction.Api;
+using Auction.IntegrationTests.EngineService;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
@@ -78,6 +79,8 @@ public sealed class ApiHost(string connectionString, Uri engineAddress, bool dem
         // The client's files come from the build output, as they do in development.
         builder.UseStaticWebAssets();
         builder.UseSetting("ConnectionStrings:Api", connectionString);
+        builder.UseSetting("EngineTls:Identity", TestIdentity.Api.Identity);
+        builder.UseSetting("EngineTls:PeerSha256", TestIdentity.Engine.Pin);
         builder.UseSetting("Api:EngineAddress", engineAddress.ToString());
         builder.UseSetting("Api:DemoMode", demoMode ? "true" : "false");
         builder.UseSetting("ConnectionStrings:Redis", redis);
