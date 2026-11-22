@@ -62,6 +62,29 @@ public sealed class RedisJobTests(MigratedDatabase db)
     }
 
     [Fact]
+    public async Task Concurrent_sign_ins_leave_one_active_session()
+    {
+        var api = await db.ApiAsync();
+        var user = await api.SignUpAsync();
+        var logins = await Task.WhenAll(api.SignInAsync(user.Email), api.SignInAsync(user.Email));
+        try
+        {
+            Assert.All(logins, login => Assert.Equal(HttpStatusCode.OK, login.Response.StatusCode));
+            var statuses = await Task.WhenAll(logins.Select(login => login.Http.StatusOfGetAsync("/api/v1/account/me")));
+            Assert.Single(statuses, status => status == HttpStatusCode.OK);
+            Assert.Single(statuses, status => status == HttpStatusCode.Unauthorized);
+        }
+        finally
+        {
+            foreach (var login in logins)
+            {
+                login.Response.Dispose();
+                login.Http.Dispose();
+            }
+        }
+    }
+
+    [Fact]
     public async Task Limits_are_counted_across_api_instances()
     {
         // Both instances see the same client address, as two replicas behind one proxy would.

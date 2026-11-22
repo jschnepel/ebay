@@ -28,6 +28,13 @@ internal sealed class SessionStore(NpgsqlDataSource dataSource)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        // Two simultaneous sign-ins must take turns even if the account has no session yet.
+        await using (var accountLock = new NpgsqlCommand("SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))", connection, transaction))
+        {
+            accountLock.Parameters.Add(new NpgsqlParameter { Value = user.Value.ToString("N") });
+            await accountLock.ExecuteNonQueryAsync(cancellationToken);
+        }
+
         var ended = new List<Guid>();
         await using (var revoke = new NpgsqlCommand(RevokeAllSql, connection, transaction))
         {
