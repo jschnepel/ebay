@@ -87,10 +87,10 @@ public sealed class HostingTests(MigratedDatabase db, Browsers browsers)
         await using var direct = await db.ApiWithAsync(new Dictionary<string, string>(limits) { [ApiHost.ClientAddressSetting] = $"10.78.{Random.Shared.Next(256)}.{Random.Shared.Next(1, 255)}" });
 
         // Through the proxy, two visitors are two addresses; directly, a made-up header changes nothing.
-        Assert.Equal(HttpStatusCode.Created, await SignUpFromAsync(throughProxy, Visitor()));
-        Assert.Equal(HttpStatusCode.Created, await SignUpFromAsync(throughProxy, Visitor()));
-        Assert.Equal(HttpStatusCode.Created, await SignUpFromAsync(direct, Visitor()));
-        Assert.Equal(HttpStatusCode.TooManyRequests, await SignUpFromAsync(direct, Visitor()));
+        Assert.Equal(HttpStatusCode.Created, await SignUpFromAsync(throughProxy, "203.0.113.21"));
+        Assert.Equal(HttpStatusCode.Created, await SignUpFromAsync(throughProxy, "203.0.113.22"));
+        Assert.Equal(HttpStatusCode.Created, await SignUpFromAsync(direct, "203.0.113.21"));
+        Assert.Equal(HttpStatusCode.TooManyRequests, await SignUpFromAsync(direct, "203.0.113.22"));
     }
 
     [Fact]
@@ -105,10 +105,10 @@ public sealed class HostingTests(MigratedDatabase db, Browsers browsers)
         await using var inside = await db.ApiWithAsync(new Dictionary<string, string>(limits) { [ApiHost.ClientAddressSetting] = "10.79.4.20" });
         await using var outside = await db.ApiWithAsync(new Dictionary<string, string>(limits) { [ApiHost.ClientAddressSetting] = $"10.80.{Random.Shared.Next(256)}.{Random.Shared.Next(1, 255)}" });
 
-        Assert.Equal(HttpStatusCode.Created, await SignUpFromAsync(inside, Visitor()));
-        Assert.Equal(HttpStatusCode.Created, await SignUpFromAsync(inside, Visitor()));
-        Assert.Equal(HttpStatusCode.Created, await SignUpFromAsync(outside, Visitor()));
-        Assert.Equal(HttpStatusCode.TooManyRequests, await SignUpFromAsync(outside, Visitor()));
+        Assert.Equal(HttpStatusCode.Created, await SignUpFromAsync(inside, "203.0.113.31"));
+        Assert.Equal(HttpStatusCode.Created, await SignUpFromAsync(inside, "203.0.113.32"));
+        Assert.Equal(HttpStatusCode.Created, await SignUpFromAsync(outside, "203.0.113.31"));
+        Assert.Equal(HttpStatusCode.TooManyRequests, await SignUpFromAsync(outside, "203.0.113.32"));
     }
 
     [Fact]
@@ -129,8 +129,6 @@ public sealed class HostingTests(MigratedDatabase db, Browsers browsers)
         await Assertions.Expect(page.GetByRole(AriaRole.Link, new() { Name = "New listing" })).ToBeVisibleAsync();
         await Assertions.Expect(page.GetByTestId("unread-count")).ToHaveTextAsync("0");
     }
-
-    private static string Visitor() => $"203.0.113.{Random.Shared.Next(1, 255)}";
 
     private static async Task<HttpStatusCode> SignUpFromAsync(ApiHost host, string forwardedFor)
     {
