@@ -122,6 +122,14 @@ public sealed class AuctionApi(HttpClient http, Func<TimeSpan, Task>? wait = nul
     public Task<ApiResult<object>> SetUserDisabledAsync(Guid id, bool disabled, string reason) =>
         SendAsync<object>(HttpMethod.Post, $"admin/users/{id}/{(disabled ? "disable" : "enable")}", new { reason });
 
+    public Task<ApiResult<UserProfile>> AdminUserAsync(Guid id) => SendAsync<UserProfile>(HttpMethod.Get, $"admin/users/{id}");
+
+    public Task<ApiResult<Page<UserListing>>> AdminUserListingsAsync(Guid id, string? cursor, int pageSize) =>
+        SendAsync<Page<UserListing>>(HttpMethod.Get, WithCursor($"admin/users/{id}/listings?pageSize={pageSize}", cursor));
+
+    public Task<ApiResult<Page<UserBidding>>> AdminUserBiddingAsync(Guid id, string? cursor, int pageSize) =>
+        SendAsync<Page<UserBidding>>(HttpMethod.Get, WithCursor($"admin/users/{id}/bidding?pageSize={pageSize}", cursor));
+
     public Task<ApiResult<Page<AuditEntry>>> AdminAuditAsync(string? query, string? cursor) =>
         SendAsync<Page<AuditEntry>>(HttpMethod.Get, WithCursor($"admin/audit?q={Uri.EscapeDataString(query ?? "")}", cursor));
 

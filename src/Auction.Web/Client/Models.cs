@@ -141,6 +141,15 @@ public sealed record UserSummary(
     Guid Id, string DisplayName, string Email, string Kind, bool Disabled, DateTimeOffset CreatedAt, DateTimeOffset? LastSignInAt,
     long ListingCount, long BidCount);
 
+public sealed record UserProfile(
+    Guid Id, string DisplayName, string Email, string Kind, bool Disabled, DateTimeOffset CreatedAt, DateTimeOffset? LastSignInAt,
+    long Listings, long Sold, long Bids, long AuctionsBidOn, long Won);
+
+public sealed record UserListing(Guid AuctionId, string Title, string Status, long? CurrentPriceCents, long BidCount, string? Outcome, DateTimeOffset? EndsAt);
+
+public sealed record UserBidding(
+    Guid AuctionId, string Title, string Status, long? TheirHighestCents, long? CurrentPriceCents, string Standing, DateTimeOffset LastBidAt);
+
 public sealed record NotificationView(long Id, Guid? AuctionId, string? AuctionTitle, string Kind, string? Reason, DateTimeOffset CreatedAt, bool Read);
 
 public sealed record NotificationPage(IReadOnlyList<NotificationView> Items, string? NextCursor, long Unread);

@@ -1,0 +1,251 @@
+@page "/admin/users/{Id:guid}"
+@inject AuctionApi Api
+@inject Session Session
+
+<PageTitle>@(_profile?.DisplayName ?? "User")</PageTitle>
+
+@if (_forbidden)
+{
+    <PageState State="ViewState.Forbidden" ForbiddenText="Page not found." />
+}
+else if (_error is not null)
+{
+    <a class="back-link" href="admin/users">‹ Users</a>
+    <PageState State="ViewState.Error" Error="@_error" Retry="LoadAsync" />
+}
+else if (_profile is not { } user)
+{
+    <PageState State="ViewState.Loading" LoadingText="Loading the account…" />
+}
+else
+{
+    <a class="back-link" href="admin/users">‹ Users</a>
+    <div class="page-head user-head">
+        <div>
+            <MudText Typo="Typo.h4" HtmlTag="h1">@user.DisplayName</MudText>
+            <p class="muted page-sub">
+                <span data-testid="user-email">@user.Email</span><br />
+                Joined @Format.Time(user.CreatedAt), last signed in @(user.LastSignInAt is { } at ? Format.Recent(at) : "never").
+                <span class="id">@user.Id</span>
+            </p>
+        </div>
+        <div class="user-head-side">
+            <span class="tag">@Format.Kind(user.Kind)</span>
+            <span class="@($"tag {(user.Disabled ? "is-off" : "is-live")}")">@(user.Disabled ? "Disabled" : "Enabled")</span>
+            @if (user.Id != Session.Account?.Id)
+            {
+                @if (user.Disabled)
+                {
+                    <ReasonPopover Title="@($"Enable {user.DisplayName}?")" Action="Enable" TriggerVariant="Variant.Outlined" OnConfirm="ToggleAsync" />
+                }
+                else
+                {
+                    <ReasonPopover Title="@($"Disable {user.DisplayName}?")" Action="Disable" Tone="Color.Error" TriggerVariant="Variant.Outlined"
+                                   Helper="They're signed out at once. Kept in the event log." OnConfirm="ToggleAsync" />
+                }
+            }
+        </div>
+    </div>
+
+    @if (_message is not null)
+    {
+        <MudAlert Class="mb-3" Severity="@(_failed ? Severity.Error : Severity.Success)" data-testid="user-result"><MessageText Text="@_message" /></MudAlert>
+    }
+
+    <section class="user-stats" aria-label="Activity in numbers">
+        @foreach (var (label, value, testId) in Stats(user))
+        {
+            <dl class="user-stat" data-testid="@testId"><dt>@label</dt><dd class="num">@value.ToString("N0")</dd></dl>
+        }
+    </section>
+
+    <div class="user-grid">
+        <section class="panel dash-panel" aria-labelledby="selling-heading">
+            <header class="dash-head"><MudText Typo="Typo.h6" HtmlTag="h2" id="selling-heading">Selling</MudText><span class="muted dash-meta">newest first</span></header>
+            @if (_listings is null)
+            {
+                <PageState State="ViewState.Loading" LoadingText="Loading listings…" />
+            }
+            else if (_listings.Items.Count == 0)
+            {
+                <div class="empty is-inset"><p class="empty-title">Nothing listed</p><p class="muted">Their published auctions show here; drafts stay private.</p></div>
+            }
+            else
+            {
+                <div class="table-scroll"><MudSimpleTable Dense="true" Elevation="0">
+                    <thead><tr><th>Item</th><th>Status</th><th class="num">Price</th><th class="num">Bids</th></tr></thead>
+                    <tbody>
+                        @foreach (var listing in _listings.Items)
+                        {
+                            <tr data-testid="selling-row">
+                                <td><MudLink Href="@($"auctions/{listing.AuctionId}")">@listing.Title</MudLink></td>
+                                <td><span class="@($"tag {Format.StatusTone(listing.Status)}")">@ListingState(listing)</span></td>
+                                <td class="num">@(listing.CurrentPriceCents is { } price ? Format.Dollars(price) : "–")</td>
+                                <td class="num"><a href="@($"admin/events?q={listing.AuctionId}&category=bid")">@($"{listing.BidCount:N0} {Format.Noun(listing.BidCount, "bid", "bids")}")</a></td>
+                            </tr>
+                        }
+                    </tbody>
+                </MudSimpleTable></div>
+                <CursorPager Label="Selling pages" Page="_listingCursors.Count" PageSize="_listingSize" HasNext="_listings.NextCursor is not null"
+                             OnPrevious="() => MoveListingsAsync(-1)" OnNext="() => MoveListingsAsync(1)" OnPageSize="ResizeListingsAsync" />
+            }
+        </section>
+
+        <section class="panel dash-panel" aria-labelledby="bidding-heading">
+            <header class="dash-head"><MudText Typo="Typo.h6" HtmlTag="h2" id="bidding-heading">Bidding</MudText><span class="muted dash-meta">most recent first</span></header>
+            @if (_bidding is null)
+            {
+                <PageState State="ViewState.Loading" LoadingText="Loading bids…" />
+            }
+            else if (_bidding.Items.Count == 0)
+            {
+                <div class="empty is-inset"><p class="empty-title">No bids</p><p class="muted">Auctions they bid on show here, with where they stand.</p></div>
+            }
+            else
+            {
+                <div class="table-scroll"><MudSimpleTable Dense="true" Elevation="0">
+                    <thead><tr><th>Item</th><th class="num">Their bid</th><th class="num">Price</th><th>Standing</th></tr></thead>
+                    <tbody>
+                        @foreach (var item in _bidding.Items)
+                        {
+                            <tr data-testid="bidding-row">
+                                <td><MudLink Href="@($"auctions/{item.AuctionId}")">@item.Title</MudLink></td>
+                                <td class="num">@(item.TheirHighestCents is { } theirs ? Format.Dollars(theirs) : "private")</td>
+                                <td class="num">@(item.CurrentPriceCents is { } price ? Format.Dollars(price) : "–")</td>
+                                <td><span class="@($"tag {StandingTone(item.Standing)}")">@Standing(item.Standing)</span></td>
+                            </tr>
+                        }
+                    </tbody>
+                </MudSimpleTable></div>
+                <CursorPager Label="Bidding pages" Page="_biddingCursors.Count" PageSize="_biddingSize" HasNext="_bidding.NextCursor is not null"
+                             OnPrevious="() => MoveBiddingAsync(-1)" OnNext="() => MoveBiddingAsync(1)" OnPageSize="ResizeBiddingAsync" />
+            }
+        </section>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public Guid Id { get; set; }
+
+    private UserProfile? _profile;
+    private Page<UserListing>? _listings;
+    private Page<UserBidding>? _bidding;
+    private Stack<string?> _listingCursors = new([null]);
+    private Stack<string?> _biddingCursors = new([null]);
+    private int _listingSize = 10;
+    private int _biddingSize = 10;
+    private string? _error;
+    private string? _message;
+    private bool _failed;
+    private bool _forbidden;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await Session.LoadAsync();
+        _forbidden = Session.Account?.IsAdmin != true;
+        if (!_forbidden)
+        {
+            (_listingCursors, _biddingCursors) = (new([null]), new([null]));
+            await LoadAsync();
+        }
+    }
+
+    private static (string Label, long Value, string TestId)[] Stats(UserProfile user) =>
+    [
+        ("Listings", user.Listings, "user-stat-listings"),
+        ("Sold", user.Sold, "user-stat-sold"),
+        ("Bids", user.Bids, "user-stat-bids"),
+        ("Auctions bid on", user.AuctionsBidOn, "user-stat-bid-on"),
+        ("Won", user.Won, "user-stat-won"),
+    ];
+
+    private static string ListingState(UserListing listing) => listing.Outcome switch
+    {
+        "sold" => "Sold",
+        "reserve_not_met" => "Reserve not met",
+        "no_bids" => "No bids",
+        _ => Format.Status(listing.Status),
+    };
+
+    private static string Standing(string standing) => standing switch
+    {
+        "leading" => "Leading",
+        "outbid" => "Outbid",
+        "won" => "Won",
+        _ => "Lost",
+    };
+
+    private static string StandingTone(string standing) => standing switch
+    {
+        "leading" or "won" => "is-live",
+        "outbid" => "is-off",
+        _ => "",
+    };
+
+    private async Task LoadAsync()
+    {
+        var profile = await Api.AdminUserAsync(Id);
+        if (!profile.Succeeded)
+        {
+            _error = profile.Problem!.Status == 404 ? "No such user. They may have been removed by the daily reset." : profile.Message;
+            return;
+        }
+
+        (_profile, _error) = (profile.Value, null);
+        await Task.WhenAll(LoadListingsAsync(), LoadBiddingAsync());
+    }
+
+    private async Task LoadListingsAsync() => _listings = (await Api.AdminUserListingsAsync(Id, _listingCursors.Peek(), _listingSize)).Value ?? new([], null);
+
+    private async Task LoadBiddingAsync() => _bidding = (await Api.AdminUserBiddingAsync(Id, _biddingCursors.Peek(), _biddingSize)).Value ?? new([], null);
+
+    private Task MoveListingsAsync(int step)
+    {
+        if (step > 0)
+        {
+            _listingCursors.Push(_listings?.NextCursor);
+        }
+        else
+        {
+            _listingCursors.Pop();
+        }
+
+        return LoadListingsAsync();
+    }
+
+    private Task MoveBiddingAsync(int step)
+    {
+        if (step > 0)
+        {
+            _biddingCursors.Push(_bidding?.NextCursor);
+        }
+        else
+        {
+            _biddingCursors.Pop();
+        }
+
+        return LoadBiddingAsync();
+    }
+
+    private Task ResizeListingsAsync(int size)
+    {
+        (_listingSize, _listingCursors) = (size, new([null]));
+        return LoadListingsAsync();
+    }
+
+    private Task ResizeBiddingAsync(int size)
+    {
+        (_biddingSize, _biddingCursors) = (size, new([null]));
+        return LoadBiddingAsync();
+    }
+
+    private async Task ToggleAsync(string reason)
+    {
+        var user = _profile!;
+        var result = await Api.SetUserDisabledAsync(user.Id, !user.Disabled, reason);
+        var done = user.Disabled ? "Enabled" : "Disabled";
+        (_failed, _message) = result.Succeeded ? (false, $"{done} {user.DisplayName}.") : (true, result.Message);
+        _profile = (await Api.AdminUserAsync(Id)).Value ?? _profile;
+    }
+}

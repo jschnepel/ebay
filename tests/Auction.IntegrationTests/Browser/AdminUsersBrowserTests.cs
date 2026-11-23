@@ -1,5 +1,6 @@
 using System.Net.Http.Json;
 using System.Text.RegularExpressions;
+using Auction.IntegrationTests.Api;
 using Auction.IntegrationTests.Database;
 using Microsoft.Playwright;
 
@@ -126,6 +127,53 @@ public sealed partial class AdminUsersBrowserTests(MigratedDatabase db, Browsers
 
         await admin.WaitForURLAsync(UserPage());
         Assert.EndsWith($"/admin/users/{user.Id}", admin.Url, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_users_page_shows_who_they_are_and_their_selling_and_bidding()
+    {
+        if (Environment.GetEnvironmentVariable(Browsers.BaseUrlVariable) is { Length: > 0 })
+        {
+            return;
+        }
+
+        var api = await db.ApiAsync();
+        var seller = await api.SignUpAsync("Paged seller");
+        var buyerName = $"Bidder {Guid.NewGuid():N}"[..14];
+        var buyer = await api.SignUpAsync(buyerName);
+        var title = $"Watched lot {Guid.NewGuid():N}"[..18];
+        var id = await seller.PublishedAsync(ApiCalls.Terms(title: title, bidEntry: "fixed_increment"));
+        using (var bid = await buyer.Http.BidAsync(id, 1000))
+        {
+            Assert.Equal(System.Net.HttpStatusCode.Created, bid.StatusCode);
+        }
+
+        var admin = await browsers.NewPageAsync(await Browsers.SiteAsync(db));
+        await admin.SignUpAsync("Looking admin", role: "Admin");
+
+        await admin.GotoAsync($"/admin/users/{buyer.Id}");
+        await Assertions.Expect(admin.GetByRole(AriaRole.Heading, new() { Name = buyerName, Level = 1 })).ToBeVisibleAsync();
+        await Assertions.Expect(admin.GetByTestId("user-email")).ToHaveTextAsync(buyer.Email);
+        await Assertions.Expect(admin.GetByTestId("user-stat-bids")).ToContainTextAsync("1");
+        var bidding = admin.GetByTestId("bidding-row").Filter(new() { HasText = title });
+        await Assertions.Expect(bidding).ToContainTextAsync("Leading");
+        await Assertions.Expect(bidding).ToContainTextAsync("$10.00");
+
+        await admin.GotoAsync($"/admin/users/{seller.Id}");
+        var selling = admin.GetByTestId("selling-row").Filter(new() { HasText = title });
+        await Assertions.Expect(selling).ToContainTextAsync("Active");
+        await Assertions.Expect(selling.GetByRole(AriaRole.Link, new() { Name = "1 bid" })).ToHaveAttributeAsync("href", new Regex($"admin/events\\?q={id}"));
+    }
+
+    [Fact]
+    public async Task An_unknown_users_page_says_so()
+    {
+        var admin = await browsers.NewPageAsync(await Browsers.SiteAsync(db));
+        await admin.SignUpAsync("Lost admin", role: "Admin");
+
+        await admin.GotoAsync($"/admin/users/{Guid.NewGuid()}");
+
+        await Assertions.Expect(admin.GetByTestId("state-error")).ToContainTextAsync("No such user");
     }
 
     [GeneratedRegex("/admin/users/[0-9a-f-]{36}$")]

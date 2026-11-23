@@ -403,3 +403,21 @@ tr.is-link { cursor: pointer; }
 .cell-sub { font-size: 0.8125rem; overflow-wrap: anywhere; }
 a.cell-title { text-decoration: none; }
 a.cell-title:hover { text-decoration: underline; }
+
+/* ===== A user's page: who they are, their numbers, then what they sell and what they bid on, side by side. ===== */
+.back-link { display: inline-block; margin-bottom: 0.5rem; font-size: 0.875rem; color: var(--muted); text-decoration: none; }
+.back-link:hover { color: var(--ink); text-decoration: underline; }
+.user-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 0.75rem 1.5rem; }
+.user-head h1 { overflow-wrap: anywhere; }
+.user-head .page-sub { overflow-wrap: anywhere; }
+.user-head-side { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+.user-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr)); margin-bottom: 1.25rem; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-lg); }
+.user-stat { margin: 0; padding: 0.75rem 1rem; }
+.user-stat + .user-stat { border-left: 1px solid var(--line); }
+.user-stat dt { font-size: 0.8125rem; color: var(--muted); }
+.user-stat dd { margin: 0.15rem 0 0; font-family: var(--display); font-size: 1.6rem; font-weight: 600; color: var(--ink); }
+.user-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.25rem; align-items: start; }
+.user-grid > .panel + .panel { margin-top: 0; }
+.user-grid .pager { margin: 0.5rem 1rem 0.75rem; }
+@media (max-width: 959.98px) { .user-grid { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 599.98px) { .user-stat + .user-stat { border-left: 0; } .user-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
