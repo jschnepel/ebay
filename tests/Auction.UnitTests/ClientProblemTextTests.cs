@@ -74,4 +74,10 @@ public sealed class ClientProblemTextTests
     {
         Assert.Equal("Check the reserve (something_new).", Shown(Invalid(("reserveCents", "something_new"))));
     }
+
+    [Fact]
+    public void A_request_refused_because_the_session_ended_says_to_sign_in_again()
+    {
+        Assert.Equal("You're signed out. Sign in again to continue.", Shown(new() { Status = 401, Title = "Unauthorized" }));
+    }
 }

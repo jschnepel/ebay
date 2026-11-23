@@ -1,8 +1,8 @@
 namespace Auction.Web.Client;
 
 /// <summary>
-/// The words a person sees for a refused request. The API's titles already read well, except for field
-/// errors, which it reports as a field name and a code.
+/// The words a person sees for a refused request. The API's titles already read well, except for two
+/// cases: field errors, which it reports as a field name and a code; and a 401, which means the session ended.
 /// </summary>
 internal static class ProblemText
 {
@@ -61,6 +61,7 @@ internal static class ProblemText
     {
         // One line per error.
         { Errors: { Count: > 0 } errors } => string.Join('\n', errors.SelectMany(e => e.Value.Select(code => Sentence(e.Key, code)))),
+        { Status: 401, Code: not "sign_in_failed" } => "You're signed out. Sign in again to continue.",
         _ => problem.Title ?? "The request failed.",
     };
 
