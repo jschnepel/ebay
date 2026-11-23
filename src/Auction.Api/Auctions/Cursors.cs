@@ -15,6 +15,32 @@ internal static class Cursors
 
     public static string Encode(long sequence) => Encode(sequence.ToString(CultureInfo.InvariantCulture));
 
+    /// <summary>A time and a text key, for lists merged from several sources (the admin event log).</summary>
+    public static string Encode(DateTimeOffset at, string key) =>
+        Encode(string.Create(CultureInfo.InvariantCulture, $"{at.UtcTicks}|{key}"));
+
+    public static bool TryDecode(string? cursor, out (DateTimeOffset At, string Key)? before)
+    {
+        before = null;
+        if (cursor is null)
+        {
+            return true;
+        }
+
+        var text = Decode(cursor);
+        var bar = text?.IndexOf('|', StringComparison.Ordinal) ?? -1;
+        if (bar < 1
+            || !long.TryParse(text![..bar], NumberStyles.None, CultureInfo.InvariantCulture, out var utcTicks)
+            || utcTicks > DateTimeOffset.MaxValue.UtcTicks
+            || bar == text.Length - 1)
+        {
+            return false;
+        }
+
+        before = (new DateTimeOffset(utcTicks, TimeSpan.Zero), text[(bar + 1)..]);
+        return true;
+    }
+
     public static bool TryDecode(string? cursor, out (DateTimeOffset EndsAt, Guid Id)? after)
     {
         after = null;

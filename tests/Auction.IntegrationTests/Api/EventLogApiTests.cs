@@ -1,0 +1,257 @@
+using System.Globalization;
+using System.Net;
+using System.Net.Http.Json;
+using System.Text.Json;
+using Auction.IntegrationTests.Database;
+
+namespace Auction.IntegrationTests.Api;
+
+/// <summary>
+/// The admin event log (ADM-03): account, admin, listing and bid events merged newest first, each naming the people
+/// and items involved, filtered by time, category, search and user. Tests read only events they made.
+/// </summary>
+public sealed class EventLogApiTests(MigratedDatabase db)
+{
+    [Fact]
+    public async Task Every_category_appears_with_the_people_and_items_named()
+    {
+        var api = await db.ApiAsync();
+        var admin = await api.SignUpAsync("Log admin", role: "admin");
+        var seller = await api.SignUpAsync("Log seller");
+        var buyer = await api.SignUpAsync("Log buyer");
+        var title = $"Log lot {Guid.NewGuid():N}"[..16];
+        var listed = await seller.PublishedAsync(ApiCalls.Terms(title: title));
+        using (var bid = await buyer.Http.BidAsync(listed, 1500))
+        {
+            Assert.Equal(HttpStatusCode.Created, bid.StatusCode);
+        }
+
+        var unknown = $"{Guid.NewGuid():N}@example.test";
+        (_, var failed) = await api.SignInAsync(unknown);
+        Assert.Equal(HttpStatusCode.Unauthorized, failed.StatusCode);
+
+        var sellerCancels = await seller.PublishedAsync(ApiCalls.Terms(title: title + " b"));
+        using (var cancel = await seller.Http.PostCommandAsync($"/api/v1/auctions/{sellerCancels}/cancel"))
+        {
+            Assert.Equal(HttpStatusCode.OK, cancel.StatusCode);
+        }
+
+        var adminCancels = await seller.PublishedAsync(ApiCalls.Terms(title: title + " c"));
+        using (var cancel = await admin.Http.PostCommandAsync($"/api/v1/admin/auctions/{adminCancels}/cancel", new { reason = "Counterfeit" }))
+        {
+            Assert.Equal(HttpStatusCode.OK, cancel.StatusCode);
+        }
+
+        using (var disable = await admin.Http.PostAsJsonAsync($"/api/v1/admin/users/{buyer.Id}/disable", new { reason = "Spam bids" }, TestContext.Current.CancellationToken))
+        {
+            Assert.Equal(HttpStatusCode.NoContent, disable.StatusCode);
+        }
+
+        var events = await AllAsync(admin.Http, "");
+
+        var signUp = Single(events, e => e.Type == "sign_up" && e.ActorId == seller.Id);
+        Assert.Equal(("account", "info", "Log seller", seller.Email), (signUp.Category, signUp.Level, signUp.ActorName, signUp.ActorEmail));
+
+        var failedSignIn = Single(events, e => e.Type == "sign_in_failed" && e.TargetEmail == unknown);
+        Assert.Equal(("warning", "email", (string?)null, "unknown_email"), (failedSignIn.Level, failedSignIn.TargetKind, failedSignIn.ActorName, failedSignIn.Detail["cause"]));
+
+        var published = Single(events, e => e.Type == "published" && e.TargetId == listed);
+        Assert.Equal(("listing", "Log seller", title), (published.Category, published.ActorName, published.TargetName));
+
+        var placed = Single(events, e => e.Category == "bid" && e.TargetId == listed);
+        Assert.Equal(("Log buyer", buyer.Email, title), (placed.ActorName, placed.ActorEmail, placed.TargetName));
+
+        var disabled = Single(events, e => e.Type == "disable" && e.TargetId == buyer.Id);
+        Assert.Equal(("admin", "warning", "Log admin", "Log buyer", buyer.Email, "Spam bids"),
+            (disabled.Category, disabled.Level, disabled.ActorName, disabled.TargetName, disabled.TargetEmail, disabled.Detail["reason"]));
+
+        var cancelled = Single(events, e => e.Type == "cancelled" && e.TargetId == sellerCancels);
+        Assert.Equal(("listing", "Log seller"), (cancelled.Category, cancelled.ActorName));
+
+        // An admin's cancel is an admin action, once; it isn't also a listing cancelled by its seller.
+        Assert.Single(events, e => e.Type == "cancel" && e.TargetId == adminCancels && e.Category == "admin");
+        Assert.DoesNotContain(events, e => e.Type == "cancelled" && e.TargetId == adminCancels);
+    }
+
+    [Fact]
+    public async Task A_closed_listing_reports_its_outcome()
+    {
+        var api = await db.ApiAsync();
+        var admin = await api.SignUpAsync("Close admin", role: "admin");
+        var seller = await api.SignUpAsync("Close seller");
+        var winner = await api.SignUpAsync("Close winner");
+        var id = await seller.PublishedAsync(ApiCalls.Terms(title: "Closing lot"));
+        await db.ExecuteAsync(
+            MigratedDatabase.Migrator,
+            "UPDATE auctions SET status = 'closed', outcome = 'sold', current_price_cents = 4200, leader_id = $2, accepted_bid_count = 1, closed_at = clock_timestamp() WHERE id = $1",
+            id,
+            winner.Id);
+
+        var closed = Single(await AllAsync(admin.Http, $"&q={id}"), e => e.Type == "closed");
+
+        Assert.Equal(("listing", (string?)null, "Closing lot", "sold", "4200"),
+            (closed.Category, closed.ActorName, closed.TargetName, closed.Detail["outcome"], closed.Detail["finalPriceCents"]));
+    }
+
+    [Fact]
+    public async Task Category_search_and_user_filters_narrow_the_log()
+    {
+        var api = await db.ApiAsync();
+        var admin = await api.SignUpAsync("Filter admin", role: "admin");
+        var sellerName = $"Filterseller {Guid.NewGuid():N}"[..20];
+        var seller = await api.SignUpAsync(sellerName);
+        var buyer = await api.SignUpAsync("Filter buyer");
+        var other = await api.SignUpAsync("Filter other");
+        var id = await seller.PublishedAsync(ApiCalls.Terms(title: "Filtered lot"));
+        using (var bid = await buyer.Http.BidAsync(id, 1500))
+        {
+            Assert.Equal(HttpStatusCode.Created, bid.StatusCode);
+        }
+
+        using (var bid = await other.Http.BidAsync(id, 1800))
+        {
+            Assert.Equal(HttpStatusCode.Created, bid.StatusCode);
+        }
+
+        var bids = await AllAsync(admin.Http, "&category=bid");
+        Assert.NotEmpty(bids);
+        Assert.All(bids, e => Assert.Equal("bid", e.Category));
+
+        var byName = await AllAsync(admin.Http, $"&q={Uri.EscapeDataString(sellerName[4..])}");
+        Assert.Contains(byName, e => e.Type == "published" && e.TargetId == id);
+        var byEmail = await AllAsync(admin.Http, $"&q={Uri.EscapeDataString(seller.Email)}");
+        Assert.Contains(byEmail, e => e.Type == "sign_up" && e.ActorId == seller.Id);
+
+        // A user's events: their own actions and their listing's, not other people's bids on it.
+        var sellers = await AllAsync(admin.Http, $"&user={seller.Id}");
+        Assert.Contains(sellers, e => e.Type == "sign_up");
+        Assert.Contains(sellers, e => e.Type == "published" && e.TargetId == id);
+        Assert.DoesNotContain(sellers, e => e.Category == "bid");
+
+        var buyers = await AllAsync(admin.Http, $"&user={buyer.Id}");
+        Assert.Contains(buyers, e => e.Category == "bid" && e.ActorId == buyer.Id);
+        Assert.DoesNotContain(buyers, e => e.Category == "bid" && e.ActorId == other.Id);
+    }
+
+    [Fact]
+    public async Task Events_with_the_same_time_are_paged_without_loss_or_repeat()
+    {
+        var api = await db.ApiAsync();
+        var admin = await api.SignUpAsync("Paging admin", role: "admin");
+        var user = Guid.NewGuid();
+        await db.ExecuteAsync(
+            MigratedDatabase.Migrator, "INSERT INTO users (id, email, normalized_email, display_name) VALUES ($1, $2, upper($2), 'Same time')", user, $"{user:N}@example.test");
+        var at = await db.ScalarAsync<DateTime>(MigratedDatabase.Migrator, "SELECT clock_timestamp() - interval '30 minutes'");
+        foreach (var type in new[] { "sign_in", "sign_out", "sign_in" })
+        {
+            await db.ExecuteAsync(
+                MigratedDatabase.Migrator, "INSERT INTO account_events (at, type, user_id, session_id) VALUES ($1, $2, $3, gen_random_uuid())", at, type, user);
+        }
+
+        await db.ExecuteAsync(
+            MigratedDatabase.Migrator,
+            "INSERT INTO admin_audit (admin_id, action, target_type, target_id, reason, at) VALUES ($1, 'disable', 'user', $2, 'same time', $3)",
+            admin.Id,
+            user,
+            at);
+
+        var keys = new List<string>();
+        string? cursor = null;
+        do
+        {
+            var page = await admin.Http.GetJsonAsync($"/api/v1/admin/events?user={user}&pageSize=2{(cursor is null ? "" : $"&cursor={cursor}")}");
+            keys.AddRange(page.GetProperty("items").EnumerateArray().Select(e => e.GetProperty("key").GetString()!));
+            cursor = page.GetProperty("nextCursor").GetString();
+        }
+        while (cursor is not null);
+
+        Assert.Equal(4, keys.Count);
+        Assert.Equal(4, keys.Distinct().Count());
+    }
+
+    [Fact]
+    public async Task A_private_proxy_amount_stays_private_in_the_log()
+    {
+        var api = await db.ApiAsync();
+        var admin = await api.SignUpAsync("Private admin", role: "admin");
+        var auction = await db.InsertActiveAuctionAsync();
+        await db.InsertBidAsync(auction, null);
+
+        var bid = Single(await AllAsync(admin.Http, $"&q={auction}&category=bid"), e => e.TargetId == auction);
+
+        Assert.True(bid.Detail.ContainsKey("amountCents"));
+        Assert.Null(bid.Detail["amountCents"]);
+    }
+
+    [Fact]
+    public async Task The_range_is_checked_and_the_log_is_for_admins_only()
+    {
+        var api = await db.ApiAsync();
+        var admin = await api.SignUpAsync("Range admin", role: "admin");
+        var user = await api.SignUpAsync("Not an admin");
+        var now = DateTimeOffset.UtcNow;
+
+        using (var backwards = await admin.Http.GetAsync(Range(now, now.AddHours(-1)), TestContext.Current.CancellationToken))
+        {
+            await backwards.AssertProblemAsync(HttpStatusCode.BadRequest, "invalid_range");
+        }
+
+        using (var tooLong = await admin.Http.GetAsync(Range(now.AddDays(-8), now), TestContext.Current.CancellationToken))
+        {
+            await tooLong.AssertProblemAsync(HttpStatusCode.BadRequest, "invalid_range");
+        }
+
+        using (var unknown = await admin.Http.GetAsync("/api/v1/admin/events?category=weather", TestContext.Current.CancellationToken))
+        {
+            await unknown.AssertProblemAsync(HttpStatusCode.BadRequest, "invalid_category");
+        }
+
+        Assert.Equal(HttpStatusCode.NotFound, await user.Http.StatusOfGetAsync("/api/v1/admin/events"));
+    }
+
+    private static string Range(DateTimeOffset from, DateTimeOffset to) =>
+        $"/api/v1/admin/events?from={Uri.EscapeDataString(from.ToString("O", CultureInfo.InvariantCulture))}&to={Uri.EscapeDataString(to.ToString("O", CultureInfo.InvariantCulture))}";
+
+    private static Event Single(IEnumerable<Event> events, Func<Event, bool> match) => Assert.Single(events, e => match(e));
+
+    // Every page of the last ten minutes, following the cursor; the test host's pages are small.
+    private static async Task<List<Event>> AllAsync(HttpClient admin, string filters)
+    {
+        var from = Uri.EscapeDataString(DateTimeOffset.UtcNow.AddMinutes(-10).ToString("O", CultureInfo.InvariantCulture));
+        var events = new List<Event>();
+        string? cursor = null;
+        do
+        {
+            var page = await admin.GetJsonAsync($"/api/v1/admin/events?from={from}{filters}{(cursor is null ? "" : $"&cursor={cursor}")}");
+            events.AddRange(page.GetProperty("items").EnumerateArray().Select(Event.From));
+            cursor = page.GetProperty("nextCursor").GetString();
+        }
+        while (cursor is not null);
+
+        return events;
+    }
+
+    private sealed record Event(
+        string Key, string Category, string Type, string Level,
+        Guid? ActorId, string? ActorName, string? ActorEmail,
+        string? TargetKind, Guid? TargetId, string? TargetName, string? TargetEmail,
+        Dictionary<string, string?> Detail)
+    {
+        public static Event From(JsonElement e)
+        {
+            var actor = e.GetProperty("actor");
+            var target = e.GetProperty("target");
+            return new Event(
+                e.GetProperty("key").GetString()!, e.GetProperty("category").GetString()!, e.GetProperty("type").GetString()!, e.GetProperty("level").GetString()!,
+                Id(actor), Text(actor, "name"), Text(actor, "email"),
+                Text(target, "kind"), Id(target), Text(target, "name"), Text(target, "email"),
+                e.GetProperty("detail").EnumerateObject().ToDictionary(p => p.Name, p => p.Value.ValueKind == JsonValueKind.Null ? null : p.Value.GetString()));
+        }
+
+        private static Guid? Id(JsonElement party) =>
+            party.ValueKind == JsonValueKind.Object && party.GetProperty("id").ValueKind == JsonValueKind.String ? party.GetProperty("id").GetGuid() : null;
+
+        private static string? Text(JsonElement party, string name) =>
+            party.ValueKind == JsonValueKind.Object ? party.GetProperty(name).GetString() : null;
+    }
+}

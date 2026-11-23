@@ -12,6 +12,9 @@ namespace Auction.Api.Admin;
 
 public sealed record ReasonRequest(string? Reason);
 
+/// <summary>The event log's query string: a time range, categories (comma-separated), a search, a user and a page.</summary>
+public sealed record EventRequest(DateTimeOffset? From, DateTimeOffset? To, string? Category, string? Q, Guid? User, int? PageSize, string? Cursor);
+
 /// <summary>The moderation list's query: a title, seller name or id fragment, a status, and the page.</summary>
 public sealed record AuctionSearch(string? Q, string? Status, int? PageSize, string? Cursor);
 
@@ -29,6 +32,8 @@ public sealed record AdminKpiView(int WindowSeconds, LatencySummary ApiRequest, 
 internal static class AdminEndpoints
 {
     public const int ReasonMaxLength = 500;
+
+    private static readonly TimeSpan MaxEventRange = TimeSpan.FromDays(7);
 
     public static RouteGroupBuilder MapAdmin(this RouteGroupBuilder api)
     {
@@ -48,6 +53,7 @@ internal static class AdminEndpoints
         admin.MapPost("/users/{id:guid}/disable", (Guid id, ReasonRequest body, HttpContext http) => SetDisabledAsync(id, body, http, disabled: true));
         admin.MapPost("/users/{id:guid}/enable", (Guid id, ReasonRequest body, HttpContext http) => SetDisabledAsync(id, body, http, disabled: false));
         admin.MapGet("/audit", AuditAsync).Produces<Page<AuditEntry>>().ProducesProblem(StatusCodes.Status400BadRequest);
+        admin.MapGet("/events", EventsAsync).Produces<Page<LogEvent>>().ProducesProblem(StatusCodes.Status400BadRequest);
         admin.MapGet("/simulator", async (SimulatorControl simulator, CancellationToken cancellationToken) =>
             TypedResults.Ok(await simulator.ViewAsync(cancellationToken))).Produces<SimulatorView>();
         admin.MapPost("/simulator/runs", (SimulatorStartRequest body, SimulatorControl simulator, HttpContext http) => simulator.StartAsync(body, http))
@@ -140,6 +146,46 @@ internal static class AdminEndpoints
         }
 
         return TypedResults.Ok(await reader.AuditAsync(q, before, size, cancellationToken));
+    }
+
+    private static async Task<IResult> EventsAsync(
+        [AsParameters] EventRequest request, EventLog log, ApiOptions options, CancellationToken cancellationToken)
+    {
+        if (!TryEventQuery(request, out var query, out var problem)
+            || !Paging.TryParse(request.PageSize, null, options, out var size, out _, out problem))
+        {
+            return problem;
+        }
+
+        if (!Cursors.TryDecode(request.Cursor, out (DateTimeOffset At, string Key)? before))
+        {
+            return Problems.BadRequest("invalid_cursor", "The cursor is not one this API returned.");
+        }
+
+        return TypedResults.Ok(await log.PageAsync(query, before, size, cancellationToken));
+    }
+
+    // The log reads a bounded window: up to a week, ending now unless said otherwise, an hour long by default.
+    private static bool TryEventQuery(EventRequest request, out EventQuery query, out IResult problem)
+    {
+        var end = request.To ?? DateTimeOffset.UtcNow;
+        var start = request.From ?? end.AddHours(-1);
+        var categories = (request.Category ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Distinct().ToArray();
+        query = new EventQuery(start, end, categories, string.IsNullOrWhiteSpace(request.Q) ? null : request.Q.Trim(), request.User);
+        problem = Results.Empty;
+        if (start >= end || end - start > MaxEventRange)
+        {
+            problem = Problems.BadRequest("invalid_range", "from must be before to, and at most 7 days earlier.");
+            return false;
+        }
+
+        if (categories.Except(EventLog.Categories).Any())
+        {
+            problem = Problems.BadRequest("invalid_category", "category must be account, admin, listing or bid, comma-separated.");
+            return false;
+        }
+
+        return true;
     }
 
     private static async Task<IResult> ModerateAsync(Guid id, ReasonRequest body, HttpContext http, EngineGateway engine, Moderation action)
