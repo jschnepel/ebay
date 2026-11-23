@@ -18,6 +18,21 @@ public sealed class ClientFormatTests
     }
 
     [Theory]
+    [InlineData("active", true, null, "Leading")]
+    [InlineData("active", false, null, "Outbid")]
+    [InlineData("closed", true, null, "Won")]
+    [InlineData("closed", true, true, "Won")]
+    [InlineData("closed", true, false, "Didn't win")]
+    [InlineData("closed", false, null, "Didn't win")]
+    [InlineData("cancelled", true, null, "Cancelled")]
+    public void A_bid_on_an_ended_auction_says_whether_it_won(string status, bool youLead, bool? reserveMet, string expected)
+    {
+        var auction = new BiddingSummary { Status = status, YouLead = youLead, ReserveMet = reserveMet };
+
+        Assert.Equal(expected, Format.Standing(auction));
+    }
+
+    [Theory]
     [InlineData(0, "live auctions")]
     [InlineData(1, "live auction")]
     [InlineData(2, "live auctions")]

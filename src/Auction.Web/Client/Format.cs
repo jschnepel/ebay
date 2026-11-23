@@ -56,6 +56,16 @@ public static class Format
     };
 
     /// <summary>The label that agrees with a count: "1 live auction", "2 live auctions".</summary>
+    /// <summary>
+    /// Where the bidder stands, for My bids. The leader of a closed auction won it unless its reserve wasn't met.
+    /// </summary>
+    public static string Standing(BiddingSummary auction) => auction.Status switch
+    {
+        "closed" => auction.YouLead && auction.ReserveMet != false ? "Won" : "Didn't win",
+        "cancelled" => "Cancelled",
+        _ => auction.YouLead ? "Leading" : "Outbid",
+    };
+
     public static string Noun(long count, string one, string many) => count == 1 ? one : many;
 
     /// <summary>The tag class for a status: green while bidding is open, red when an admin stopped it.</summary>
