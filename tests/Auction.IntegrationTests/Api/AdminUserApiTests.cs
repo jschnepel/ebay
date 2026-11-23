@@ -147,9 +147,12 @@ public sealed class AdminUserApiTests(MigratedDatabase db)
             await unknown.AssertProblemAsync(HttpStatusCode.NotFound, "not_found");
         }
 
+        // The same routes answer an admin, so the 404s are the admin check and not a missing route.
         foreach (var path in new[] { "", "/listings", "/bidding" })
         {
+            Assert.Equal(HttpStatusCode.OK, await admin.Http.StatusOfGetAsync($"/api/v1/admin/users/{user.Id}{path}"));
             Assert.Equal(HttpStatusCode.NotFound, await user.Http.StatusOfGetAsync($"/api/v1/admin/users/{user.Id}{path}"));
+            Assert.Equal(HttpStatusCode.NotFound, await api.Anonymous().StatusOfGetAsync($"/api/v1/admin/users/{user.Id}{path}"));
         }
     }
 

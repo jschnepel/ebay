@@ -206,6 +206,11 @@ public sealed class EventLogApiTests(MigratedDatabase db)
         Assert.Equal(30, buckets.Count);
         long Sum(string category) => buckets.Sum(b => b.GetProperty("counts").GetProperty(category).GetInt64());
         Assert.Equal((2L, 1L, 0L, 0L), (Sum("bid"), Sum("account"), Sum("listing"), Sum("admin")));
+
+        // It all happened in the last minute, so it is counted in the last two half-minute buckets and nowhere else.
+        static long Total(JsonElement bucket) => bucket.GetProperty("counts").EnumerateObject().Sum(c => c.Value.GetInt64());
+        Assert.Equal(0, buckets.Take(28).Sum(Total));
+        Assert.Equal(3, buckets.Skip(28).Sum(Total));
     }
 
     [Theory]
@@ -281,7 +286,13 @@ public sealed class EventLogApiTests(MigratedDatabase db)
             await longSearch.AssertProblemAsync(HttpStatusCode.BadRequest, "invalid_search");
         }
 
-        Assert.Equal(HttpStatusCode.NotFound, await user.Http.StatusOfGetAsync("/api/v1/admin/events"));
+        // The same routes answer an admin, so the 404s below are the admin check and not a missing route.
+        foreach (var route in new[] { "/api/v1/admin/events", "/api/v1/admin/events/histogram" })
+        {
+            Assert.Equal(HttpStatusCode.OK, await admin.Http.StatusOfGetAsync(route));
+            Assert.Equal(HttpStatusCode.NotFound, await user.Http.StatusOfGetAsync(route));
+            Assert.Equal(HttpStatusCode.NotFound, await api.Anonymous().StatusOfGetAsync(route));
+        }
     }
 
     private static string Range(DateTimeOffset from, DateTimeOffset to) =>

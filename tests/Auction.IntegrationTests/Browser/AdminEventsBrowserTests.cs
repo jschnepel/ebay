@@ -158,6 +158,15 @@ public sealed partial class AdminEventsBrowserTests(MigratedDatabase db, Browser
         var chart = admin.GetByRole(AriaRole.Img, new() { NameRegex = new Regex("^Events over the last 15 minutes") });
         await Assertions.Expect(chart).ToBeVisibleAsync();
         await Assertions.Expect(admin.GetByTestId("chart-bar")).ToHaveCountAsync(30);
+
+        // The legend names each category with its count; this admin's own sign-up is at least one account event.
+        var legend = admin.GetByRole(AriaRole.List, new() { Name = "Categories in the chart" }).GetByRole(AriaRole.Listitem);
+        await Assertions.Expect(legend).ToHaveTextAsync([new Regex("^Account [1-9]"), new Regex("^Admin [0-9]"), new Regex("^Listing [0-9]"), new Regex("^Bid [0-9]")]);
+
+        // Clicking a bar narrows the log to that bar's stretch of time.
+        await admin.GetByTestId("chart-bar").Last.ClickAsync(new() { Force = true });
+        await admin.WaitForURLAsync(new Regex("range=custom.*from=.*to="));
+        await Assertions.Expect(admin.GetByTestId("chart-bar")).Not.ToHaveCountAsync(0);
     }
 
     [Fact]
@@ -168,7 +177,7 @@ public sealed partial class AdminEventsBrowserTests(MigratedDatabase db, Browser
 
         await admin.GotoAsync("/admin/audit");
 
-        await admin.WaitForURLAsync(new Regex("/admin/events"));
+        await admin.WaitForURLAsync(new Regex("/admin/events\\?category=admin"));
         await Assertions.Expect(admin.GetByRole(AriaRole.Heading, new() { Name = "Event log", Level = 1 })).ToBeVisibleAsync();
     }
 

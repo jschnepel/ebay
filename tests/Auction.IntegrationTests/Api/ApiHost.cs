@@ -53,10 +53,10 @@ public sealed class ApiHost(string connectionString, Uri engineAddress, bool dem
     };
 
     /// <summary>A new self-registered account, signed in on its own client: a user, or with role "admin" a visitor admin.</summary>
-    public async Task<ApiUser> SignUpAsync(string? displayName = null, string? role = null)
+    public async Task<ApiUser> SignUpAsync(string? displayName = null, string? role = null, string? email = null)
     {
         var http = Anonymous();
-        var email = $"{Guid.NewGuid():N}@example.test";
+        email ??= $"{Guid.NewGuid():N}@example.test";
         using var response = await http.PostAsJsonAsync(
             "/api/v1/account/sign-up", new { displayName = displayName ?? "Test user", email, role }, TestContext.Current.CancellationToken);
         Assert.Equal(System.Net.HttpStatusCode.Created, response.StatusCode);

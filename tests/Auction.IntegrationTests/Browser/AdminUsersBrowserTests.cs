@@ -99,6 +99,15 @@ public sealed partial class AdminUsersBrowserTests(MigratedDatabase db, Browsers
         await Assertions.Expect(row).ToContainTextAsync("Disabled");
         var disables = await db.ScalarAsync<long>(MigratedDatabase.Migrator, "SELECT count(*) FROM admin_audit WHERE action = 'disable' AND target_id = $1", target.Id);
         Assert.Equal(1, disables);
+
+        // Enter on the action's own button is a key press and a click at once; it still acts once.
+        await row.GetByRole(AriaRole.Button, new() { Name = "Enable", Exact = true }).ClickAsync();
+        await admin.GetByRole(AriaRole.Dialog).GetByLabel("Reason").FillAsync("Sorted out");
+        await admin.GetByRole(AriaRole.Dialog).GetByRole(AriaRole.Button, new() { Name = "Enable", Exact = true }).FocusAsync();
+        await admin.Keyboard.PressAsync("Enter");
+
+        await Assertions.Expect(row).ToContainTextAsync("Enabled");
+        Assert.Equal(1, await db.ScalarAsync<long>(MigratedDatabase.Migrator, "SELECT count(*) FROM admin_audit WHERE action = 'enable' AND target_id = $1", target.Id));
     }
 
     [Fact]
@@ -161,6 +170,14 @@ public sealed partial class AdminUsersBrowserTests(MigratedDatabase db, Browsers
 
         await admin.WaitForURLAsync(UserPage());
         Assert.EndsWith($"/admin/users/{user.Id}", admin.Url, StringComparison.Ordinal);
+        await Assertions.Expect(admin.GetByRole(AriaRole.Heading, new() { Name = name, Level = 1 })).ToBeVisibleAsync();
+
+        // Anywhere else on the row opens it too.
+        await admin.GotoAsync("/admin/users");
+        await admin.GetByLabel("Name, email or id").FillAsync(user.Email);
+        await admin.GetByRole(AriaRole.Button, new() { Name = "Search" }).ClickAsync();
+        await admin.GetByTestId("user-row").Filter(new() { HasText = name }).GetByText("Enabled").ClickAsync();
+        await Assertions.Expect(admin.GetByRole(AriaRole.Heading, new() { Name = name, Level = 1 })).ToBeVisibleAsync();
     }
 
     [Fact]

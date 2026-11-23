@@ -56,7 +56,8 @@ public sealed class UiQualityTests(MigratedDatabase db, Browsers browsers)
         // The longest name and a long email, so wrapping is tested with the worst case.
         var api = await db.ApiAsync();
         var longName = $"Maximilian Bartholomew {Guid.NewGuid():N}"[..50];
-        var user = await api.SignUpAsync(longName);
+        var longEmail = $"{new string('m', 60)}.{Guid.NewGuid():N}@{new string('d', 60)}.{new string('e', 60)}.example.test";
+        var user = await api.SignUpAsync(longName, email: longEmail);
         var seller = await api.SignUpAsync("Quality seller");
         var listed = await seller.PublishedAsync(Api.ApiCalls.Terms(title: $"Quality lot {Guid.NewGuid():N}"[..30], bidEntry: "fixed_increment"));
         using (var bid = await user.Http.BidAsync(listed, 1000))
