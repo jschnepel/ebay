@@ -252,6 +252,36 @@ public sealed class AuctionApiTests(MigratedDatabase db)
     }
 
     [Fact]
+    public async Task The_detail_tells_a_bidder_who_was_outbid_that_they_have_bid()
+    {
+        var api = await db.ApiAsync();
+        var seller = await api.SignUpAsync();
+        var first = await api.SignUpAsync();
+        var second = await api.SignUpAsync();
+        var id = await seller.PublishedAsync(ApiCalls.Terms(bidEntry: "fixed_increment", floorType: "minimum_bid", reserveCents: null));
+        using (var bid = await first.Http.BidAsync(id, 1000))
+        {
+            Assert.Equal(HttpStatusCode.Created, bid.StatusCode);
+        }
+
+        using (var bid = await second.Http.BidAsync(id, 1100))
+        {
+            Assert.Equal(HttpStatusCode.Created, bid.StatusCode);
+        }
+
+        async Task<(bool Lead, bool HasBid)> StandingAsync(HttpClient http)
+        {
+            var detail = await http.GetJsonAsync($"/api/v1/auctions/{id}");
+            return (detail.GetProperty("youLead").GetBoolean(), detail.GetProperty("youHaveBid").GetBoolean());
+        }
+
+        Assert.Equal((false, true), await StandingAsync(first.Http));
+        Assert.Equal((true, true), await StandingAsync(second.Http));
+        Assert.Equal((false, false), await StandingAsync(seller.Http));
+        Assert.Equal((false, false), await StandingAsync(api.Anonymous()));
+    }
+
+    [Fact]
     public async Task The_seller_edits_a_draft_and_cancels_before_the_first_bid_but_not_after()
     {
         var api = await db.ApiAsync();

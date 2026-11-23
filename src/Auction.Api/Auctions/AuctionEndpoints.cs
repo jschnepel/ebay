@@ -17,7 +17,7 @@ internal static class AuctionEndpoints
     {
         var auctions = api.MapGroup("/auctions").WithTags("Auctions");
         auctions.MapGet("", ListAsync).Produces<Page<AuctionSummary>>().ProducesProblem(StatusCodes.Status400BadRequest);
-        auctions.MapGet("/{id:guid}", DetailAsync).Produces<AuctionDetail>().ProducesProblem(StatusCodes.Status404NotFound);
+        auctions.MapGet("/{id:guid}", DetailAsync).Produces<AuctionDetail>().ProducesProblem(StatusCodes.Status404NotFound).ProducesProblem(StatusCodes.Status410Gone);
         auctions.MapGet("/{id:guid}/bids", BidsAsync).Produces<Page<BidView>>().ProducesProblem(StatusCodes.Status404NotFound);
 
         var commands = auctions.MapGroup("").RequireAuthorization().Limited(RateLimits.Policy.Write)
@@ -75,8 +75,18 @@ internal static class AuctionEndpoints
     private static IResult? TryPaging(int? pageSize, string? cursor, ApiOptions options, out int size, out (DateTimeOffset, Guid)? after) =>
         Paging.TryParse(pageSize, cursor, options, out size, out after, out var problem) ? null : problem;
 
-    private static async Task<IResult> DetailAsync(Guid id, HttpContext http, AuctionReader reader, CancellationToken cancellationToken) =>
-        await reader.DetailAsync(id, http.User.UserIdOf(), cancellationToken) is { } detail ? TypedResults.Ok(detail) : Problems.NotFound();
+    // An old link to an auction a demo reset cleared says it ended rather than that it never existed.
+    private static async Task<IResult> DetailAsync(Guid id, HttpContext http, AuctionReader reader, CancellationToken cancellationToken)
+    {
+        if (await reader.DetailAsync(id, http.User.UserIdOf(), cancellationToken) is { } detail)
+        {
+            return TypedResults.Ok(detail);
+        }
+
+        return await reader.ClearedByResetAsync(id, cancellationToken)
+            ? Problems.Of(StatusCodes.Status410Gone, "removed", "This auction has ended. The demo clears every auction at its daily reset, so it's no longer here.")
+            : Problems.NotFound();
+    }
 
     private static async Task<IResult> BidsAsync(
         Guid id, int? pageSize, string? cursor, HttpContext http, AuctionReader reader, ApiOptions options)

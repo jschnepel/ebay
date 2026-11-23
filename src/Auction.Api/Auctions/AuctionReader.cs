@@ -63,6 +63,14 @@ internal sealed class AuctionReader(NpgsqlDataSource dataSource, Caching.Auction
         WHERE a.id = $1 AND (status <> 'draft' OR seller_id = $2::uuid)
         """;
 
+    private const string HasBidSql = "SELECT EXISTS (SELECT 1 FROM auction.bids WHERE auction_id = $1 AND bidder_id = $2)";
+
+    // No auction has the id, and a reset finished after the id was made, so the reset is what removed it.
+    private const string ClearedSql = """
+        SELECT NOT EXISTS (SELECT 1 FROM auction.auctions WHERE id = $1)
+           AND EXISTS (SELECT 1 FROM auction.demo_resets WHERE completed_at > $2)
+        """;
+
     private const string VisibleSql =
         "SELECT status FROM auction.auctions WHERE id = $1 AND (status <> 'draft' OR seller_id = $2::uuid)";
 
@@ -160,12 +168,40 @@ internal sealed class AuctionReader(NpgsqlDataSource dataSource, Caching.Auction
         }
 
         var isSeller = viewer is { } v && row.SellerId == v.Value;
+        var leads = viewer is { } leader && row.LeaderId == leader.Value;
         return row.Public with
         {
             YouAreSeller = isSeller,
-            YouLead = viewer is { } leader && row.LeaderId == leader.Value,
+            YouLead = leads,
+            YouHaveBid = leads || (viewer is { } bidder && !isSeller && await HasBidAsync(id, bidder, cancellationToken)),
             ReserveCents = isSeller ? row.ReserveCents : null,
         };
+    }
+
+    private async Task<bool> HasBidAsync(Guid id, UserId bidder, CancellationToken cancellationToken)
+    {
+        await using var command = dataSource.CreateCommand(HasBidSql);
+        command.Parameters.Add(Param(id));
+        command.Parameters.Add(Param(bidder.Value));
+        return await command.ExecuteScalarAsync(cancellationToken) is true;
+    }
+
+    /// <summary>
+    /// Whether the id is one a demo reset cleared: it's shaped like the ids auctions get (UUIDv7, which carry the
+    /// time they were made), no auction has it, and a reset finished after that time.
+    /// </summary>
+    public async Task<bool> ClearedByResetAsync(Guid id, CancellationToken cancellationToken)
+    {
+        if (id.Version != 7)
+        {
+            return false;
+        }
+
+        var made = DateTimeOffset.FromUnixTimeMilliseconds(Convert.ToInt64(id.ToString("N")[..12], 16));
+        await using var command = dataSource.CreateCommand(ClearedSql);
+        command.Parameters.Add(Param(id));
+        command.Parameters.Add(Param(made));
+        return await command.ExecuteScalarAsync(cancellationToken) is true;
     }
 
     private async Task<DetailRow?> LoadAsync(Guid id, UserId? viewer, CancellationToken cancellationToken)

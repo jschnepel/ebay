@@ -63,6 +63,12 @@ public sealed record AuctionDetail : AuctionSummary
 
     public required bool YouLead { get; init; }
 
+    /// <summary>
+    /// Whether the viewer has an accepted bid here, so an outbid bidder can be told. Not required: the read cache
+    /// still holds entries from the release before it, and it's set for each viewer anyway.
+    /// </summary>
+    public bool YouHaveBid { get; init; }
+
     public DateTimeOffset? PublishedAt { get; init; }
 
     public DateTimeOffset? ClosedAt { get; init; }

@@ -12,6 +12,28 @@ public sealed class RedisJobTests(MigratedDatabase db)
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     [Fact]
+    public async Task An_auction_cached_by_an_older_release_still_reads_after_a_deploy()
+    {
+        var api = await db.ApiAsync();
+        var seller = await api.SignUpAsync();
+        var id = await seller.PublishedAsync();
+        var anonymous = api.Anonymous();
+        await anonymous.GetJsonAsync($"/api/v1/auctions/{id}");
+
+        // The entry as the release before the viewer's own fields were added wrote it: without youHaveBid.
+        var redis = api.Services.GetRequiredService<Auction.Api.Caching.RedisJobs>();
+        await redis.TryAsync(async r =>
+        {
+            var stored = (string?)await r.HashGetAsync($"auction:{id:N}", "json");
+            var json = System.Text.Json.Nodes.JsonNode.Parse(stored ?? "{}")!;
+            Assert.True(json["Public"]!.AsObject().Remove("YouHaveBid"));
+            await r.HashSetAsync($"auction:{id:N}", "json", json.ToJsonString());
+        });
+
+        Assert.Equal(HttpStatusCode.OK, await anonymous.StatusOfGetAsync($"/api/v1/auctions/{id}"));
+    }
+
+    [Fact]
     public async Task A_cached_auction_and_directory_page_never_show_an_older_version_after_a_change()
     {
         var api = await db.ApiAsync();

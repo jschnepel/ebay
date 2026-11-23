@@ -260,6 +260,30 @@ public sealed class AdminApiTests(MigratedDatabase db)
         await db.ExecuteAsync(MigratedDatabase.Migrator, "DELETE FROM demo_resets");
     }
 
+    // Here rather than with the auction tests: it needs a finished reset in demo_resets, which the reset test
+    // above clears, and tests in one class never run at the same time.
+    [Fact]
+    public async Task A_link_to_an_auction_the_last_reset_cleared_says_it_has_ended()
+    {
+        var resetAt = DateTimeOffset.UtcNow.AddMinutes(-5);
+        await db.ExecuteAsync(MigratedDatabase.Migrator, "INSERT INTO demo_resets (id, requested_at, completed_at) VALUES ($1, $2, $2)", Guid.CreateVersion7(), resetAt);
+        var anonymous = (await db.ApiAsync()).Anonymous();
+
+        using var cleared = await anonymous.GetAsync(new Uri($"/api/v1/auctions/{IdMadeAt(resetAt.AddHours(-1))}", UriKind.Relative), Ct);
+        using var unknown = await anonymous.GetAsync(new Uri($"/api/v1/auctions/{IdMadeAt(resetAt.AddMinutes(1))}", UriKind.Relative), Ct);
+        using var random = await anonymous.GetAsync(new Uri($"/api/v1/auctions/{Guid.NewGuid()}", UriKind.Relative), Ct);
+
+        await cleared.AssertProblemAsync(HttpStatusCode.Gone, "removed");
+        Assert.StartsWith("This auction has ended.", (await cleared.JsonAsync()).GetProperty("title").GetString(), StringComparison.Ordinal);
+        await unknown.AssertProblemAsync(HttpStatusCode.NotFound, "not_found");
+        await random.AssertProblemAsync(HttpStatusCode.NotFound, "not_found");
+        await db.ExecuteAsync(MigratedDatabase.Migrator, "DELETE FROM demo_resets");
+    }
+
+    // An id shaped like the ones auctions get (UUIDv7), stamped with the given time.
+    private static Guid IdMadeAt(DateTimeOffset at) =>
+        Guid.ParseExact($"{at.ToUnixTimeMilliseconds():x12}7abc8def{Random.Shared.NextInt64(1L << 47):x12}", "N");
+
     [Fact]
     public async Task Outside_demo_mode_there_is_no_demo_reset()
     {
