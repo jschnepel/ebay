@@ -64,13 +64,13 @@ internal sealed class EventLog(NpgsqlDataSource dataSource)
           AND ($5::uuid IS NULL OR m.admin_id = $5 OR (m.target_type = 'user' AND m.target_id = $5))
         UNION ALL
         SELECT r.requested_at, 'r:' || r.id || ':requested', 'admin', 'demo_reset_requested', 'info',
-               'user', NULL, r.requested_by, NULL, NULL, NULL, NULL, NULL, NULL, '{}'::jsonb
+               'user', NULL::uuid, r.requested_by, NULL, NULL, NULL::uuid, NULL, NULL, NULL, '{}'::jsonb
         FROM auction.demo_resets r
         WHERE r.requested_by IS NOT NULL AND $5::uuid IS NULL
           AND r.requested_at >= $1 AND r.requested_at < $2 AND ($3::timestamptz IS NULL OR r.requested_at <= $3)
         UNION ALL
         SELECT r.completed_at, 'r:' || r.id || ':completed', 'admin', 'demo_reset_completed', 'info',
-               NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '{}'::jsonb
+               NULL, NULL::uuid, NULL, NULL, NULL, NULL::uuid, NULL, NULL, NULL, '{}'::jsonb
         FROM auction.demo_resets r
         WHERE r.completed_at IS NOT NULL AND $5::uuid IS NULL
           AND r.completed_at >= $1 AND r.completed_at < $2 AND ($3::timestamptz IS NULL OR r.completed_at <= $3)
@@ -82,7 +82,7 @@ internal sealed class EventLog(NpgsqlDataSource dataSource)
           AND ($5::uuid IS NULL OR l.seller_id = $5)
         UNION ALL
         SELECT l.closed_at, 'c:' || l.id, 'listing', 'closed', 'info',
-               NULL, NULL, NULL, NULL, 'auction', l.id, l.title, NULL, l.title,
+               NULL, NULL::uuid, NULL, NULL, 'auction', l.id, l.title, NULL, l.title,
                jsonb_strip_nulls(jsonb_build_object(
                    'outcome', l.outcome,
                    'finalPriceCents', CASE WHEN l.outcome = 'sold' THEN l.current_price_cents::text END,
@@ -110,12 +110,11 @@ internal sealed class EventLog(NpgsqlDataSource dataSource)
           AND ($5::uuid IS NULL OR b.bidder_id = $5)
         """;
 
+    private const string Columns = "(at, key, category, type, level, actor_kind, actor_id, actor_name, actor_email, target_kind, target_id, target_name, target_email, title, detail)";
+
     // $4 the cursor's key, $6 the categories (or null for all), $7 the search (or null).
-    private const string FilteredSql = $"""
-        SELECT * FROM ({EventsSql}) AS events (at, key, category, type, level,
-                                                actor_kind, actor_id, actor_name, actor_email,
-                                                target_kind, target_id, target_name, target_email, title, detail)
-        WHERE ($3::timestamptz IS NULL OR (at, key) < ($3::timestamptz, $4::text))
+    private const string Where = """
+        ($3::timestamptz IS NULL OR (at, key) < ($3::timestamptz, $4::text))
           AND ($6::text[] IS NULL OR category = ANY ($6::text[]))
           AND ($7::text IS NULL
                OR actor_name ILIKE '%' || $7 || '%' OR actor_email ILIKE '%' || $7 || '%'
@@ -123,11 +122,18 @@ internal sealed class EventLog(NpgsqlDataSource dataSource)
                OR actor_id::text = $7 OR target_id::text = $7 OR type = $7)
         """;
 
-    // $8 the row limit.
-    private const string PageSql = $"{FilteredSql} ORDER BY at DESC, key DESC LIMIT $8";
+    // A page: each source filtered and cut to a page of its own newest rows ($8 the limit), then the newest page of
+    // those. A key belongs to one source, so this is exactly the newest page of the whole log, and no source ever
+    // hands over more than a page.
+    private static readonly string PageSql =
+        "SELECT * FROM ("
+        + string.Join(" UNION ALL ", EventsSql.Split("UNION ALL").Select(source =>
+            $"(SELECT * FROM ({source}) AS e {Columns} WHERE {Where} ORDER BY at DESC, key DESC LIMIT $8)"))
+        + ") AS events ORDER BY at DESC, key DESC LIMIT $8";
 
     // $8 the bucket size; buckets are aligned to the range's start.
-    private const string HistogramSql = $"SELECT date_bin($8::interval, at, $1), category, count(*) FROM ({FilteredSql}) AS f GROUP BY 1, 2";
+    private const string HistogramSql =
+        $"SELECT date_bin($8::interval, at, $1), category, count(*) FROM (SELECT * FROM ({EventsSql}) AS e {Columns} WHERE {Where}) AS f GROUP BY 1, 2";
 
     /// <summary>The bucket size for a range: about 30 to 60 bars whatever the range.</summary>
     public static TimeSpan BucketFor(TimeSpan range) => range switch
