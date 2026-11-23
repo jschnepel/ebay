@@ -241,3 +241,16 @@ h2.mud-typography { font-size: 1.25rem; }
 /* The bar is 56px; the page starts below it with room to breathe. */
 .mud-layout .mud-main-content { padding-top: 56px; }
 .mud-main-content > .mud-container { padding-top: 2rem !important; padding-bottom: 3rem !important; }
+
+/* Panels: flat, white, hairline-edged; the larger corner marks them as containers. */
+.panel, .health, .reason-bar, .audit, .lot, .mud-paper-outlined { border-radius: var(--radius-lg); border-color: var(--line); }
+.panel { padding: 1.25rem 1.5rem; }
+.panel > h2, .panel > .mud-typography-h6 { font-size: 1.15rem; margin-bottom: 1rem; }
+.mud-button-root { border-radius: var(--radius); }
+.mud-button-filled { box-shadow: none; }
+.mud-input-outlined-border { border-radius: var(--radius); }
+
+/* Tables read as lists: a quiet header band, generous rows, figures aligned. */
+.mud-simple-table table thead th { background: var(--sunk); color: var(--muted); font-weight: 600; font-size: 0.8125rem; }
+.mud-simple-table table tbody tr:hover td { background: rgba(16, 49, 58, 0.025); }
+.table-scroll { border-radius: var(--radius-lg); }
