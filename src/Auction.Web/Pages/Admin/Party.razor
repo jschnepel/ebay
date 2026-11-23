@@ -5,7 +5,7 @@
         <a href="@($"admin/users/{user}")">@Of.Name</a>
         @if (Of.Email is { } email)
         {
-            <span class="muted"> @email</span>
+            @(" ")<span class="muted">@email</span>
         }
         break;
     case { Kind: "auction", Id: { } auction }:

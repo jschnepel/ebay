@@ -34,7 +34,7 @@ public sealed partial class AdminEventsBrowserTests(MigratedDatabase db, Browser
         await Assertions.Expect(row).ToContainTextAsync("Warning");
 
         await row.GetByRole(AriaRole.Button, new() { Name = "Details" }).ClickAsync();
-        await Assertions.Expect(row).ToContainTextAsync(target.Email);
+        await Assertions.Expect(row).ToContainTextAsync($"{name} {target.Email}");
         await Assertions.Expect(row.GetByRole(AriaRole.Link, new() { Name = name })).ToHaveAttributeAsync("href", $"admin/users/{target.Id}");
     }
 
