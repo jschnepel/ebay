@@ -115,9 +115,9 @@ h2.mud-typography { font-size: 1.25rem; font-weight: 600; color: var(--ink); }
 /* The auction page: the story on the left, the ticket on the right. */
 .lot-page { display: grid; grid-template-columns: minmax(0, 1fr) minmax(18rem, 24rem); column-gap: 2rem; align-items: start;
     grid-template-areas: "title ticket" "media ticket" "body ticket"; grid-template-rows: auto auto 1fr; }
-.lot-title { grid-area: title; }
-.lot-media { grid-area: media; min-width: 0; }
-.lot-body { grid-area: body; min-width: 0; }
+.lot-page-title { grid-area: title; }
+.lot-page-media { grid-area: media; min-width: 0; }
+.lot-page-body { grid-area: body; min-width: 0; }
 .lot-page > .ticket { grid-area: ticket; }
 /* On a narrow screen the price and bidding come straight after the photo, before the description. */
 @media (max-width: 959.98px) {

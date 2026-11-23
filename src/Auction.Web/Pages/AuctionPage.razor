@@ -17,8 +17,8 @@ else
     var auction = _auction;
     @* Title, photos, bidding, then the rest: side by side on a wide screen, in that order on a phone. *@
     <div class="lot-page">
-        <MudText Typo="Typo.h4" HtmlTag="h1" Class="lot-title">@auction.Title</MudText>
-        <div class="lot-media">
+        <MudText Typo="Typo.h4" HtmlTag="h1" Class="lot-page-title">@auction.Title</MudText>
+        <div class="lot-page-media">
             @if (auction.ImageIds.Count > 0)
             {
                 <PhotoGallery Images="auction.ImageIds" Title="@auction.Title" />
@@ -28,7 +28,7 @@ else
                 <LotCover Auction="auction" />
             }
         </div>
-        <div class="lot-body">
+        <div class="lot-page-body">
             <p class="lot-description">@auction.Description</p>
 
             <MudText Typo="Typo.h6" HtmlTag="h2" Class="mb-2">Details</MudText>
