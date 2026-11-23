@@ -235,10 +235,12 @@ internal static class AuctionEndpoints
                 return TypedResults.Created($"/api/v1/auctions/{id}/bids", EngineGateway.Response(result, actor, isBid: true));
             });
 
-        // The auction page asks whether its viewer has bid; this keeps a remembered "no" from outliving the bid.
+        // The auction page asks whether its viewer has bid and what their maximum is; neither answer may outlive the bid.
         if (accepted && http.User.UserIdOf() is { } bidder)
         {
-            await http.RequestServices.GetRequiredService<Caching.AuctionCache>().RememberHasBidAsync(id, bidder.Value, hasBid: true);
+            var cache = http.RequestServices.GetRequiredService<Caching.AuctionCache>();
+            await cache.RememberHasBidAsync(id, bidder.Value, hasBid: true);
+            await cache.ForgetOwnMaximumAsync(id, bidder.Value);
         }
 
         return response;

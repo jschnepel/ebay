@@ -120,6 +120,21 @@ public sealed class AuctionCache(RedisJobs redis)
             ? db.StringSetAsync(HasBidKey(auction, bidder), "1", TimeSpan.FromMinutes(10))
             : db.StringSetAsync(HasBidKey(auction, bidder), "0", TimeSpan.FromMinutes(1), When.NotExists));
 
+    /// <summary>
+    /// The bidder's own proxy maximum, remembered for a minute and forgotten the moment they bid again, so the
+    /// auction page doesn't ask PostgreSQL for it on every refresh.
+    /// </summary>
+    public async Task<long?> OwnMaximumAsync(Guid auction, Guid bidder) =>
+        await redis.TryAsync(async db => (long?)await db.StringGetAsync(OwnMaximumKey(auction, bidder)));
+
+    public Task RememberOwnMaximumAsync(Guid auction, Guid bidder, long cents) =>
+        redis.TryAsync(db => db.StringSetAsync(OwnMaximumKey(auction, bidder), cents, TimeSpan.FromMinutes(1)));
+
+    public Task ForgetOwnMaximumAsync(Guid auction, Guid bidder) =>
+        redis.TryAsync(db => db.KeyDeleteAsync(OwnMaximumKey(auction, bidder)));
+
+    private static string OwnMaximumKey(Guid auction, Guid bidder) => $"own-maximum:{auction:N}:{bidder:N}";
+
     private static string HasBidKey(Guid auction, Guid bidder) => $"has-bid:{auction:N}:{bidder:N}";
 
     private const string DirectoryGeneration = "directory-generation";

@@ -57,6 +57,8 @@ public sealed class RoleGrantTests(MigratedDatabase db)
         { MigratedDatabase.Api, "INSERT INTO admin_audit (admin_id, action, target_type, target_id, reason) SELECT gen_random_uuid(), 'disable', 'user', gen_random_uuid(), 'r' WHERE false" },
         { MigratedDatabase.Api, "INSERT INTO account_events (type, user_id, email, detail, session_id) SELECT 'sign_in', NULL, 'a@b.c', NULL, NULL WHERE false" },
         { MigratedDatabase.Api, "SELECT 1 FROM account_events" },
+        // One bidder's own maximum on one auction, and nothing else of the table (which stays refused below).
+        { MigratedDatabase.Api, "SELECT own_maximum(gen_random_uuid(), gen_random_uuid())" },
         { MigratedDatabase.Verifier, "SELECT 1 FROM account_events" },
     };
 

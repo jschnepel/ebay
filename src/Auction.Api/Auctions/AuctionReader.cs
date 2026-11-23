@@ -169,13 +169,35 @@ internal sealed class AuctionReader(NpgsqlDataSource dataSource, Caching.Auction
 
         var isSeller = viewer is { } v && row.SellerId == v.Value;
         var leads = viewer is { } leader && row.LeaderId == leader.Value;
+        var hasBid = leads || (viewer is { } bidder && !isSeller && await HasBidAsync(id, bidder, cancellationToken));
         return row.Public with
         {
             YouAreSeller = isSeller,
             YouLead = leads,
-            YouHaveBid = leads || (viewer is { } bidder && !isSeller && await HasBidAsync(id, bidder, cancellationToken)),
+            YouHaveBid = hasBid,
+            YourMaximumCents = hasBid && row.Public.BidEntry == "proxy" ? await OwnMaximumAsync(id, viewer!.Value, cancellationToken) : null,
             ReserveCents = isSeller ? row.ReserveCents : null,
         };
+    }
+
+    // The bidder's own maximum, through a function that returns only that: the api role can't read the table.
+    private async Task<long?> OwnMaximumAsync(Guid id, UserId bidder, CancellationToken cancellationToken)
+    {
+        if (await cache.OwnMaximumAsync(id, bidder.Value) is { } remembered)
+        {
+            return remembered;
+        }
+
+        await using var command = dataSource.CreateCommand("SELECT auction.own_maximum($1, $2)");
+        command.Parameters.Add(Param(id));
+        command.Parameters.Add(Param(bidder.Value));
+        var maximum = await command.ExecuteScalarAsync(cancellationToken) as long?;
+        if (maximum is { } cents)
+        {
+            await cache.RememberOwnMaximumAsync(id, bidder.Value, cents);
+        }
+
+        return maximum;
     }
 
     private async Task<bool> HasBidAsync(Guid id, UserId bidder, CancellationToken cancellationToken)

@@ -195,7 +195,7 @@ All tables live in the `auction` schema, owned by the `migrator` role. Money is 
 | Table | Holds | Integrity in the database | Written by |
 |---|---|---|---|
 | `auctions` | Terms, status, current price, leader, bid count, version, outcome | A draft has every term but may still break the listing rules (a short title, a missing reserve); anything past draft must be a valid listing with a valid reserve. Terms are frozen after publish and only drafts can be deleted (triggers). A leader exists exactly when a bid has been accepted, and is never the seller | engine |
-| `proxy_maxima` | Each bidder's private maximum and when it was accepted | Not readable by the `api` role, so a maximum can't leak through a read | engine |
+| `proxy_maxima` | Each bidder's private maximum and when it was accepted | Not readable by the `api` role, so maxima can't be listed or leak through a read. The one way in is `own_maximum(auction, bidder)`, a function that returns a single bidder's maximum on a single auction; the API calls it with the signed-in account to show a bidder their own | engine |
 | `bids` | The public accepted history, keyed `(auction_id, seq)`; an outbid-at-once step has no amount | Append-only: a trigger refuses UPDATE and DELETE, even for the owner. Rejected bids are recorded only as idempotency outcomes | engine |
 | `idempotency_records` | Outcome per `(actor, key)` with a SHA-256 request hash; the close worker deletes records older than 24 hours, hourly | | engine |
 | `outbox_events` | Change events with the writing transaction's `xid8`, for the relay | The `api` role may only set `published_at` | engine; relay in the API |

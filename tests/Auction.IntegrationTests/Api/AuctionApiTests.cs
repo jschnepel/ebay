@@ -252,6 +252,40 @@ public sealed class AuctionApiTests(MigratedDatabase db)
     }
 
     [Fact]
+    public async Task A_proxy_bidder_sees_their_own_maximum_and_nobody_elses()
+    {
+        var api = await db.ApiAsync();
+        var seller = await api.SignUpAsync();
+        var first = await api.SignUpAsync();
+        var second = await api.SignUpAsync();
+        var id = await seller.PublishedAsync(ApiCalls.Terms(reserveCents: 1500));
+
+        async Task<long?> MaximumAsync(HttpClient http) =>
+            (await http.GetJsonAsync($"/api/v1/auctions/{id}")).TryGetProperty("yourMaximumCents", out var value) ? value.GetInt64() : null;
+
+        async Task BidAsync(ApiUser bidder, long amount)
+        {
+            using var bid = await bidder.Http.BidAsync(id, amount);
+            Assert.Equal(HttpStatusCode.Created, bid.StatusCode);
+        }
+
+        await BidAsync(first, 5000);
+
+        // The price is only what it takes to lead; the maximum is the bidder's alone to see.
+        Assert.Equal(1500, (await first.Http.GetJsonAsync($"/api/v1/auctions/{id}")).GetProperty("currentPriceCents").GetInt64());
+        Assert.Equal(5000, await MaximumAsync(first.Http));
+        Assert.Null(await MaximumAsync(second.Http));
+        Assert.Null(await MaximumAsync(seller.Http));
+        Assert.Null(await MaximumAsync(api.Anonymous()));
+
+        // Raising it, and being outbid, are both shown at once.
+        await BidAsync(second, 3000);
+        await BidAsync(first, 6000);
+        Assert.Equal(6000, await MaximumAsync(first.Http));
+        Assert.Equal(3000, await MaximumAsync(second.Http));
+    }
+
+    [Fact]
     public async Task The_directory_search_has_a_length_limit()
     {
         var anonymous = (await db.ApiAsync()).Anonymous();

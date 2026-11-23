@@ -53,6 +53,10 @@ public sealed record AuctionDetail : AuctionSummary
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public long? ReserveCents { get; init; }
 
+    /// <summary>The viewer's own proxy maximum, which the price doesn't show: present only for that bidder.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public long? YourMaximumCents { get; init; }
+
     /// <summary>Every image in display order, the cover among them.</summary>
     public IReadOnlyList<Guid> ImageIds { get; init; } = [];
 
