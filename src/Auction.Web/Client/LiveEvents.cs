@@ -30,6 +30,16 @@ public static class LiveEvents
     }
 
     /// <summary>
+    /// An older page added below what's shown, leaving out any event already there: live mode reaches back past the
+    /// newest page, so the next page down can overlap it.
+    /// </summary>
+    public static IReadOnlyList<LogEvent> Append(IReadOnlyList<LogEvent> shown, IReadOnlyList<LogEvent> older)
+    {
+        var known = shown.Select(e => e.Key).ToHashSet(StringComparer.Ordinal);
+        return [.. shown, .. older.Where(e => known.Add(e.Key))];
+    }
+
+    /// <summary>
     /// Follows the cursor from the first page until the last, or until <paramref name="maxPages"/>, and says which:
     /// stopping early means more happened than is shown, which a failed request doesn't.
     /// </summary>

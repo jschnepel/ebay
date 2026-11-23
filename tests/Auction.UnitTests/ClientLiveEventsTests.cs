@@ -56,6 +56,16 @@ public sealed class ClientLiveEventsTests
     }
 
     [Fact]
+    public void Older_events_are_added_below_without_repeating_one_live_mode_already_showed()
+    {
+        // Live mode reaches back past the newest page, so the next older page can hold events already on screen.
+        IReadOnlyList<LogEvent> shown = [At("d", 40), At("c", 30), At("b", 20)];
+        IReadOnlyList<LogEvent> older = [At("c", 30), At("b", 20), At("a", 10)];
+
+        Assert.Equal(["d", "c", "b", "a"], LiveEvents.Append(shown, older).Select(e => e.Key));
+    }
+
+    [Fact]
     public async Task Collecting_follows_the_cursor_until_the_last_page()
     {
         var pages = new Dictionary<string, Page<LogEvent>>

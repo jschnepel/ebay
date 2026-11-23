@@ -154,7 +154,9 @@ public sealed partial class AdminEventsBrowserTests(MigratedDatabase db, Browser
         // Clicking a bar narrows the log to that bar's stretch of time.
         await admin.GetByTestId("chart-bar").Last.ClickAsync(new() { Force = true });
         await admin.WaitForURLAsync(new Regex("range=custom.*from=.*to="));
-        await Assertions.Expect(admin.GetByTestId("chart-bar")).Not.ToHaveCountAsync(0);
+        // The range switch now shows that stretch, and the chart is redrawn for it in finer bars than 30 seconds.
+        await Assertions.Expect(admin.GetByRole(AriaRole.Group, new() { Name = "Time range" }).GetByRole(AriaRole.Button, new() { Disabled = true })).ToContainTextAsync(" to ");
+        await Assertions.Expect(admin.GetByRole(AriaRole.Img, new() { NameRegex = new Regex("^Events over .* to ") })).ToBeVisibleAsync();
     }
 
     [Fact]

@@ -75,9 +75,15 @@ else
             @* A new view starts with every row closed. *@
             <EventList @key="_view" Events="_events" OnReading="reading => _reading = reading" />
         </section>
-        @if (_next is not null)
+        @if (_trimmed)
         {
-            <MudButton Class="mt-3" Variant="Variant.Outlined" OnClick="MoreAsync">Show more</MudButton>
+            <p class="muted mt-3" data-testid="live-trimmed">
+                Live mode keeps the newest @_events.Count.ToString("N0") events on screen. <MudLink OnClick="LoadAsync">Reload the view</MudLink> or narrow the range to page through older ones.
+            </p>
+        }
+        else if (_next is not null)
+        {
+            <MudButton Class="mt-3" Variant="Variant.Outlined" OnClick="MoreAsync" Disabled="_loadingMore">Show more</MudButton>
         }
     }
 }
@@ -123,6 +129,12 @@ else
     private bool _reading;
     private bool _missed;
     private int _ticks;
+
+    // Live mode keeps at most this many events: the most the person has loaded, and never fewer than its own cap.
+    // Once it has dropped older ones the page's cursor no longer follows on from the list, so paging gives way to a reload.
+    private int _kept = LiveEvents.Kept;
+    private bool _trimmed;
+    private bool _loadingMore;
     private int _view;
 
     // Each time live mode is switched on it starts a new run; a loop from an earlier run stops at its next tick.
@@ -172,7 +184,7 @@ else
     private async Task LoadAsync()
     {
         // A new view: no row is open, so live mode isn't holding for one.
-        (_view, _reading, _missed) = (_view + 1, false, false);
+        (_view, _reading, _missed, _trimmed, _kept) = (_view + 1, false, false, false, LiveEvents.Kept);
         var filter = Filter;
         var events = Api.AdminEventsAsync(filter, null);
         var histogram = Api.AdminEventHistogramAsync(filter);
@@ -189,11 +201,20 @@ else
 
     private async Task MoreAsync()
     {
-        var page = await Api.AdminEventsAsync(Filter, _next);
-        if (page.Succeeded)
+        if (_loadingMore || _next is null)
         {
-            _events!.AddRange(page.Value!.Items);
+            return;
+        }
+
+        _loadingMore = true;
+        var view = _view;
+        var page = await Api.AdminEventsAsync(Filter, _next);
+        _loadingMore = false;
+        if (page.Succeeded && view == _view && _events is not null)
+        {
+            _events = [.. LiveEvents.Append(_events, page.Value!.Items)];
             _next = page.Value.NextCursor;
+            _kept = Math.Max(_kept, _events.Count);
         }
     }
 
@@ -271,12 +292,20 @@ else
             return;
         }
 
-        if (_events is not null && LiveEvents.Merge(_events, newer) is var merged && !ReferenceEquals(merged, _events))
+        if (fetch == LiveFetch.Failed)
         {
+            // Nothing from a fetch that failed part-way is shown: adding its first pages would move the starting
+            // point past the events on the pages that failed. The next tick asks again from the same place.
+            return;
+        }
+
+        if (_events is not null && LiveEvents.Merge(_events, newer, _kept) is var merged && !ReferenceEquals(merged, _events))
+        {
+            _trimmed |= _events.Count + newer.Count(e => _events.TrueForAll(shown => shown.Key != e.Key)) > merged.Count;
             _events = [.. merged];
         }
 
-        // A failed request is retried by the next tick; only reaching the page limit means events were left out.
+        // Reaching the page limit is the one case where events were left out.
         _missed |= fetch == LiveFetch.More;
 
         // The chart counts the whole range, so it's redrawn every 30 seconds rather than every tick.
