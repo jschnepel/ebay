@@ -119,6 +119,9 @@ namespace Auction.Migrator.Migrations
                     b.HasKey("Id")
                         .HasName("pk_admin_audit");
 
+                    b.HasIndex("At")
+                        .HasDatabaseName("ix_admin_audit_at");
+
                     b.HasIndex("TargetType", "TargetId")
                         .HasDatabaseName("ix_admin_audit_target_type_target_id");
 
@@ -274,6 +277,12 @@ namespace Auction.Migrator.Migrations
                     b.HasKey("Id")
                         .HasName("pk_auctions");
 
+                    b.HasIndex("ClosedAt")
+                        .HasDatabaseName("ix_auctions_closed_at");
+
+                    b.HasIndex("PublishedAt")
+                        .HasDatabaseName("ix_auctions_published_at");
+
                     b.HasIndex("SellerId")
                         .HasDatabaseName("ix_auctions_seller_id");
 
@@ -282,6 +291,9 @@ namespace Auction.Migrator.Migrations
 
                     NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex("Title"), "gin");
                     NpgsqlIndexBuilderExtensions.HasOperators(b.HasIndex("Title"), new[] { "gin_trgm_ops" });
+
+                    b.HasIndex("SellerId", "PublishedAt")
+                        .HasDatabaseName("ix_auctions_seller_id_published_at");
 
                     b.HasIndex("Status", "EndsAt")
                         .HasDatabaseName("ix_auctions_status_ends_at");
@@ -357,6 +369,11 @@ namespace Auction.Migrator.Migrations
 
                     b.HasKey("AuctionId", "Seq")
                         .HasName("pk_bids");
+
+                    b.HasIndex("AcceptedAt")
+                        .HasDatabaseName("ix_bids_accepted_at_brin");
+
+                    NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex("AcceptedAt"), "brin");
 
                     b.HasIndex("BidderId")
                         .HasDatabaseName("ix_bids_bidder_id");
@@ -642,6 +659,11 @@ namespace Auction.Migrator.Migrations
 
                     b.HasIndex("AuctionId")
                         .HasDatabaseName("ix_outbox_events_auction_id");
+
+                    b.HasIndex("CreatedAt")
+                        .HasDatabaseName("ix_outbox_events_created_at_brin");
+
+                    NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex("CreatedAt"), "brin");
 
                     b.HasIndex("Xid", "Id")
                         .HasDatabaseName("ix_outbox_events_xid_id")

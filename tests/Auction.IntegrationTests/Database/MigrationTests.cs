@@ -25,6 +25,23 @@ public sealed class MigrationTests(MigratedDatabase db)
         }
     }
 
+    [Theory]
+    [InlineData("ix_bids_accepted_at_brin", "brin")]
+    [InlineData("ix_outbox_events_created_at_brin", "brin")]
+    [InlineData("ix_auctions_published_at", "btree")]
+    [InlineData("ix_auctions_closed_at", "btree")]
+    [InlineData("ix_auctions_seller_id_published_at", "btree")]
+    [InlineData("ix_admin_audit_at", "btree")]
+    public async Task The_event_log_has_a_time_index_on_each_source(string index, string method)
+    {
+        var actual = await db.ScalarAsync<string>(
+            MigratedDatabase.Migrator,
+            "SELECT am.amname::text FROM pg_class c JOIN pg_am am ON am.oid = c.relam JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'auction' AND c.relname = $1",
+            index);
+
+        Assert.Equal(method, actual);
+    }
+
     [Fact]
     public async Task The_migrator_owns_every_table()
     {

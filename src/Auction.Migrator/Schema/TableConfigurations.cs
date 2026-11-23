@@ -57,6 +57,11 @@ internal sealed class AuctionConfiguration : IEntityTypeConfiguration<AuctionRow
         builder.HasIndex(a => new { a.Status, a.EndsAt });
         builder.HasIndex(a => a.SellerId);
         builder.HasIndex(a => a.Title).HasMethod("gin").HasOperators("gin_trgm_ops");
+
+        // The admin event log reads listings by when they were published or closed, and a seller's by publication.
+        builder.HasIndex(a => a.PublishedAt).HasDatabaseName("ix_auctions_published_at");
+        builder.HasIndex(a => a.ClosedAt).HasDatabaseName("ix_auctions_closed_at");
+        builder.HasIndex(a => new { a.SellerId, a.PublishedAt }).HasDatabaseName("ix_auctions_seller_id_published_at");
     }
 }
 
@@ -90,6 +95,10 @@ internal sealed class BidConfiguration : IEntityTypeConfiguration<BidRow>
 
         // "My bids" looks bids up by bidder.
         builder.HasIndex(b => b.BidderId);
+
+        // For the admin event log's time range. BRIN, because bids arrive in time order and are written inside the
+        // engine's locked transaction: it stays accurate and costs almost nothing to keep up to date.
+        builder.HasIndex(b => b.AcceptedAt).HasMethod("brin").HasDatabaseName("ix_bids_accepted_at_brin");
     }
 }
 
@@ -126,6 +135,9 @@ internal sealed class OutboxEventConfiguration : IEntityTypeConfiguration<Outbox
 
         // The relay reads unpublished events in commit order.
         builder.HasIndex(e => new { e.Xid, e.Id }).HasFilter("published_at IS NULL");
+
+        // The event log finds sellers' cancellations by time; BRIN for the same reason as bids.
+        builder.HasIndex(e => e.CreatedAt).HasMethod("brin").HasDatabaseName("ix_outbox_events_created_at_brin");
     }
 }
 
@@ -162,6 +174,7 @@ internal sealed class AdminAuditConfiguration : IEntityTypeConfiguration<AdminAu
         builder.Property(a => a.Id).UseIdentityAlwaysColumn();
         builder.Property(a => a.At).HasDefaultValueSql("now()");
         builder.HasIndex(a => new { a.TargetType, a.TargetId });
+        builder.HasIndex(a => a.At).HasDatabaseName("ix_admin_audit_at");
     }
 }
 
