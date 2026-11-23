@@ -43,8 +43,9 @@ public sealed class Session
 
     public async Task SignOutAsync()
     {
-        await api.SignOutAsync();
+        // Signing out on purpose is never "you've been signed out", even if the session had already ended.
         Account = null;
+        await api.SignOutAsync();
         Changed?.Invoke();
     }
 
