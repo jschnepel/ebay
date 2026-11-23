@@ -1,0 +1,127 @@
+@inherits LayoutComponentBase
+@layout MainLayout
+@implements IDisposable
+@inject AuctionApi Api
+@inject Session Session
+
+@* The admin area's frame: its own navigation, with the services' health always in view. *@
+@if (Session.Account?.IsAdmin == true)
+{
+    <div class="console">
+        <aside class="console-rail" aria-label="Admin">
+            <nav class="console-nav" aria-label="Admin sections">
+                <NavLink href="admin" Match="NavLinkMatch.All"><MudIcon Icon="@Icons.Material.Outlined.SpaceDashboard" Size="Size.Small" aria-hidden="true" />Overview</NavLink>
+                <NavLink href="admin/auctions"><MudIcon Icon="@Icons.Material.Outlined.Gavel" Size="Size.Small" aria-hidden="true" />Auctions</NavLink>
+                <NavLink href="admin/users"><MudIcon Icon="@Icons.Material.Outlined.People" Size="Size.Small" aria-hidden="true" />Users</NavLink>
+                <NavLink href="admin/audit"><MudIcon Icon="@Icons.Material.Outlined.History" Size="Size.Small" aria-hidden="true" />Audit log</NavLink>
+            </nav>
+
+            <section class="console-health" aria-label="System health">
+                <h2 class="console-health-title">
+                    System
+                    @if (_health is { } summary)
+                    {
+                        <span class="@(summary.Components.All(c => c.State == "ok") ? "health-sum is-ok" : "health-sum is-bad")">
+                            @(summary.Components.All(c => c.State == "ok") ? "all running" : "needs a look")
+                        </span>
+                    }
+                </h2>
+                @if (_health is { } health)
+                {
+                    <ul class="health-list">
+                        @foreach (var item in health.Components)
+                        {
+                            <li class="health-item" data-testid="health-row">
+                                <span class="@($"dot {(item.State == "ok" ? "is-ok" : "is-bad")}")" aria-hidden="true"></span>
+                                <span class="health-name">@item.Name</span>
+                                <span class="@(item.State == "ok" ? "health-state muted" : "health-state is-bad")">@item.State</span>
+                            </li>
+                        }
+                        <li class="health-item is-backlog">
+                            <span class="health-name">Live-update backlog</span>
+                            <span class="health-state num" data-testid="outbox-backlog">@health.OutboxBacklog</span>
+                        </li>
+                    </ul>
+                }
+                else
+                {
+                    <p class="muted health-wait">Checking the services…</p>
+                }
+            </section>
+        </aside>
+
+        <div class="console-body">@Body</div>
+    </div>
+}
+else
+{
+    @Body
+}
+
+@code {
+    // Health refreshes on its own while any admin page is open; the layout stays put between them.
+    private readonly CancellationTokenSource _stop = new();
+    private AdminHealth? _health;
+    private bool _polling;
+
+    // Kept apart from the source: leaving the admin area while a call is in flight disposes the source.
+    private CancellationToken _stopToken;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _stopToken = _stop.Token;
+        Session.Changed += OnSessionChanged;
+        await Session.LoadAsync();
+        await StartAsync();
+    }
+
+    private async Task StartAsync()
+    {
+        if (_polling || Session.Account?.IsAdmin != true)
+        {
+            return;
+        }
+
+        _polling = true;
+        await RefreshAsync();
+        _ = PollAsync(_stopToken);
+    }
+
+    private async Task RefreshAsync()
+    {
+        if ((await Api.AdminHealthAsync()).Value is { } health)
+        {
+            _health = health;
+            StateHasChanged();
+        }
+    }
+
+    private async Task PollAsync(CancellationToken stop)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(2));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(stop))
+            {
+                await InvokeAsync(RefreshAsync);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Left the admin area.
+        }
+    }
+
+    private void OnSessionChanged() => InvokeAsync(async () =>
+    {
+        await StartAsync();
+        StateHasChanged();
+    });
+
+    public void Dispose()
+    {
+        Session.Changed -= OnSessionChanged;
+        _stop.Cancel();
+        _stop.Dispose();
+    }
+}

@@ -16,11 +16,8 @@
         <nav aria-label="Main" class="nav">
             @if (Session.Account?.IsAdmin == true)
             {
-                @* Admin accounts can't buy or sell, so they see only the admin area. *@
-                <NavLink href="admin" Match="NavLinkMatch.All">Activity</NavLink>
-                <NavLink href="admin/auctions">Auctions</NavLink>
-                <NavLink href="admin/users">Users</NavLink>
-                <NavLink href="admin/audit">Audit log</NavLink>
+                @* Admin accounts can't buy or sell, so they see only the admin area; its sections are in its sidebar. *@
+                <NavLink href="admin">Admin</NavLink>
             }
             else
             {

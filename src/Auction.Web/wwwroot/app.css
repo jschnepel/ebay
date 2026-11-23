@@ -137,8 +137,6 @@ h2.mud-typography { font-size: 1.25rem; font-weight: 600; color: var(--ink); }
 @media (max-width: 599.98px) { .gallery img { height: 16rem; } }
 
 /* Admin. */
-.health { display: flex; flex-wrap: wrap; gap: 0.5rem 1.25rem; align-items: center; padding: 0.65rem 1rem; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); margin-bottom: 1rem; font-size: 0.9375rem; }
-.health-item { display: inline-flex; align-items: center; gap: 0.4rem; }
 .dot { width: 0.6rem; height: 0.6rem; border-radius: 50%; background: var(--muted); flex: none; }
 .dot.is-ok { background: var(--lead); }
 .dot.is-bad { background: var(--alert); }
@@ -243,7 +241,7 @@ h2.mud-typography { font-size: 1.25rem; }
 .mud-main-content > .mud-container { padding-top: 2rem !important; padding-bottom: 3rem !important; }
 
 /* Panels: flat, white, hairline-edged; the larger corner marks them as containers. */
-.panel, .health, .reason-bar, .audit, .lot, .mud-paper-outlined { border-radius: var(--radius-lg); border-color: var(--line); }
+.panel, .reason-bar, .audit, .lot, .mud-paper-outlined { border-radius: var(--radius-lg); border-color: var(--line); }
 .panel { padding: 1.25rem 1.5rem; }
 .panel > h2, .panel > .mud-typography-h6 { font-size: 1.15rem; margin-bottom: 1rem; }
 .mud-button-root { border-radius: var(--radius); }
@@ -309,3 +307,41 @@ h2.mud-typography { font-size: 1.25rem; }
 /* Sign-in: a little more air around the one card. */
 .auth-panel { margin-top: 3rem; box-shadow: var(--float); border: 0; }
 .auth-title { font-size: 2rem; }
+
+/* ===== The admin console: a rail of sections with the services' health at its foot, and the overview's readout. ===== */
+.console { display: grid; grid-template-columns: 14rem minmax(0, 1fr); gap: 2rem; align-items: start; }
+.console-body { min-width: 0; }
+.console-rail { position: sticky; top: calc(56px + 2rem); display: flex; flex-direction: column; gap: 1.5rem; }
+.console-nav { display: flex; flex-direction: column; gap: 2px; }
+.console-nav a { display: flex; align-items: center; gap: 0.7rem; padding: 0.55rem 0.75rem; border-radius: var(--radius); color: var(--ink-soft); text-decoration: none; font-weight: 500; }
+.console-nav a:hover { background: rgba(16, 49, 58, 0.05); color: var(--ink); }
+.console-nav a.active { background: var(--surface); color: var(--ink); font-weight: 600; box-shadow: inset 3px 0 0 var(--brass), 0 0 0 1px var(--line); }
+.console-nav a:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.console-nav .mud-icon-root { color: var(--muted); }
+.console-nav a.active .mud-icon-root { color: var(--brass-text); }
+
+.console-health { padding: 1rem; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-lg); }
+.console-health-title { display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem; margin: 0 0 0.65rem; font-family: var(--display); font-stretch: 87.5%; font-size: 1rem; font-weight: 600; }
+.health-sum { font-family: var(--body); font-size: 0.8125rem; font-weight: 500; }
+.health-sum.is-ok { color: var(--lead); }
+.health-sum.is-bad { color: var(--alert); }
+.health-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.4rem; font-size: 0.875rem; }
+.health-list .health-item { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 0.5rem; align-items: center; }
+.health-name { overflow-wrap: anywhere; }
+.health-state.is-bad { color: var(--alert); font-weight: 600; }
+.health-list .health-item.is-backlog { grid-template-columns: minmax(0, 1fr) auto; margin-top: 0.3rem; padding-top: 0.6rem; border-top: 1px solid var(--line); }
+.health-wait { margin: 0; font-size: 0.875rem; }
+.console-body .page-head { gap: 0.25rem 1rem; margin-bottom: 1.5rem; }
+.console-body .page-head h1.mud-typography { font-size: 2.25rem; margin: 0; }
+.console-body .page-head .page-sub { margin: 0; }
+/* On a narrow screen the rail opens up: sections in a strip across the top, health at the foot of the page. */
+@media (max-width: 959.98px) {
+    .console { grid-template-columns: minmax(0, 1fr); gap: 1.25rem; }
+    .console-rail { display: contents; }
+    .console-nav { order: 0; flex-direction: row; gap: 0.25rem; overflow-x: auto; scrollbar-width: none; }
+    .console-nav a { white-space: nowrap; }
+    .console-body { order: 1; }
+    .console-health { order: 2; }
+    .health-list { grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr)); gap: 0.4rem 1.25rem; }
+    .health-list .health-item.is-backlog { margin-top: 0; padding-top: 0; border-top: 0; }
+}

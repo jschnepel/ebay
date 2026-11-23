@@ -12,24 +12,6 @@
 }
 else
 {
-    <div class="health" aria-label="System health">
-        @if (_health is { } health)
-        {
-            @foreach (var item in health.Components)
-            {
-                <span class="health-item" data-testid="health-row">
-                    <span class="@($"dot {(item.State == "ok" ? "is-ok" : "is-bad")}")" aria-hidden="true"></span>
-                    @item.Name <span class="@(item.State == "ok" ? "muted" : "")">@item.State</span>
-                </span>
-            }
-            <span class="health-item">Live-update backlog <span class="num" data-testid="outbox-backlog">@health.OutboxBacklog</span></span>
-        }
-        else
-        {
-            <span class="muted">Checking the services…</span>
-        }
-    </div>
-
     <div class="admin-grid">
         <section class="panel">
             <MudText Typo="Typo.h6" HtmlTag="h2">Right now</MudText>
@@ -104,10 +86,9 @@ else
 }
 
 @code {
-    // The panels refresh on their own every second; an admin never needs to reload.
+    // The panels refresh on their own every second; an admin never needs to reload. The services' health is in the sidebar.
     private readonly CancellationTokenSource _stop = new();
     private Activity? _activity;
-    private AdminHealth? _health;
     private AdminKpis? _kpis;
     private SimulatorView? _simulator;
     private DemoState? _demo;
@@ -131,7 +112,6 @@ else
     // Each panel draws as soon as its own answer arrives, so one slow call doesn't hold up the rest.
     private Task RefreshAsync() => Task.WhenAll(
         ShowAsync(Api.AdminActivityAsync(), value => _activity = value),
-        ShowAsync(Api.AdminHealthAsync(), value => _health = value),
         ShowAsync(Api.AdminKpisAsync(), value => _kpis = value),
         ShowAsync(Api.AdminSimulatorAsync(), value => _simulator = value),
         ShowAsync(Api.DemoStateAsync(), value => _demo = value));

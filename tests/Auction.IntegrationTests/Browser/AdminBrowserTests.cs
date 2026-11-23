@@ -23,7 +23,7 @@ public sealed class AdminBrowserTests(MigratedDatabase db, Browsers browsers)
         await page.SignUpAsync("Visiting admin", role: "Admin");
 
         await page.WaitForURLAsync(new System.Text.RegularExpressions.Regex("/admin$"));
-        await Assertions.Expect(page.GetByRole(AriaRole.Link, new() { Name = "Activity" })).ToBeVisibleAsync();
+        await Assertions.Expect(page.GetByRole(AriaRole.Link, new() { Name = "Overview" })).ToBeVisibleAsync();
         await Assertions.Expect(page.GetByRole(AriaRole.Link, new() { Name = "Sell" })).ToHaveCountAsync(0);
         await Assertions.Expect(page.GetByRole(AriaRole.Link, new() { Name = "My bids" })).ToHaveCountAsync(0);
     }
@@ -61,7 +61,7 @@ public sealed class AdminBrowserTests(MigratedDatabase db, Browsers browsers)
         await page.SignUpAsync("Visiting user");
 
         await Assertions.Expect(page.GetByRole(AriaRole.Link, new() { Name = "Sell" })).ToBeVisibleAsync();
-        await Assertions.Expect(page.GetByRole(AriaRole.Link, new() { Name = "Activity" })).ToHaveCountAsync(0);
+        await Assertions.Expect(page.GetByRole(AriaRole.Link, new() { Name = "Overview" })).ToHaveCountAsync(0);
         await page.GotoAsync("/admin");
         await Assertions.Expect(page.GetByTestId("state-forbidden")).ToBeVisibleAsync();
     }
