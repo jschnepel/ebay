@@ -96,9 +96,9 @@ internal sealed class BidConfiguration : IEntityTypeConfiguration<BidRow>
         // "My bids" looks bids up by bidder.
         builder.HasIndex(b => b.BidderId);
 
-        // For the admin event log's time range. BRIN, because bids arrive in time order and are written inside the
-        // engine's locked transaction: it stays accurate and costs almost nothing to keep up to date.
-        builder.HasIndex(b => b.AcceptedAt).HasMethod("brin").HasDatabaseName("ix_bids_accepted_at_brin");
+        // The admin event log reads the newest bids first and stops after a page, which needs an ordered index.
+        // Bids arrive in time order, so each insert lands on the index's last page.
+        builder.HasIndex(b => b.AcceptedAt).HasDatabaseName("ix_bids_accepted_at");
     }
 }
 
@@ -136,8 +136,9 @@ internal sealed class OutboxEventConfiguration : IEntityTypeConfiguration<Outbox
         // The relay reads unpublished events in commit order.
         builder.HasIndex(e => new { e.Xid, e.Id }).HasFilter("published_at IS NULL");
 
-        // The event log finds sellers' cancellations by time; BRIN for the same reason as bids.
-        builder.HasIndex(e => e.CreatedAt).HasMethod("brin").HasDatabaseName("ix_outbox_events_created_at_brin");
+        // The event log finds sellers' cancellations by time. Only those rows are indexed: nearly every outbox
+        // row is a bid, and a bid's insert doesn't touch this index.
+        builder.HasIndex(e => e.CreatedAt).HasFilter("type = 'auction.cancelled'").HasDatabaseName("ix_outbox_events_cancelled_created_at");
     }
 }
 

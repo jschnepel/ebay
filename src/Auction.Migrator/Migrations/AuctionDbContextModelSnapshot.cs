@@ -371,9 +371,7 @@ namespace Auction.Migrator.Migrations
                         .HasName("pk_bids");
 
                     b.HasIndex("AcceptedAt")
-                        .HasDatabaseName("ix_bids_accepted_at_brin");
-
-                    NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex("AcceptedAt"), "brin");
+                        .HasDatabaseName("ix_bids_accepted_at");
 
                     b.HasIndex("BidderId")
                         .HasDatabaseName("ix_bids_bidder_id");
@@ -661,9 +659,8 @@ namespace Auction.Migrator.Migrations
                         .HasDatabaseName("ix_outbox_events_auction_id");
 
                     b.HasIndex("CreatedAt")
-                        .HasDatabaseName("ix_outbox_events_created_at_brin");
-
-                    NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex("CreatedAt"), "brin");
+                        .HasDatabaseName("ix_outbox_events_cancelled_created_at")
+                        .HasFilter("type = 'auction.cancelled'");
 
                     b.HasIndex("Xid", "Id")
                         .HasDatabaseName("ix_outbox_events_xid_id")

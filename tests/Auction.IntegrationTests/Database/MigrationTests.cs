@@ -26,8 +26,8 @@ public sealed class MigrationTests(MigratedDatabase db)
     }
 
     [Theory]
-    [InlineData("ix_bids_accepted_at_brin", "brin")]
-    [InlineData("ix_outbox_events_created_at_brin", "brin")]
+    [InlineData("ix_bids_accepted_at", "btree")]
+    [InlineData("ix_outbox_events_cancelled_created_at", "btree")]
     [InlineData("ix_auctions_published_at", "btree")]
     [InlineData("ix_auctions_closed_at", "btree")]
     [InlineData("ix_auctions_seller_id_published_at", "btree")]
@@ -40,6 +40,27 @@ public sealed class MigrationTests(MigratedDatabase db)
             index);
 
         Assert.Equal(method, actual);
+    }
+
+    [Fact]
+    public async Task The_event_logs_newest_bids_are_read_from_the_index_not_the_whole_range()
+    {
+        // The planner is told not to scan the table, so the plan shows whether an index can serve the order at all:
+        // a BRIN index can't, and then every bid in the range is read and sorted for one page.
+        await using var connection = await db.OpenAsync(MigratedDatabase.Migrator);
+        await using var command = new Npgsql.NpgsqlCommand(
+            "SET LOCAL enable_seqscan = off; EXPLAIN SELECT accepted_at FROM bids WHERE accepted_at >= now() - interval '7 days' ORDER BY accepted_at DESC LIMIT 50",
+            connection,
+            await connection.BeginTransactionAsync(TestContext.Current.CancellationToken));
+        await using var reader = await command.ExecuteReaderAsync(TestContext.Current.CancellationToken);
+        var plan = new List<string>();
+        while (await reader.ReadAsync(TestContext.Current.CancellationToken))
+        {
+            plan.Add(reader.GetString(0));
+        }
+
+        Assert.Contains(plan, line => line.Contains("Backward using ix_bids_accepted_at", StringComparison.Ordinal));
+        Assert.DoesNotContain(plan, line => line.Contains("Sort", StringComparison.Ordinal));
     }
 
     [Fact]
