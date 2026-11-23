@@ -382,7 +382,8 @@ h2.mud-typography { font-size: 1.25rem; }
 
 /* ===== A reason asked for beside the button of an admin action that needs one. ===== */
 .reason-anchor { position: relative; display: inline-block; }
-.reason-popover { width: min(22rem, calc(100vw - 2rem)); padding: 0.9rem 1rem 0.75rem; text-align: left; white-space: normal; }
+.reason-popover { width: min(22rem, calc(100vw - 2rem)); padding: 0.9rem 1rem 0.75rem; text-align: left; white-space: normal;
+    background: var(--surface); border-radius: var(--radius-lg); box-shadow: var(--float); }
 .reason-title { margin: 0 0 0.6rem; font-weight: 600; color: var(--ink); overflow-wrap: anywhere; }
 .reason-actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 0.5rem; }
 
