@@ -5,6 +5,16 @@ namespace Auction.UnitTests;
 /// <summary>The error text a person sees when the API refuses a request.</summary>
 public sealed class ClientProblemTextTests
 {
+    [Theory]
+    [InlineData("draft_limit", "You have 10 drafts, the most allowed at once. Publish or delete one first.")]
+    [InlineData("publish_limit", "You've published 20 listings today, the most allowed in a day. Try again after midnight UTC.")]
+    [InlineData("upload_rate", "You've uploaded 30 images this hour, the most allowed. Try again later.")]
+    [InlineData("has_bids", "This auction has a bid, so it can't be cancelled.")]
+    public void A_limit_is_named_with_its_number(string code, string expected)
+    {
+        Assert.Equal(expected, Shown(new Problem { Status = 409, Code = code, Title = "An API title." }));
+    }
+
     [Fact]
     public void A_lower_maximum_is_explained_by_the_one_already_placed()
     {
