@@ -155,7 +155,7 @@ else
                         }
                         @if (_bidMessage is not null)
                         {
-                            <MudAlert Class="mt-2" Dense="true" Severity="@(_bidAccepted ? Severity.Success : Severity.Error)" data-testid="bid-result">@_bidMessage</MudAlert>
+                            <MudAlert Class="mt-2" Dense="true" Severity="@(_bidAccepted ? Severity.Success : Severity.Error)" data-testid="bid-result"><MessageText Text="@_bidMessage" /></MudAlert>
                         }
                     </div>
                 }

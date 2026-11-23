@@ -99,6 +99,19 @@ public sealed class JourneyTests(MigratedDatabase db, Browsers browsers)
     }
 
     [Fact]
+    public async Task A_refused_sign_up_lists_each_thing_to_fix_in_words()
+    {
+        var visitor = await browsers.NewPageAsync(await Browsers.SiteAsync(db));
+
+        await visitor.GotoAsync("/sign-in");
+        await visitor.OpenCreateAccountAsync();
+        await visitor.GetByRole(AriaRole.Button, new() { Name = "Create account" }).ClickAsync();
+
+        await Assertions.Expect(visitor.GetByTestId("sign-in-error").GetByRole(AriaRole.Listitem))
+            .ToHaveTextAsync(["Enter a display name.", "Enter a valid email address."]);
+    }
+
+    [Fact]
     public async Task A_visitor_who_is_not_signed_in_is_asked_to_sign_in_to_bid_or_sell()
     {
         var site = await Browsers.SiteAsync(db);

@@ -1,0 +1,21 @@
+@* A message for an alert: one line as text, several (a form's field errors) as a list, one point each. *@
+@if (Lines.Length > 1)
+{
+    <ul class="message-list">
+        @foreach (var line in Lines)
+        {
+            <li>@line</li>
+        }
+    </ul>
+}
+else
+{
+    @Text
+}
+
+@code {
+    [Parameter]
+    public string? Text { get; set; }
+
+    private string[] Lines => Text?.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries) ?? [];
+}

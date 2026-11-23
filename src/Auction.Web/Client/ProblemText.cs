@@ -60,7 +60,7 @@ internal static class ProblemText
 
     public static string For(Problem problem) => problem switch
     {
-        // One line per error.
+        // One line per error; MessageText shows several as a list.
         { Errors: { Count: > 0 } errors } => string.Join('\n', errors.SelectMany(e => e.Value.Select(code => Sentence(e.Key, code)))),
         { Status: 401, Code: not "sign_in_failed" } => "You're signed out. Sign in again to continue.",
         { Code: "busy" } => "The auction service is busy. Try again in a moment.",

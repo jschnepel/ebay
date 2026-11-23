@@ -72,7 +72,7 @@ else
 
     @if (_error is not null)
     {
-        <MudAlert Class="mt-4" Severity="Severity.Error" data-testid="draft-error">@_error</MudAlert>
+        <MudAlert Class="mt-4" Severity="Severity.Error" data-testid="draft-error"><MessageText Text="@_error" /></MudAlert>
     }
 
     @if (Id is { } draftId)

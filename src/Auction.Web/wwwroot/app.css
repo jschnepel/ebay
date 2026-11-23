@@ -212,6 +212,10 @@ h2.mud-typography { font-size: 1.25rem; font-weight: 600; color: var(--ink); }
 .pager-size { display: flex; align-items: center; gap: 0.4rem; margin-right: auto; color: var(--muted); }
 .pager-size select { font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 0.2rem 0.4rem; }
 
+/* An alert with several things to fix lists them, one point each. */
+.message-list { margin: 0; padding-left: 1.1rem; }
+.message-list li + li { margin-top: 0.2rem; }
+
 /* ===== Finish: the shared look, applied over the rules above. ===== */
 
 body { font-size: 0.9375rem; line-height: 1.5; -webkit-font-smoothing: antialiased; }

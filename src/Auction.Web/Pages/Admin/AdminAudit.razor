@@ -21,7 +21,7 @@ else
 
     @if (_message is not null)
     {
-        <MudAlert Class="mb-3" Severity="Severity.Error">@_message</MudAlert>
+        <MudAlert Class="mb-3" Severity="Severity.Error"><MessageText Text="@_message" /></MudAlert>
     }
 
     @if (_items is null)

@@ -42,7 +42,7 @@
 
     @if (_error is not null)
     {
-        <MudAlert Class="mt-2" Severity="Severity.Error" data-testid="image-error">@_error</MudAlert>
+        <MudAlert Class="mt-2" Severity="Severity.Error" data-testid="image-error"><MessageText Text="@_error" /></MudAlert>
     }
 </MudPaper>
 

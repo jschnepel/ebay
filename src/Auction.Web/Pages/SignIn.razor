@@ -45,7 +45,7 @@
 
     @if (_error is not null)
     {
-        <MudAlert Class="mt-4" Severity="Severity.Error" data-testid="sign-in-error">@_error</MudAlert>
+        <MudAlert Class="mt-4" Severity="Severity.Error" data-testid="sign-in-error"><MessageText Text="@_error" /></MudAlert>
     }
 
     @if (_existingEmail is not null)
