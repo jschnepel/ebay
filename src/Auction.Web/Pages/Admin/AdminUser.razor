@@ -81,7 +81,7 @@ else
                                 <td><MudLink Href="@($"auctions/{listing.AuctionId}")">@listing.Title</MudLink></td>
                                 <td><span class="@($"tag {Format.StatusTone(listing.Status)}")">@ListingState(listing)</span></td>
                                 <td class="num">@(listing.CurrentPriceCents is { } price ? Format.Dollars(price) : "–")</td>
-                                <td class="num"><a href="@($"admin/events?q={listing.AuctionId}&category=bid")">@($"{listing.BidCount:N0} {Format.Noun(listing.BidCount, "bid", "bids")}")</a></td>
+                                <td class="num"><a href="@($"admin/events?range=7d&category=bid&q={listing.AuctionId}")">@($"{listing.BidCount:N0} {Format.Noun(listing.BidCount, "bid", "bids")}")</a></td>
                             </tr>
                         }
                     </tbody>

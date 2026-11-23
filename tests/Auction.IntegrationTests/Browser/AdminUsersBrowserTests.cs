@@ -196,7 +196,9 @@ public sealed partial class AdminUsersBrowserTests(MigratedDatabase db, Browsers
         await admin.GotoAsync($"/admin/users/{seller.Id}");
         var selling = admin.GetByTestId("selling-row").Filter(new() { HasText = title });
         await Assertions.Expect(selling).ToContainTextAsync("Active");
-        await Assertions.Expect(selling.GetByRole(AriaRole.Link, new() { Name = "1 bid" })).ToHaveAttributeAsync("href", new Regex($"admin/events\\?q={id}"));
+        // The log's longest range, so the link finds bids older than the default hour.
+        await Assertions.Expect(selling.GetByRole(AriaRole.Link, new() { Name = "1 bid" }))
+            .ToHaveAttributeAsync("href", $"admin/events?range=7d&category=bid&q={id}");
     }
 
     [Fact]
