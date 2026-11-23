@@ -31,7 +31,10 @@ else
     }
     else if (_list.Items.Count == 0)
     {
-        <MudText>You have no listings yet.</MudText>
+        <div class="empty">
+            <p class="empty-title">Nothing listed yet</p>
+            <p class="muted">A listing starts as a private draft. Add photos, set the price and timing, then publish it.</p>
+        </div>
     }
     else
     {

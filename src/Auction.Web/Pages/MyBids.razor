@@ -22,7 +22,11 @@ else if (_list.Items is null)
 }
 else if (_list.Items.Count == 0)
 {
-    <MudText>You haven't bid on anything yet. <MudLink Href="./">Browse the auctions</MudLink>.</MudText>
+    <div class="empty">
+        <p class="empty-title">No bids yet</p>
+        <p class="muted">Auctions you bid on appear here, with whether you're winning.</p>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Href="./">Browse the auctions</MudButton>
+    </div>
 }
 else
 {

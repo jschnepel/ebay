@@ -254,3 +254,10 @@ h2.mud-typography { font-size: 1.25rem; }
 .mud-simple-table table thead th { background: var(--sunk); color: var(--muted); font-weight: 600; font-size: 0.8125rem; }
 .mud-simple-table table tbody tr:hover td { background: rgba(16, 49, 58, 0.025); }
 .table-scroll { border-radius: var(--radius-lg); }
+
+/* Empty pages say what goes here and offer the next step. */
+.empty { display: flex; flex-direction: column; align-items: flex-start; gap: 0.25rem; padding: 2rem 1.5rem;
+    background: var(--surface); border: 1px dashed var(--line-strong); border-radius: var(--radius-lg); max-width: 36rem; }
+.empty p { margin: 0; }
+.empty .mud-button-root { margin-top: 0.75rem; }
+.empty-title { font-family: var(--display); font-stretch: 87.5%; font-size: 1.35rem; font-weight: 600; }
