@@ -4,7 +4,8 @@
     {
         var open = _open == e.Key;
         var detailId = $"event-{e.Key.Replace(':', '-')}";
-        <li class="@($"event-row{(e.Level == "warning" ? " is-warning" : "")}{(open ? " is-open" : "")}")" data-testid="event-row">
+        @* Keyed, so a new event at the top is one inserted row, not every row redrawn. *@
+        <li @key="e.Key" class="@($"event-row{(e.Level == "warning" ? " is-warning" : "")}{(open ? " is-open" : "")}")" data-testid="event-row">
             <div class="event-line">
                 <time class="num muted event-time" datetime="@e.At.ToString("O")">@Format.Recent(e.At)</time>
                 <span class="@($"event-category is-{e.Category}")" data-testid="event-category">@CategoryWord(e.Category)</span>

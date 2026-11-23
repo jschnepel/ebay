@@ -125,6 +125,9 @@ else
     private int _ticks;
     private int _view;
 
+    // Each time live mode is switched on it starts a new run; a loop from an earlier run stops at its next tick.
+    private int _run;
+
     // Live mode reaches back this far for events that were stamped before the newest shown one but committed after it,
     // and fetches at most this many pages a tick before saying there's more.
     private static readonly TimeSpan LiveOverlap = TimeSpan.FromSeconds(30);
@@ -227,18 +230,18 @@ else
         _live = !_live;
         if (_live)
         {
-            _ = PollAsync(_stop.Token);
+            _ = PollAsync(++_run, _stop.Token);
         }
 
         return Task.CompletedTask;
     }
 
-    private async Task PollAsync(CancellationToken cancellationToken)
+    private async Task PollAsync(int run, CancellationToken cancellationToken)
     {
         using var timer = new PeriodicTimer(TimeSpan.FromSeconds(5));
         try
         {
-            while (_live && await timer.WaitForNextTickAsync(cancellationToken))
+            while (await timer.WaitForNextTickAsync(cancellationToken) && _live && run == _run)
             {
                 if (_reading || Range == "custom")
                 {
@@ -260,13 +263,21 @@ else
         var newest = _events is { Count: > 0 } shown ? shown[0].At - LiveOverlap : _from;
         (_to, _from) = (DateTimeOffset.UtcNow.AddSeconds(1), DateTimeOffset.UtcNow.AddSeconds(1) - span);
         var window = Filter with { From = newest > _from ? newest : _from };
-        var (newer, complete) = await LiveEvents.CollectAsync(async cursor => (await Api.AdminEventsAsync(window, cursor)).Value, LivePages);
-        if (_events is not null)
+        var view = _view;
+        var (newer, fetch) = await LiveEvents.CollectAsync(async cursor => (await Api.AdminEventsAsync(window, cursor)).Value, LivePages);
+        if (view != _view)
         {
-            _events = [.. LiveEvents.Merge(_events, newer)];
+            // The filters changed while this was fetching; what came back belongs to the old view.
+            return;
         }
 
-        _missed |= !complete;
+        if (_events is not null && LiveEvents.Merge(_events, newer) is var merged && !ReferenceEquals(merged, _events))
+        {
+            _events = [.. merged];
+        }
+
+        // A failed request is retried by the next tick; only reaching the page limit means events were left out.
+        _missed |= fetch == LiveFetch.More;
 
         // The chart counts the whole range, so it's redrawn every 30 seconds rather than every tick.
         if (++_ticks % 6 == 0)

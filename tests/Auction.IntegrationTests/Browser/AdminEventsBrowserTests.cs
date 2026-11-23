@@ -77,6 +77,47 @@ public sealed partial class AdminEventsBrowserTests(MigratedDatabase db, Browser
     }
 
     [Fact]
+    public async Task Live_mode_adds_a_new_event_without_a_reload_and_polls_once_however_often_it_is_toggled()
+    {
+        if (Environment.GetEnvironmentVariable(Browsers.BaseUrlVariable) is { Length: > 0 })
+        {
+            return; // The new account is made through the in-process API.
+        }
+
+        var admin = await browsers.NewPageAsync(await Browsers.SiteAsync(db));
+        await admin.SignUpAsync("Live watcher", role: "Admin");
+        await admin.GotoAsync("/admin/events?category=account");
+        await Assertions.Expect(admin.GetByTestId("event-row").First).ToBeVisibleAsync();
+        var polls = 0;
+        admin.Request += (_, request) =>
+        {
+            // A tick's first request has no cursor; a busy tick follows it with more pages.
+            if (request.Url.Contains("/admin/events?", StringComparison.Ordinal) && !request.Url.Contains("cursor=", StringComparison.Ordinal))
+            {
+                Interlocked.Increment(ref polls);
+            }
+        };
+
+        // Switched on three times inside one 5-second tick: one loop must be left running, not three.
+        var live = admin.GetByRole(AriaRole.Button, new() { Name = "Live" });
+        for (var click = 0; click < 5; click++)
+        {
+            await live.ClickAsync();
+        }
+
+        await Assertions.Expect(live).ToHaveAttributeAsync("aria-pressed", "true");
+        var name = $"Arrives {Guid.NewGuid():N}"[..16];
+        await (await db.ApiAsync()).SignUpAsync(name);
+
+        await Assertions.Expect(admin.GetByTestId("event-row").Filter(new() { HasText = $"{name} created an account" }))
+            .ToHaveCountAsync(1, new() { Timeout = 12_000 });
+        await admin.WaitForTimeoutAsync(6_000);
+
+        // Two or three ticks have passed, each starting with one request; three loops would have made three times that.
+        Assert.InRange(Volatile.Read(ref polls), 1, 3);
+    }
+
+    [Fact]
     public async Task Live_mode_keeps_going_after_the_open_row_leaves_the_view()
     {
         if (Environment.GetEnvironmentVariable(Browsers.BaseUrlVariable) is { Length: > 0 })

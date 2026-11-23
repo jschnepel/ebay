@@ -28,6 +28,24 @@ public sealed class ClientLiveEventsTests
     }
 
     [Fact]
+    public void Nothing_new_hands_back_the_same_list_without_rebuilding_it()
+    {
+        IReadOnlyList<LogEvent> shown = [At("b", 20), At("a", 10)];
+
+        Assert.Same(shown, LiveEvents.Merge(shown, [At("b", 20)]));
+    }
+
+    [Fact]
+    public void The_list_keeps_only_its_newest_events_so_a_long_watch_doesnt_grow_without_end()
+    {
+        IReadOnlyList<LogEvent> shown = [At("c", 30), At("b", 20), At("a", 10)];
+
+        var merged = LiveEvents.Merge(shown, [At("e", 50), At("d", 40)], keep: 4);
+
+        Assert.Equal(["e", "d", "c", "b"], merged.Select(e => e.Key));
+    }
+
+    [Fact]
     public void An_event_that_committed_late_goes_in_its_place_by_time_not_on_top()
     {
         // Stamped before the newest shown event, but only visible once its transaction committed.
@@ -47,31 +65,31 @@ public sealed class ClientLiveEventsTests
             ["3"] = new([At("b", 20)], null),
         };
 
-        var (events, complete) = await LiveEvents.CollectAsync(cursor => Task.FromResult<Page<LogEvent>?>(pages[cursor ?? ""]), maxPages: 5);
+        var (events, fetch) = await LiveEvents.CollectAsync(cursor => Task.FromResult<Page<LogEvent>?>(pages[cursor ?? ""]), maxPages: 5);
 
         Assert.Equal(["f", "e", "d", "c", "b"], events.Select(e => e.Key));
-        Assert.True(complete);
+        Assert.Equal(LiveFetch.Complete, fetch);
     }
 
     [Fact]
     public async Task Collecting_stops_at_its_cap_and_says_it_did()
     {
         var calls = 0;
-        var (events, complete) = await LiveEvents.CollectAsync(
+        var (events, fetch) = await LiveEvents.CollectAsync(
             _ => { calls++; return Task.FromResult<Page<LogEvent>?>(new([At($"k{calls}", 59 - calls)], "more")); },
             maxPages: 3);
 
         Assert.Equal(3, calls);
         Assert.Equal(3, events.Count);
-        Assert.False(complete);
+        Assert.Equal(LiveFetch.More, fetch);
     }
 
     [Fact]
-    public async Task A_failed_page_ends_collecting_as_incomplete()
+    public async Task A_failed_page_is_a_failure_not_more_events_than_fit()
     {
-        var (events, complete) = await LiveEvents.CollectAsync(_ => Task.FromResult<Page<LogEvent>?>(null), maxPages: 3);
+        var (events, fetch) = await LiveEvents.CollectAsync(_ => Task.FromResult<Page<LogEvent>?>(null), maxPages: 3);
 
         Assert.Empty(events);
-        Assert.False(complete);
+        Assert.Equal(LiveFetch.Failed, fetch);
     }
 }
