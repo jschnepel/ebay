@@ -15,6 +15,12 @@ public sealed class RateLimitOptions
 
     public int WritesPerUserPerMinute { get; init; } = 300;
 
+    /// <summary>
+    /// Reads on routes that also limit writes (the admin area, whose pages poll). Counted apart from writes, so an
+    /// admin watching two live pages can still act.
+    /// </summary>
+    public int ReadsPerUserPerMinute { get; init; } = 1200;
+
     /// <summary>Failed password attempts before an account is locked, and for how long.</summary>
     public int LockoutFailures { get; init; } = 5;
 
@@ -22,13 +28,15 @@ public sealed class RateLimitOptions
 
     public bool IsValid() =>
         SignInPerAccountPerMinute > 0 && SignInPerAddressPerMinute > 0 && SignUpPerAddressPerHour > 0 && WritesPerUserPerMinute > 0
+        && ReadsPerUserPerMinute > 0
         && LockoutFailures > 0 && LockoutDuration > TimeSpan.Zero;
 }
 
 /// <summary>
 /// Request limits, answered with 429 and Retry-After, counted in Redis so they hold across API instances
 /// (per instance while Redis is down). Sign-up and sign-in are limited per client address (the proxy's
-/// forwarded address once it is trusted); every write is limited per signed-in user.
+/// forwarded address once it is trusted); every write is limited per signed-in user, and reads on the same
+/// routes under a larger limit of their own.
 /// </summary>
 internal static class RateLimits
 {
@@ -50,6 +58,8 @@ internal static class RateLimits
             {
                 Policy.SignUp => ($"sign-up:{Address(http)}", limits.SignUpPerAddressPerHour, TimeSpan.FromHours(1)),
                 Policy.SignIn => ($"sign-in:{Address(http)}", limits.SignInPerAddressPerMinute, TimeSpan.FromMinutes(1)),
+                _ when HttpMethods.IsGet(http.Request.Method) =>
+                    ($"read:{http.User.UserIdOf()?.Value.ToString() ?? Address(http)}", limits.ReadsPerUserPerMinute, TimeSpan.FromMinutes(1)),
                 _ => ($"write:{http.User.UserIdOf()?.Value.ToString() ?? Address(http)}", limits.WritesPerUserPerMinute, TimeSpan.FromMinutes(1)),
             };
             var (count, retryAfter) = await http.RequestServices.GetRequiredService<SharedCounters>().IncrementAsync(key, window);

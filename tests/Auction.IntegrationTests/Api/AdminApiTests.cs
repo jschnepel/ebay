@@ -295,6 +295,30 @@ public sealed class AdminApiTests(MigratedDatabase db)
         Guid.ParseExact($"{at.ToUnixTimeMilliseconds():x12}7abc8def{Random.Shared.NextInt64(1L << 47):x12}", "N");
 
     [Fact]
+    public async Task An_admins_reads_dont_use_up_the_limit_on_their_actions()
+    {
+        // The admin pages poll: activity every second, health every two, the live event log every five.
+        await using var api = await db.ApiWithAsync(new Dictionary<string, string>
+        {
+            ["Api:RateLimits:WritesPerUserPerMinute"] = "2",
+            ["Api:RateLimits:ReadsPerUserPerMinute"] = "4",
+        });
+        var admin = await api.SignUpAsync("Polling admin", role: "admin");
+        var target = await api.SignUpAsync("Polled user");
+
+        var reads = new List<HttpStatusCode>();
+        for (var i = 0; i < 5; i++)
+        {
+            reads.Add(await admin.Http.StatusOfGetAsync("/api/v1/admin/users"));
+        }
+
+        using var action = await admin.Http.PostAsJsonAsync($"/api/v1/admin/users/{target.Id}/disable", new { reason = "test" }, Ct);
+
+        Assert.Equal([HttpStatusCode.OK, HttpStatusCode.OK, HttpStatusCode.OK, HttpStatusCode.OK, HttpStatusCode.TooManyRequests], reads);
+        Assert.Equal(HttpStatusCode.NoContent, action.StatusCode);
+    }
+
+    [Fact]
     public async Task Outside_demo_mode_there_is_no_demo_reset()
     {
         var api = await db.ApiAsync(demoMode: false);
