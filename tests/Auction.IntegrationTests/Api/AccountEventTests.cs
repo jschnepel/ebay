@@ -136,6 +136,21 @@ public sealed class AccountEventTests(MigratedDatabase db)
         Assert.Equal(0, leaks);
     }
 
+    [Fact]
+    public async Task Text_typed_in_the_email_box_that_isnt_an_email_is_never_stored()
+    {
+        var api = await db.ApiAsync();
+        var typed = $"my-secret-{Guid.NewGuid():N}";
+
+        (_, var response) = await api.SignInAsync(typed);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        var leaks = await db.ScalarAsync<long>(MigratedDatabase.Migrator, "SELECT count(*) FROM account_events WHERE account_events::text LIKE '%' || $1 || '%'", typed);
+        Assert.Equal(0, leaks);
+        Assert.Equal(1, await db.ScalarAsync<long>(
+            MigratedDatabase.Migrator, "SELECT count(*) FROM account_events WHERE type = 'sign_in_failed' AND detail = 'not_an_email' AND email IS NULL AND at > clock_timestamp() - interval '1 minute'"));
+    }
+
     private static async Task SignOutAsync(HttpClient http)
     {
         using var response = await http.PostAsJsonAsync("/api/v1/account/sign-out", new { }, TestContext.Current.CancellationToken);

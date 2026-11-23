@@ -98,10 +98,13 @@ internal static class AccountEndpoints
         var guard = http.RequestServices.GetRequiredService<SignInGuard>();
         var events = http.RequestServices.GetRequiredService<AccountEvents>();
         var typed = TypedEmail(body.Email);
+
+        // Only a real address is kept for the log: text that isn't one may be a password typed in the wrong box.
+        var recorded = typed is not null && IsEmail(typed) ? typed : null;
         if (!await guard.TryAttemptAsync(key))
         {
             var known = typed is null ? null : await accounts.FindAsync(typed, http.RequestAborted);
-            await events.RecordAsync(AccountEvents.SignInFailed, known?.Id.Value, typed, "too_many_attempts", null, http.RequestAborted);
+            await events.RecordAsync(AccountEvents.SignInFailed, known?.Id.Value, recorded, "too_many_attempts", null, http.RequestAborted);
             http.Response.Headers.RetryAfter = "60";
             return Problems.Of(StatusCodes.Status429TooManyRequests, "too_many_attempts", "Too many sign-in attempts for this account; try again later.");
         }
@@ -115,14 +118,14 @@ internal static class AccountEndpoints
             }
 
             await events.RecordAsync(
-                AccountEvents.SignInFailed, account?.Id.Value, typed, FailureCause(account, body.Password), null, http.RequestAborted);
+                AccountEvents.SignInFailed, account?.Id.Value, recorded, FailureCause(account, body.Password, recorded is not null), null, http.RequestAborted);
 
             // The same answer whether the email is unknown or the password is wrong.
             return Problems.Of(StatusCodes.Status401Unauthorized, "sign_in_failed", "The email or password is incorrect.");
         }
 
         await guard.SucceededAsync(key);
-        await IssueCookieAsync(http, account, AccountEvents.SignIn, typed);
+        await IssueCookieAsync(http, account, AccountEvents.SignIn, recorded);
         return TypedResults.Ok(ToResponse(account));
     }
 
@@ -150,8 +153,9 @@ internal static class AccountEndpoints
             : !string.IsNullOrEmpty(password) && hasher.VerifyHashedPassword(account, hash, password) != PasswordVerificationResult.Failed;
 
     // Why a sign-in failed, for the event log; the visitor is only ever told that the email or password is wrong.
-    private static string FailureCause(Account? account, string? password) => account switch
+    private static string FailureCause(Account? account, string? password, bool isEmail) => account switch
     {
+        null when !isEmail => "not_an_email",
         null => "unknown_email",
         { Disabled: true } => "account_disabled",
         { PasswordHash: null } => "email_sign_in_off",
