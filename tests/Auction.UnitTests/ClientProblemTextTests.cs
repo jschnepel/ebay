@@ -80,4 +80,12 @@ public sealed class ClientProblemTextTests
     {
         Assert.Equal("You're signed out. Sign in again to continue.", Shown(new() { Status = 401, Title = "Unauthorized" }));
     }
+
+    [Fact]
+    public void A_busy_engine_says_to_try_again_without_naming_a_header()
+    {
+        Assert.Equal(
+            "The auction service is busy. Try again in a moment.",
+            Shown(new() { Status = 503, Code = "busy", Title = "The auction service is busy; retry with the same Idempotency-Key." }));
+    }
 }
