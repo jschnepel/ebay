@@ -36,7 +36,7 @@ public sealed class UiQualityTests(MigratedDatabase db, Browsers browsers)
         await page.SignUpAsync("Accessible seller");
         var auction = await page.ListAndPublishAsync($"Axe item {Guid.NewGuid():N}"[..17], "5.00", "6.00");
         await ScanAsync("/", "Auctions");
-        await ScanAsync(auction, "Bid history");
+        await ScanAsync(auction, "This is your listing.");
         await ScanAsync("/sell", "New listing");
         await ScanAsync("/sell/new", "Save draft");
         await ScanAsync("/my-bids", "My bids");

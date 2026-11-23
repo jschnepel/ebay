@@ -10,7 +10,7 @@ Each story maps to requirement IDs in [requirements.md](requirements.md), which 
 |---|---|---|---|
 | US-B01 | As a buyer, I want to browse active auctions so that I can find something to bid on. | UI-01, UI-03, API-03 | Paginated; deterministic order |
 | US-B02 | As a buyer, I want to search by title keyword, filter by status and sort by ending soonest so that I can find relevant auctions quickly. | UI-03 | "Ending soon" means within 1 hour, configurable |
-| US-B03 | As a buyer, I want an auction's detail page to show the item, current price, minimum next bid, time remaining and bid history so that I can decide what to bid. | UI-01, COR-06 (Should) | Up to 4 images (UI-05). The countdown uses server time, not the browser clock |
+| US-B03 | As a buyer, I want an auction's detail page to show the item, current price, minimum next bid, time remaining and number of bids so that I can decide what to bid. | UI-01, COR-06 (Should) | Up to 4 images (UI-05). The countdown uses server time, not the browser clock |
 | US-B04 | As a buyer, I want to place a bid and immediately see whether it was accepted, and if not, exactly why, so that I'm never unsure where I stand. | UI-01, DOM-01..03, COR-03, API-03 | Rejection reasons: below minimum, auction not active, own auction, over cap, suspended |
 | US-B05 | As a buyer, I want the price and history to update live while I'm watching so that I don't have to reload. | RT-01, RT-02, INT-02 | |
 | US-B06 | As a buyer, I want to know my bid's outcome even if my connection drops mid-bid so that I don't double-bid or assume wrongly. | API-02, UI-02 (both Should), COR-03 | The idempotency key makes a retry safe even without the Should items |

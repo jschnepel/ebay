@@ -135,7 +135,7 @@ Everything under `/api/v1`, JSON only, documented at `/openapi/v1.json`. Errors 
 |---|---|
 | `POST /account/sign-up`, `POST /account/sign-in`, `POST /account/sign-out`, `GET /account/me` | Accounts and the session cookie (AUTH-01) |
 | `GET /auctions?q&status&pageSize&cursor` | Published auctions, ending soonest first, keyset-paginated; `q` searches titles (its wildcards taken literally), `status` is `active`, `ending_soon` (active and ending within the hour) or `closed` |
-| `GET /auctions/{id}`, `GET /auctions/{id}/bids` | One auction as the viewer may see it, with whether they lead it and whether they have bid on it; its bid history with anonymous labels. An id a demo reset cleared is `410 removed` ("This auction has ended…"), not a 404 |
+| `GET /auctions/{id}`, `GET /auctions/{id}/bids` | One auction as the viewer may see it, with whether they lead it and whether they have bid on it; its bid history with anonymous labels, for admins only (404 to anyone else). The detail says whether any bid came from a simulated bidder, and gives a proxy bidder their own maximum. An id a demo reset cleared is `410 removed` ("This auction has ended…"), not a 404 |
 | `POST /auctions`, `PUT /auctions/{id}` | Create or edit a draft (every term required) |
 | `POST /auctions/{id}/publish`, `/cancel`, `/bids` | Publish, cancel, bid: forwarded to the engine with the signed-in user as the actor |
 | `GET /me/auctions`, `GET /me/bids` | The signed-in user's own auctions (drafts included), and the auctions they bid on with whether they lead |

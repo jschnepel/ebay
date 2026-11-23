@@ -164,7 +164,7 @@ The legal and industry basis for these policies, and what a real marketplace wou
 | Closing | At `endsAt` the worker closes the auction. The outcome is **Sold** (winner = current leader, price = current price), **Reserve not met** (no sale; the seller and bidders are told), or **No bids**. Ties are already resolved by the bidding rule (earliest maximum or bid wins). Like the rest of the bid history, the outcome and final price are public; bidders appear in public history as anonymous labels ("Bidder 1", "Bidder 2"), so the public can't tell **who** won. **Only users associated with the auction (the seller and its bidders) are notified of the result**, and only the winner and seller see each other's display names; nobody sees email addresses. | Only the people involved are notified; public prices with anonymous bidders match eBay-style bid history |
 | Ordering | No first-in-first-out promise by browser arrival; accepted bids are serialized per auction | Honest about distributed timing |
 | Drafts | Saved on the server and visible only to their owner, not even to admins. The owner may edit or hard-delete a draft; a draft has no bids, so nothing is lost. | Unpublished listings stay private |
-| Visibility | Drafts owner-only. Published auctions, prices and bid history are public, with bidders shown as anonymous per-auction labels; a user sees their own bids marked "You", and simulator accounts' labels always carry "(simulated)" | Expected marketplace behavior (eBay-style anonymised bid history) |
+| Visibility | Drafts owner-only. Published auctions, their price and their number of bids are public. A bidder also sees their own standing (leading, outbid, won) and, on a proxy auction, their own maximum. The list of bids is an audit view for admins only, with bidders as anonymous per-auction labels and simulator accounts marked "(simulated)"; a proxy auction's price is all another bidder should learn. An auction with any simulated bid says so on its page | A proxy auction keeps maxima private, so a public list of bids adds little a bidder may act on |
 | Terminal states | Closed and Cancelled never reopen | Integrity |
 | Suspension (admin) | Active → Suspended: bids are rejected and the end time is **not** extended. Resume → Active, if still before `endsAt`. Reaching `endsAt` while Suspended → Closed by the normal rules (§5.2 Closing: Sold, Reserve not met or No bids), using the price and leader reached before suspension. | Moderation without rewriting history |
 | Admin cancel | An admin may cancel a Scheduled, Active or Suspended auction, even after bids, with a recorded reason. Accepted bids stay in history; there is no winner. | Moderation override, audited |
@@ -246,7 +246,8 @@ Every row needs a test. Rows marked **control** are the known-good cases that ma
 
 | Actor | Action | Resource | Expected |
 |---|---|---|---|
-| Anonymous | Browse / view | Published auctions and bid history (anonymous bidder labels) | 200 (control) |
+| Anonymous | Browse / view | Published auctions | 200 (control) |
+| Anyone but an admin | Read the list of bids | a published auction | 404, as for the admin routes |
 | Anonymous | View | any draft | 404 |
 | Anonymous | Bid, create, publish, cancel | any | 401 |
 | Anonymous | Create an account (name + email) | — | 201 and signed in (control); an existing email (any letter case), including a retry after a lost response, gets 409 and the page offers sign-in |

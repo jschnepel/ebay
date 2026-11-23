@@ -5,7 +5,7 @@ using Microsoft.Playwright;
 
 namespace Auction.IntegrationTests.Browser;
 
-/// <summary>The auction page's bid history comes in pages of 10 by default, newest first.</summary>
+/// <summary>The auction page's bid history, for admins only, comes in pages of 10 by default, newest first.</summary>
 [Collection(Auction.IntegrationTests.Browser.BrowserJourneys.Name)]
 public sealed class BidHistoryTests(MigratedDatabase db, Browsers browsers)
 {
@@ -17,6 +17,7 @@ public sealed class BidHistoryTests(MigratedDatabase db, Browsers browsers)
         await using var _ = host;
         var id = await AuctionWithBidsAsync(12);
         var page = await browsers.NewPageAsync(site);
+        await page.SignUpAsync("History admin", role: "Admin");
         var rows = page.GetByTestId("bid-row");
 
         await page.GotoAsync($"/auctions/{id}");
@@ -46,11 +47,32 @@ public sealed class BidHistoryTests(MigratedDatabase db, Browsers browsers)
         var site = await Browsers.SiteAsync(db);
         var id = await AuctionWithBidsAsync(3);
         var page = await browsers.NewPageAsync(site);
+        await page.SignUpAsync("Short history admin", role: "Admin");
 
         await page.GotoAsync($"/auctions/{id}");
 
         await Assertions.Expect(page.GetByTestId("bid-row")).ToHaveCountAsync(3);
         await Assertions.Expect(page.GetByRole(AriaRole.Button, new() { Name = "Older" })).ToHaveCountAsync(0);
+    }
+
+    [Fact]
+    public async Task Only_an_admin_sees_the_bid_history()
+    {
+        var site = await Browsers.SiteAsync(db);
+        var id = await AuctionWithBidsAsync(3);
+        var page = await browsers.NewPageAsync(site);
+
+        // A visitor, then a signed-in bidder: the price and the count of bids, but not the list of them.
+        await page.GotoAsync($"/auctions/{id}");
+        await Assertions.Expect(page.GetByTestId("current-price")).ToHaveTextAsync("$12.00");
+        await Assertions.Expect(page.GetByText("3 bids")).ToBeVisibleAsync();
+        await Assertions.Expect(page.GetByRole(AriaRole.Heading, new() { Name = "Bid history" })).ToHaveCountAsync(0);
+
+        await page.SignUpAsync("Curious bidder");
+        await page.GotoAsync($"/auctions/{id}");
+        await Assertions.Expect(page.GetByTestId("current-price")).ToHaveTextAsync("$12.00");
+        await Assertions.Expect(page.GetByRole(AriaRole.Heading, new() { Name = "Bid history" })).ToHaveCountAsync(0);
+        await Assertions.Expect(page.GetByTestId("bid-row")).ToHaveCountAsync(0);
     }
 
     // A fixed-step auction opening at $10.00 with $1.00 steps and the given number of bids, two bidders taking turns.

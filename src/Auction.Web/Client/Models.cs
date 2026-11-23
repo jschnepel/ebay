@@ -65,6 +65,8 @@ public sealed record AuctionDetail : AuctionSummary
     public bool YouHaveBid { get; init; }
 
     public long? YourMaximumCents { get; init; }
+
+    public bool HasSimulatedBids { get; init; }
 }
 
 public sealed record BidView(long Sequence, string Bidder, long? AmountCents, string Source, DateTimeOffset AcceptedAt);

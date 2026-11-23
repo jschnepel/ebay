@@ -50,6 +50,9 @@ else
                 <dd class="num">@Format.Time(auction.EndsAt)</dd>
             </dl>
 
+            @* The list of bids is an audit view: admins only. Everyone else has the price, the count and their own standing. *@
+            @if (Session.Account?.IsAdmin == true)
+            {
             <MudText Typo="Typo.h6" HtmlTag="h2" Class="mb-2">Bid history</MudText>
             @if (_bids is null || _bids.Count == 0)
             {
@@ -84,6 +87,7 @@ else
                                  OnPrevious="NewerBidsAsync" OnNext="OlderBidsAsync" OnPageSize="ChangeBidPageSizeAsync" />
                 }
             }
+            }
         </div>
 
         <aside class="ticket" aria-label="Bidding">
@@ -101,6 +105,10 @@ else
                 <LotClock Auction="auction" />
                 <span class="muted">@(auction.BidCount == 1 ? "1 bid" : $"{auction.BidCount} bids")</span>
             </div>
+            @if (auction.HasSimulatedBids)
+            {
+                <p class="simulated-note" data-testid="simulated-note">Some bids here are from simulated bidders, which keep the demo busy.</p>
+            }
             <dl class="ticket-facts">
                 <dt>Status</dt>
                 <dd data-testid="status">@Format.Status(auction.Status)@(auction.Outcome is { } outcome ? $" ({outcome.Replace('_', ' ')})" : "")</dd>
@@ -259,6 +267,11 @@ else
         if (_bidMessage is not null && _auction.Version > (_bidMessageVersion ?? long.MaxValue))
         {
             (_bidMessage, _bidMessageVersion) = (null, null);
+        }
+
+        if (Session.Account?.IsAdmin != true)
+        {
+            return;
         }
 
         var bids = await Api.BidsAsync(id, _bidCursors.Peek(), _bidPageSize);

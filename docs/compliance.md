@@ -57,7 +57,7 @@ Each area has a short statement of the rule, then a table with three columns of 
 
 | Rule | Real platform | This demo | Production change |
 |---|---|---|---|
-| No fake bids or bots | Required | Simulated bidders are visibly labelled: their anonymous label in public history always carries "(simulated)" (requirements §5.2 Visibility). The simulator uses the ordinary public login with no privileged path (SIM-05) | Remove the simulator from production, or keep it to staging |
+| No fake bids or bots | Required | An auction that any simulated bidder has bid on says so on its page, for every visitor; in the admin-only list of bids their labels carry "(simulated)" (requirements §5.2 Visibility). The simulator uses the ordinary public login with no privileged path (SIM-05) | Remove the simulator from production, or keep it to staging |
 | Displayed price, history and reserve status are real | Required | The engine and PostgreSQL are authoritative; the UI re-fetches committed state (RT-01, RT-02) | None |
 | Shill detection | Good practice; evidence retention effectively required | Self-bid block; append-only history; every command is idempotent (COR-03). No linked-account detection or scoring | Record IP hash, device and session per bid; flag linked accounts; nightly 0–10 risk score queued for review; warn → restrict → suspend ladder |
 | UK bid rings | Good practice | Nothing specific | Terms ban; co-bidding anomaly flag |
@@ -122,7 +122,7 @@ The demo concludes no contracts, does not target the EU or UK, and its operator 
 
 | Rule | Real platform | This demo | Production change |
 |---|---|---|---|
-| Data minimisation | Required | Sign-up asks only for display name and email (AUTH-01). Emails are never shown to other users or to admins (§7 of the spec). Public bid history uses anonymous bidder labels; only the seller and winner see each other's display names | Same |
+| Data minimisation | Required | Sign-up asks only for display name and email (AUTH-01). Emails are never shown to other users; admins see them in the user list, a user's page and the event log (§7 of the spec). The list of bids is admin-only and uses anonymous bidder labels; only the seller and winner see each other's display names | Same |
 | Retention and deletion | Required | Nightly `reset-demo` deletes self-registered accounts and their data (HOST-01) | Retention schedule per data category; self-service account deletion |
 | Privacy notice | Required | The sign-up form and README state the email-only trade-off. A one-page privacy notice is recommended by the research but not yet specified | Full notice (GDPR Art 13 / CCPA notice at collection) |
 | Location tracking | Required (consent and notice) if precise | **Coarse only (LOC-01):** offline IP lookup to country/region at sign-in; salted IP hash, never the raw IP; purged after 30 days; shown only in the signed-out notice and the admin user list; no browser geolocation prompt; stated on the sign-up form | Keep coarse and security-only; documented legitimate-interest balancing for EU users; opt-in consent if precise location is ever used; no geofencing |
