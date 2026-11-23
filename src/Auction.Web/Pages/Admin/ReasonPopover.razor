@@ -3,10 +3,10 @@
     <MudButton Size="Size.Small" Variant="@TriggerVariant" Color="@Tone" OnClick="Open" Disabled="Disabled">@Action</MudButton>
     <MudOverlay Visible="_open" OnClick="Close" AutoClose="true" />
     <MudPopover Open="_open" AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight" Class="reason-popover-shell">
-        <div class="reason-popover" role="dialog" aria-labelledby="@_titleId" @onkeydown="KeyAsync">
+        <div class="reason-popover" role="dialog" aria-labelledby="@_titleId" @onkeydown="EscapeCloses">
             <p id="@_titleId" class="reason-title">@Title</p>
             <MudTextField @bind-Value="_reason" Label="Reason" AutoFocus="true" Immediate="true" MaxLength="500"
-                          Variant="Variant.Outlined" Margin="Margin.Dense" HelperText="@Helper" />
+                          Variant="Variant.Outlined" Margin="Margin.Dense" HelperText="@Helper" OnKeyDown="EnterConfirmsAsync" />
             <div class="reason-actions">
                 <MudButton Variant="Variant.Text" OnClick="Close">Cancel</MudButton>
                 <MudButton Variant="Variant.Filled" Color="@Tone" Disabled="@(string.IsNullOrWhiteSpace(_reason))" OnClick="ConfirmAsync">@Action</MudButton>
@@ -18,6 +18,7 @@
 @code {
     private readonly string _titleId = $"reason-{Guid.NewGuid():N}";
     private bool _open;
+    private bool _confirming;
     private string _reason = "";
 
     /// <summary>The question at the top, such as "Disable Ada Lovelace?".</summary>
@@ -48,22 +49,36 @@
 
     private void Close() => _open = false;
 
-    private async Task KeyAsync(KeyboardEventArgs key)
+    // Escape closes from anywhere in the popover; Enter confirms only from the field, so Enter on Cancel cancels.
+    private void EscapeCloses(KeyboardEventArgs key)
     {
         if (key.Key == "Escape")
         {
             Close();
         }
-        else if (key.Key == "Enter" && !string.IsNullOrWhiteSpace(_reason))
-        {
-            await ConfirmAsync();
-        }
     }
 
+    private Task EnterConfirmsAsync(KeyboardEventArgs key) =>
+        key.Key == "Enter" && !string.IsNullOrWhiteSpace(_reason) ? ConfirmAsync() : Task.CompletedTask;
+
+    // One confirmation per opening, however it arrives.
     private async Task ConfirmAsync()
     {
+        if (_confirming || !_open)
+        {
+            return;
+        }
+
+        _confirming = true;
         var reason = _reason.Trim();
         _open = false;
-        await OnConfirm.InvokeAsync(reason);
+        try
+        {
+            await OnConfirm.InvokeAsync(reason);
+        }
+        finally
+        {
+            _confirming = false;
+        }
     }
 }

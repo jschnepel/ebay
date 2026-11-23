@@ -68,6 +68,40 @@ public sealed partial class AdminUsersBrowserTests(MigratedDatabase db, Browsers
     }
 
     [Fact]
+    public async Task Enter_on_cancel_cancels_and_enter_in_the_field_confirms_once()
+    {
+        if (Environment.GetEnvironmentVariable(Browsers.BaseUrlVariable) is { Length: > 0 })
+        {
+            return;
+        }
+
+        var name = $"Keyed {Guid.NewGuid():N}"[..13];
+        var target = await (await db.ApiAsync()).SignUpAsync(name);
+        var admin = await browsers.NewPageAsync(await Browsers.SiteAsync(db));
+        await admin.SignUpAsync("Keyboard admin", role: "Admin");
+        await admin.GotoAsync("/admin/users");
+        await admin.GetByLabel("Name, email or id").FillAsync(name);
+        await admin.GetByRole(AriaRole.Button, new() { Name = "Search" }).ClickAsync();
+        var row = admin.GetByTestId("user-row").Filter(new() { HasText = name });
+
+        await row.GetByRole(AriaRole.Button, new() { Name = "Disable", Exact = true }).ClickAsync();
+        await admin.GetByRole(AriaRole.Dialog).GetByLabel("Reason").FillAsync("Changed my mind");
+        await admin.GetByRole(AriaRole.Dialog).GetByRole(AriaRole.Button, new() { Name = "Cancel" }).FocusAsync();
+        await admin.Keyboard.PressAsync("Enter");
+
+        await Assertions.Expect(admin.GetByRole(AriaRole.Dialog)).ToHaveCountAsync(0);
+        await Assertions.Expect(row).ToContainTextAsync("Enabled");
+
+        await row.GetByRole(AriaRole.Button, new() { Name = "Disable", Exact = true }).ClickAsync();
+        await admin.GetByRole(AriaRole.Dialog).GetByLabel("Reason").FillAsync("Spam");
+        await admin.Keyboard.PressAsync("Enter");
+
+        await Assertions.Expect(row).ToContainTextAsync("Disabled");
+        var disables = await db.ScalarAsync<long>(MigratedDatabase.Migrator, "SELECT count(*) FROM admin_audit WHERE action = 'disable' AND target_id = $1", target.Id);
+        Assert.Equal(1, disables);
+    }
+
+    [Fact]
     public async Task The_users_screen_pages_and_filters_by_state()
     {
         if (Environment.GetEnvironmentVariable(Browsers.BaseUrlVariable) is { Length: > 0 })
