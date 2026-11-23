@@ -103,7 +103,10 @@
         _lastProblem = result.Problem;
         if (!result.Succeeded)
         {
-            _error = result.Message;
+            // The API words this for password sign-in; with no password box, the only cause left is the email.
+            _error = result.Problem?.Code == "sign_in_failed"
+                ? "No account uses that email. Accounts you create are removed at the daily reset, so you may need to create it again."
+                : result.Message;
             return;
         }
 

@@ -75,6 +75,19 @@ public sealed class JourneyTests(MigratedDatabase db, Browsers browsers)
     }
 
     [Fact]
+    public async Task An_email_no_account_uses_is_told_so_and_reminded_of_the_daily_reset()
+    {
+        var visitor = await browsers.NewPageAsync(await Browsers.SiteAsync(db));
+
+        await visitor.GotoAsync("/sign-in");
+        await visitor.GetByLabel("Email", new() { Exact = true }).FillAsync($"{Guid.NewGuid():N}@example.test");
+        await visitor.GetByRole(AriaRole.Button, new() { Name = "Sign in", Exact = true }).ClickAsync();
+
+        await Assertions.Expect(visitor.GetByTestId("sign-in-error")).ToContainTextAsync("No account uses that email");
+        await Assertions.Expect(visitor.GetByTestId("sign-in-error")).ToContainTextAsync("daily reset");
+    }
+
+    [Fact]
     public async Task A_visitor_who_is_not_signed_in_is_asked_to_sign_in_to_bid_or_sell()
     {
         var site = await Browsers.SiteAsync(db);
