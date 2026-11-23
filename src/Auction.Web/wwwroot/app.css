@@ -1,19 +1,30 @@
-/* Tokens. Petrol ink on cool paper; brass marks the clock and nothing else. Text colours meet WCAG AA. */
+/* Tokens. Petrol ink on cool paper; brass marks time and the live price, and nothing else. Text colours meet WCAG AA. */
 :root {
-    --ink: #12343b;
+    --ink: #10313a;
     --ink-soft: #2b4d54;
-    --paper: #f3f5f4;
+    --paper: #eef2f1;
     --surface: #ffffff;
-    --line: #d3dcda;
+    --sunk: #f6f8f8;
+    --line: #d7e0de;
+    --line-strong: #b8c6c3;
     --cover: #e2eae8;
-    --brass: #b9861f;
+    --brass: #c48a1c;
+    --brass-bright: #e8b04a;
+    --brass-tint: #f7eedb;
     --brass-text: #7a5410;
     --lead: #2e6b45;
     --alert: #a3261e;
     --muted: #5b676a;
+    --on-ink: #ffffff;
+    --on-ink-muted: #b4c7ca;
     --display: Bahnschrift, "DIN Alternate", "DIN 2014", "Roboto Condensed", "Arial Narrow", system-ui, sans-serif;
     --body: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
-    --radius: 6px;
+    /* Corners by rank: panels and cards, then controls, then pills. */
+    --radius-lg: 12px;
+    --radius: 8px;
+    /* Only things that float over the page cast a shadow. */
+    --float: 0 1px 2px rgba(16, 49, 58, 0.08), 0 12px 32px rgba(16, 49, 58, 0.16);
+    --page-max: 1280px;
 }
 
 body { background: var(--paper); color: var(--ink); font-family: var(--body); }
