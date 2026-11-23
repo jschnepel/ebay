@@ -112,9 +112,10 @@ else
             </dl>
             </div>
 
-            @if (auction.YouLead)
+            @* Where the viewer stands. While their own bid's result says they lead, it isn't said twice. *@
+            @if (Standing(auction) is { } standing && !(_bidAccepted && _bidMessage is not null && auction.YouLead))
             {
-                <MudAlert Severity="Severity.Success" Dense="true">You are the highest bidder.</MudAlert>
+                <MudAlert Severity="@standing.Severity" Dense="true" data-testid="standing">@standing.Text</MudAlert>
             }
 
             @if (auction.Status == "active" && !auction.YouAreSeller)
@@ -140,7 +141,7 @@ else
                                 Fixed steps of @Format.Dollars(auction.IncrementCents): each bid raises the price by exactly one step.
                             </p>
                             <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth="true" Size="Size.Large"
-                                       OnClick="() => BidNextStepAsync(auction)" Disabled="_busy" data-testid="bid-next-step">Bid @Format.Dollars(auction.MinimumNextBidCents)</MudButton>
+                                       OnClick="() => BidNextStepAsync(auction)" Disabled="_busy" data-testid="bid-next-step">@StepLabel(auction)</MudButton>
                         }
                         @if (_bidMessage is not null)
                         {
@@ -174,6 +175,9 @@ else
     private string _amount = "";
     private string? _bidMessage;
     private bool _bidAccepted;
+
+    // The auction version the bid message describes; a newer one (someone else's bid, the close) clears it.
+    private long? _bidMessageVersion;
 
     // The last refusal's code, so a fixed-step bid that lost the race can say so.
     private string? _lastCode;
@@ -242,6 +246,11 @@ else
             return;
         }
 
+        if (_bidMessage is not null && _auction.Version > (_bidMessageVersion ?? long.MaxValue))
+        {
+            (_bidMessage, _bidMessageVersion) = (null, null);
+        }
+
         var bids = await Api.BidsAsync(id, _bidCursors.Peek(), _bidPageSize);
         if (bids.Succeeded && id == Id && _auction.Version == detail.Value!.Version)
         {
@@ -301,6 +310,24 @@ else
         _ => "Current price",
     };
 
+    private static (Severity Severity, string Text)? Standing(AuctionDetail auction) => auction.Status switch
+    {
+        "active" when auction.YouLead => (Severity.Success, "You are the highest bidder."),
+        "active" when auction.YouHaveBid => (Severity.Warning, "You've been outbid."),
+        "closed" when auction.YouLead && auction.Outcome == "sold" => (Severity.Info, "This auction has ended. You won it."),
+        "closed" when auction.YouHaveBid => (Severity.Info, "This auction has ended. You didn't win it."),
+        "closed" => (Severity.Info, "This auction has ended."),
+        "cancelled" => (Severity.Info, "This auction was cancelled."),
+        _ => null,
+    };
+
+    // A fixed step taken while leading only raises the bidder's own price, so the button says that.
+    private static string StepLabel(AuctionDetail auction) =>
+        auction.YouLead ? $"Raise your own bid to {Format.Dollars(auction.MinimumNextBidCents)}" : $"Bid {Format.Dollars(auction.MinimumNextBidCents)}";
+
+    private void ShowBidMessage(bool accepted, string message, long? version) =>
+        (_bidAccepted, _bidMessage, _bidMessageVersion) = (accepted, message, version);
+
     private Task BidOnEnterAsync(KeyboardEventArgs key) => key.Key == "Enter" && !_busy ? BidAsync() : Task.CompletedTask;
 
     // The step shown on the button; if someone took it first, the card shows the new step instead of an error.
@@ -313,7 +340,7 @@ else
             await LoadAsync();
             if (_auction is { } fresh)
             {
-                _bidMessage = $"Someone bid first. The next step is now {Format.Dollars(fresh.MinimumNextBidCents)}.";
+                ShowBidMessage(false, $"Someone bid first. The next step is now {Format.Dollars(fresh.MinimumNextBidCents)}.", fresh.Version);
             }
         }
     }
@@ -322,7 +349,7 @@ else
     {
         if (Format.ParseDollars(_amount) is not { } cents)
         {
-            (_bidAccepted, _bidMessage) = (false, "Enter an amount in dollars, like 12.50.");
+            ShowBidMessage(false, "Enter an amount in dollars, like 12.50.", _auction?.Version);
             return;
         }
 
@@ -339,7 +366,7 @@ else
         {
             _pending = null;
             (_amount, _lastCode) = ("", null);
-            (_bidAccepted, _bidMessage) = (true, result.Value!.YouLead == true ? "Bid placed. You are the highest bidder." : "Bid placed, but another bidder's maximum is higher.");
+            ShowBidMessage(true, result.Value!.YouLead == true ? "Bid placed. You are the highest bidder." : "Bid placed, but another bidder's maximum is higher.", result.Value.Version);
             await LoadAsync();
         }
         else
@@ -350,7 +377,14 @@ else
                 _pending = null;
             }
 
-            (_bidAccepted, _bidMessage, _lastCode) = (false, result.Message, result.Problem!.Code);
+            _lastCode = result.Problem!.Code;
+            ShowBidMessage(false, result.Message, _auction?.Version);
+
+            // Gone since the page loaded (a demo reset): reload, so the page says what happened to it.
+            if (result.Problem.Status == 404)
+            {
+                await LoadAsync();
+            }
         }
     }
 }

@@ -61,6 +61,8 @@ public sealed record AuctionDetail : AuctionSummary
     public bool YouAreSeller { get; init; }
 
     public bool YouLead { get; init; }
+
+    public bool YouHaveBid { get; init; }
 }
 
 public sealed record BidView(long Sequence, string Bidder, long? AmountCents, string Source, DateTimeOffset AcceptedAt);

@@ -7,7 +7,8 @@ namespace Auction.IntegrationTests.Browser;
 
 /// <summary>
 /// The bid card follows the auction's bidding mode: a fixed-step auction offers one button for the exact next
-/// step, since any other amount is refused; a proxy auction asks for a maximum.
+/// step, since any other amount is refused; a proxy auction asks for a maximum. It also says where the bidder
+/// stands: leading (once), outbid, or how an ended auction came out for them.
 /// </summary>
 [Collection(Auction.IntegrationTests.Browser.BrowserJourneys.Name)]
 public sealed class FixedStepBidTests(MigratedDatabase db, Browsers browsers)
@@ -26,7 +27,52 @@ public sealed class FixedStepBidTests(MigratedDatabase db, Browsers browsers)
         await page.BidNextStepAsync();
 
         await Assertions.Expect(page.GetByTestId("bid-result")).ToContainTextAsync("highest bidder");
-        await Assertions.Expect(page.GetByTestId("bid-next-step")).ToHaveTextAsync("Bid $11.00");
+        await Assertions.Expect(page.GetByText("highest bidder")).ToHaveCountAsync(1);
+        // Leading, another step only raises the bidder's own price, and the button says so.
+        await Assertions.Expect(page.GetByTestId("bid-next-step")).ToHaveTextAsync("Raise your own bid to $11.00");
+    }
+
+    [Fact]
+    public async Task Being_outbid_replaces_the_bid_result_with_an_outbid_notice()
+    {
+        var (page, id) = await FixedStepAuctionAsync();
+        var rival = await (await db.ApiAsync()).SignUpAsync();
+        await page.GotoAsync($"/auctions/{id}");
+        await page.BidNextStepAsync();
+        await Assertions.Expect(page.GetByTestId("bid-result")).ToContainTextAsync("highest bidder");
+
+        using (var outbid = await rival.Http.BidAsync(id, 1100))
+        {
+            Assert.Equal(HttpStatusCode.Created, outbid.StatusCode);
+        }
+
+        await Assertions.Expect(page.GetByTestId("standing")).ToHaveTextAsync("You've been outbid.");
+        await Assertions.Expect(page.GetByTestId("bid-result")).ToHaveCountAsync(0);
+        await Assertions.Expect(page.GetByText("highest bidder")).ToHaveCountAsync(0);
+        await Assertions.Expect(page.GetByTestId("bid-next-step")).ToHaveTextAsync("Bid $12.00");
+    }
+
+    [Fact]
+    public async Task An_ended_auction_says_it_has_ended_and_whether_the_bidder_won()
+    {
+        var (page, id) = await FixedStepAuctionAsync();
+        await page.GotoAsync($"/auctions/{id}");
+        await page.BidNextStepAsync();
+        await Assertions.Expect(page.GetByTestId("bid-result")).ToContainTextAsync("highest bidder");
+
+        // Closed as the engine closes it at the end time (the terms, end time included, can't be moved): the
+        // row and its outbox event in one transaction, which the relay announces to the cache and the page.
+        await db.ExecuteAsync(MigratedDatabase.Migrator, """
+            WITH closed AS (
+                UPDATE auctions SET status = 'closed', outcome = 'sold', closed_at = clock_timestamp(), version = version + 1
+                WHERE id = $1 RETURNING id, version)
+            INSERT INTO outbox_events (auction_id, auction_version, type, payload)
+            SELECT id, version, 'auction.closed', jsonb_build_object('auctionId', id, 'version', version) FROM closed
+            """, id);
+
+        await Assertions.Expect(page.GetByTestId("standing")).ToHaveTextAsync("This auction has ended. You won it.");
+        await Assertions.Expect(page.GetByTestId("bid-next-step")).ToHaveCountAsync(0);
+        await Assertions.Expect(page.GetByTestId("bid-result")).ToHaveCountAsync(0);
     }
 
     [Fact]
