@@ -30,7 +30,7 @@ else
     }
     else if (_items.Count == 0 && _message is null)
     {
-        <p class="muted" data-testid="audit-empty">No admin actions match.</p>
+        <div class="empty" data-testid="audit-empty"><p class="empty-title">No admin actions match</p><p class="muted">Try an admin's name, an id, or an action such as suspend.</p></div>
     }
     else
     {
