@@ -88,6 +88,17 @@ public sealed class JourneyTests(MigratedDatabase db, Browsers browsers)
     }
 
     [Fact]
+    public async Task Signing_in_with_no_email_asks_for_one()
+    {
+        var visitor = await browsers.NewPageAsync(await Browsers.SiteAsync(db));
+
+        await visitor.GotoAsync("/sign-in");
+        await visitor.GetByRole(AriaRole.Button, new() { Name = "Sign in", Exact = true }).ClickAsync();
+
+        await Assertions.Expect(visitor.GetByTestId("sign-in-error")).ToHaveTextAsync("Enter the email of an account you created.");
+    }
+
+    [Fact]
     public async Task A_visitor_who_is_not_signed_in_is_asked_to_sign_in_to_bid_or_sell()
     {
         var site = await Browsers.SiteAsync(db);

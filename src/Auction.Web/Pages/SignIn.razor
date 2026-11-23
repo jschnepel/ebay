@@ -84,7 +84,16 @@
     }
 
     // The page signs in by email alone; the built-in accounts' passwords are for the API (the simulator uses them).
-    private Task SignInAsync() => RunAsync(() => Api.SignInAsync(_signInEmail, null));
+    private Task SignInAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_signInEmail))
+        {
+            (_error, _existingEmail) = ("Enter the email of an account you created.", null);
+            return Task.CompletedTask;
+        }
+
+        return RunAsync(() => Api.SignInAsync(_signInEmail, null));
+    }
 
     private Task SignInExistingAsync()
     {
