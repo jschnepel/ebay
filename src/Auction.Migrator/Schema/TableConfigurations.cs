@@ -281,3 +281,23 @@ internal sealed class DemoResetConfiguration : IEntityTypeConfiguration<DemoRese
         builder.HasIndex(r => r.CompletedAt).HasDatabaseName("ix_demo_resets_completed_at");
     }
 }
+
+internal sealed class AccountEventConfiguration : IEntityTypeConfiguration<AccountEventRow>
+{
+    public void Configure(EntityTypeBuilder<AccountEventRow> builder)
+    {
+        builder.ToTable("account_events", table =>
+        {
+            table.HasCheckConstraint(
+                "ck_account_events_type", "type IN ('sign_up', 'sign_in', 'sign_in_failed', 'sign_out', 'session_replaced', 'session_ended')");
+            table.HasCheckConstraint("ck_account_events_email", "char_length(email) <= 254");
+            table.HasCheckConstraint("ck_account_events_detail", "char_length(detail) <= 64");
+        });
+        builder.HasKey(e => e.Id);
+        builder.Property(e => e.Id).UseIdentityAlwaysColumn();
+        builder.Property(e => e.At).HasDefaultValueSql("clock_timestamp()");
+        builder.HasOne<UserRow>().WithMany().HasForeignKey(e => e.UserId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasIndex(e => e.At).HasDatabaseName("ix_account_events_at");
+        builder.HasIndex(e => new { e.UserId, e.At }).HasDatabaseName("ix_account_events_user_id_at");
+    }
+}

@@ -109,7 +109,7 @@ public static class DemoSeed
     private const string ResetSql = """
         TRUNCATE auction.bids, auction.proxy_maxima, auction.idempotency_records, auction.outbox_events, auction.notifications,
                  auction.admin_audit, auction.auction_images, auction.image_blobs, auction.upload_quotas, auction.sessions,
-                 auction.user_limits, auction.auctions;
+                 auction.user_limits, auction.auctions, auction.account_events;
         UPDATE auction.global_quota SET bytes_used = 0 WHERE id = 1;
         DELETE FROM auction.users WHERE kind IN ('self_registered', 'visitor_admin');
         UPDATE auction.users SET disabled_at = NULL WHERE disabled_at IS NOT NULL;

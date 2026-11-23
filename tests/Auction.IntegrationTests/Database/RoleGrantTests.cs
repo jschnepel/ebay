@@ -55,10 +55,18 @@ public sealed class RoleGrantTests(MigratedDatabase db)
         { MigratedDatabase.Api, "INSERT INTO sessions (id, user_id) SELECT gen_random_uuid(), gen_random_uuid() WHERE false" },
         { MigratedDatabase.Api, "UPDATE sessions SET revoked_at = now() WHERE false" },
         { MigratedDatabase.Api, "INSERT INTO admin_audit (admin_id, action, target_type, target_id, reason) SELECT gen_random_uuid(), 'disable', 'user', gen_random_uuid(), 'r' WHERE false" },
+        { MigratedDatabase.Api, "INSERT INTO account_events (type, user_id, email, detail, session_id) SELECT 'sign_in', NULL, 'a@b.c', NULL, NULL WHERE false" },
+        { MigratedDatabase.Api, "SELECT 1 FROM account_events" },
+        { MigratedDatabase.Verifier, "SELECT 1 FROM account_events" },
     };
 
     public static TheoryData<string, string> Refused => new()
     {
+        // Account events are written once by the API and never changed; the engine never sees them.
+        { MigratedDatabase.Api, "UPDATE account_events SET detail = 'x' WHERE false" },
+        { MigratedDatabase.Api, "DELETE FROM account_events WHERE false" },
+        { MigratedDatabase.Api, "INSERT INTO account_events (at, type) SELECT now(), 'sign_in' WHERE false" },
+        { MigratedDatabase.Engine, "SELECT 1 FROM account_events" },
         // The API reads auction state but never writes it, and never sees private maxima.
         { MigratedDatabase.Api, InsertBid },
         { MigratedDatabase.Api, "INSERT INTO auctions (id, seller_id) SELECT gen_random_uuid(), gen_random_uuid() WHERE false" },

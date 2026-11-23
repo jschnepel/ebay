@@ -23,6 +23,61 @@ namespace Auction.Migrator.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("Auction.Migrator.Schema.AccountEventRow", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityAlwaysColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTimeOffset>("At")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("at")
+                        .HasDefaultValueSql("clock_timestamp()");
+
+                    b.Property<string>("Detail")
+                        .HasColumnType("text")
+                        .HasColumnName("detail");
+
+                    b.Property<string>("Email")
+                        .HasColumnType("text")
+                        .HasColumnName("email");
+
+                    b.Property<Guid?>("SessionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("session_id");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("type");
+
+                    b.Property<Guid?>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_account_events");
+
+                    b.HasIndex("At")
+                        .HasDatabaseName("ix_account_events_at");
+
+                    b.HasIndex("UserId", "At")
+                        .HasDatabaseName("ix_account_events_user_id_at");
+
+                    b.ToTable("account_events", "auction", t =>
+                        {
+                            t.HasCheckConstraint("ck_account_events_detail", "char_length(detail) <= 64");
+
+                            t.HasCheckConstraint("ck_account_events_email", "char_length(email) <= 254");
+
+                            t.HasCheckConstraint("ck_account_events_type", "type IN ('sign_up', 'sign_in', 'sign_in_failed', 'sign_out', 'session_replaced', 'session_ended')");
+                        });
+                });
+
             modelBuilder.Entity("Auction.Migrator.Schema.AdminAuditRow", b =>
                 {
                     b.Property<long>("Id")
@@ -790,6 +845,15 @@ namespace Auction.Migrator.Migrations
 
                             t.HasCheckConstraint("ck_users_password", "kind IN ('self_registered', 'visitor_admin') OR password_hash IS NOT NULL");
                         });
+                });
+
+            modelBuilder.Entity("Auction.Migrator.Schema.AccountEventRow", b =>
+                {
+                    b.HasOne("Auction.Migrator.Schema.UserRow", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_account_events_users_user_id");
                 });
 
             modelBuilder.Entity("Auction.Migrator.Schema.AuctionImageRow", b =>

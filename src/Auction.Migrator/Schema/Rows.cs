@@ -276,3 +276,24 @@ public sealed class DemoResetRow
 
     public DateTimeOffset? CompletedAt { get; set; }
 }
+
+/// <summary>
+/// One account event for the admin event log: a sign-up, a sign-in, a failed sign-in and why, a sign-out, or a
+/// session ended. Written by the API, never changed; no password, IP or user agent is kept.
+/// </summary>
+public sealed class AccountEventRow
+{
+    public long Id { get; set; }
+
+    public DateTimeOffset At { get; set; }
+
+    public string Type { get; set; } = "";
+
+    public Guid? UserId { get; set; }
+
+    public string? Email { get; set; }
+
+    public string? Detail { get; set; }
+
+    public Guid? SessionId { get; set; }
+}
