@@ -13,6 +13,12 @@ public sealed record LogEvent(
     string Key, DateTimeOffset At, string Category, string Type, string Level, EventParty? Actor, EventParty? Target,
     IReadOnlyDictionary<string, string?> Detail);
 
+/// <summary>How many events of each category fall in one bucket of time.</summary>
+public sealed record EventBucket(DateTimeOffset Start, IReadOnlyDictionary<string, long> Counts);
+
+/// <summary>Events over time for the log's chart: equal buckets covering the whole range, empty ones included.</summary>
+public sealed record EventHistogram(int BucketSeconds, IReadOnlyList<EventBucket> Buckets);
+
 /// <summary>A slice of the log: a time range, any of the categories (all when empty), a search and one user's events.</summary>
 public sealed record EventQuery(DateTimeOffset From, DateTimeOffset To, IReadOnlyList<string> Categories, string? Search, Guid? User);
 
@@ -104,8 +110,8 @@ internal sealed class EventLog(NpgsqlDataSource dataSource)
           AND ($5::uuid IS NULL OR b.bidder_id = $5)
         """;
 
-    // $4 the cursor's key, $6 the categories (or null for all), $7 the search (or null), $8 the row limit.
-    private const string PageSql = $"""
+    // $4 the cursor's key, $6 the categories (or null for all), $7 the search (or null).
+    private const string FilteredSql = $"""
         SELECT * FROM ({EventsSql}) AS events (at, key, category, type, level,
                                                 actor_kind, actor_id, actor_name, actor_email,
                                                 target_kind, target_id, target_name, target_email, title, detail)
@@ -115,25 +121,27 @@ internal sealed class EventLog(NpgsqlDataSource dataSource)
                OR actor_name ILIKE '%' || $7 || '%' OR actor_email ILIKE '%' || $7 || '%'
                OR target_name ILIKE '%' || $7 || '%' OR target_email ILIKE '%' || $7 || '%' OR title ILIKE '%' || $7 || '%'
                OR actor_id::text = $7 OR target_id::text = $7 OR type = $7)
-        ORDER BY at DESC, key DESC
-        LIMIT $8
         """;
+
+    // $8 the row limit.
+    private const string PageSql = $"{FilteredSql} ORDER BY at DESC, key DESC LIMIT $8";
+
+    // $8 the bucket size; buckets are aligned to the range's start.
+    private const string HistogramSql = $"SELECT date_bin($8::interval, at, $1), category, count(*) FROM ({FilteredSql}) AS f GROUP BY 1, 2";
+
+    /// <summary>The bucket size for a range: about 30 to 60 bars whatever the range.</summary>
+    public static TimeSpan BucketFor(TimeSpan range) => range switch
+    {
+        _ when range <= TimeSpan.FromMinutes(15) => TimeSpan.FromSeconds(30),
+        _ when range <= TimeSpan.FromHours(1) => TimeSpan.FromMinutes(1),
+        _ when range <= TimeSpan.FromDays(1) => TimeSpan.FromMinutes(30),
+        _ => TimeSpan.FromHours(6),
+    };
 
     public async Task<Page<LogEvent>> PageAsync(
         EventQuery query, (DateTimeOffset At, string Key)? before, int pageSize, CancellationToken cancellationToken)
     {
-        await using var command = dataSource.CreateCommand(PageSql);
-        command.Parameters.Add(new NpgsqlParameter { Value = query.From, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.TimestampTz });
-        command.Parameters.Add(new NpgsqlParameter { Value = query.To, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.TimestampTz });
-        command.Parameters.Add(new NpgsqlParameter { Value = (object?)before?.At ?? DBNull.Value, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.TimestampTz });
-        command.Parameters.Add(new NpgsqlParameter { Value = (object?)before?.Key ?? DBNull.Value, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Text });
-        command.Parameters.Add(new NpgsqlParameter { Value = (object?)query.User ?? DBNull.Value, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Uuid });
-        command.Parameters.Add(new NpgsqlParameter
-        {
-            Value = query.Categories.Count == 0 ? DBNull.Value : query.Categories.ToArray(),
-            DataTypeName = "text[]",
-        });
-        command.Parameters.Add(new NpgsqlParameter { Value = (object?)query.Search ?? DBNull.Value, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Text });
+        await using var command = Command(PageSql, query, before);
         command.Parameters.Add(new NpgsqlParameter { Value = pageSize + 1 });
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -150,6 +158,48 @@ internal sealed class EventLog(NpgsqlDataSource dataSource)
 
         var last = items[pageSize - 1];
         return new Page<LogEvent>(items[..pageSize], Cursors.Encode(last.At, last.Key));
+    }
+
+    public async Task<EventHistogram> HistogramAsync(EventQuery query, CancellationToken cancellationToken)
+    {
+        var size = BucketFor(query.To - query.From);
+        var count = (int)Math.Ceiling((query.To - query.From) / size);
+        var buckets = Enumerable.Range(0, count)
+            .Select(i => (Start: query.From + (size * i), Counts: Categories.ToDictionary(c => c, _ => 0L)))
+            .ToList();
+
+        await using var command = Command(HistogramSql, query, null);
+        command.Parameters.Add(new NpgsqlParameter { Value = size, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Interval });
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var start = await reader.GetFieldValueAsync<DateTimeOffset>(0, cancellationToken);
+            var index = (int)((start - query.From) / size);
+            if (index >= 0 && index < count)
+            {
+                buckets[index].Counts[reader.GetString(1)] = reader.GetInt64(2);
+            }
+        }
+
+        return new EventHistogram((int)size.TotalSeconds, [.. buckets.Select(b => new EventBucket(b.Start, b.Counts))]);
+    }
+
+    // The parameters both queries share, $1 to $7.
+    private NpgsqlCommand Command(string sql, EventQuery query, (DateTimeOffset At, string Key)? before)
+    {
+        var command = dataSource.CreateCommand(sql);
+        command.Parameters.Add(new NpgsqlParameter { Value = query.From, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.TimestampTz });
+        command.Parameters.Add(new NpgsqlParameter { Value = query.To, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.TimestampTz });
+        command.Parameters.Add(new NpgsqlParameter { Value = (object?)before?.At ?? DBNull.Value, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.TimestampTz });
+        command.Parameters.Add(new NpgsqlParameter { Value = (object?)before?.Key ?? DBNull.Value, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Text });
+        command.Parameters.Add(new NpgsqlParameter { Value = (object?)query.User ?? DBNull.Value, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Uuid });
+        command.Parameters.Add(new NpgsqlParameter
+        {
+            Value = query.Categories.Count == 0 ? DBNull.Value : query.Categories.ToArray(),
+            DataTypeName = "text[]",
+        });
+        command.Parameters.Add(new NpgsqlParameter { Value = (object?)query.Search ?? DBNull.Value, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Text });
+        return command;
     }
 
     private static async Task<LogEvent> ReadAsync(NpgsqlDataReader reader, CancellationToken cancellationToken)

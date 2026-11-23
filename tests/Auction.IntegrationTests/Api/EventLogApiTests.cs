@@ -184,6 +184,48 @@ public sealed class EventLogApiTests(MigratedDatabase db)
     }
 
     [Fact]
+    public async Task The_histogram_counts_each_category_per_bucket()
+    {
+        var api = await db.ApiAsync();
+        var admin = await api.SignUpAsync("Chart admin", role: "admin");
+        var seller = await api.SignUpAsync("Chart seller");
+        var buyer = await api.SignUpAsync("Chart buyer");
+        var id = await seller.PublishedAsync(ApiCalls.Terms(title: "Charted lot", bidEntry: "fixed_increment"));
+        foreach (var amount in new long[] { 1000, 1100 })
+        {
+            using var bid = await buyer.Http.BidAsync(id, amount);
+            Assert.Equal(HttpStatusCode.Created, bid.StatusCode);
+        }
+
+        var to = DateTimeOffset.UtcNow.AddSeconds(1);
+        var chart = await admin.Http.GetJsonAsync(
+            $"/api/v1/admin/events/histogram?from={Uri.EscapeDataString(to.AddMinutes(-15).ToString("O", CultureInfo.InvariantCulture))}&to={Uri.EscapeDataString(to.ToString("O", CultureInfo.InvariantCulture))}&user={buyer.Id}");
+
+        Assert.Equal(30, chart.GetProperty("bucketSeconds").GetInt32());
+        var buckets = chart.GetProperty("buckets").EnumerateArray().ToList();
+        Assert.Equal(30, buckets.Count);
+        long Sum(string category) => buckets.Sum(b => b.GetProperty("counts").GetProperty(category).GetInt64());
+        Assert.Equal((2L, 1L, 0L, 0L), (Sum("bid"), Sum("account"), Sum("listing"), Sum("admin")));
+    }
+
+    [Theory]
+    [InlineData(10, 30)]
+    [InlineData(60, 60)]
+    [InlineData(24 * 60, 1800)]
+    [InlineData(7 * 24 * 60, 21600)]
+    public async Task The_bucket_size_follows_the_range(int minutes, int seconds)
+    {
+        var api = await db.ApiAsync();
+        var admin = await api.SignUpAsync("Bucket admin", role: "admin");
+        var to = DateTimeOffset.UtcNow;
+
+        var chart = await admin.Http.GetJsonAsync(
+            $"/api/v1/admin/events/histogram?from={Uri.EscapeDataString(to.AddMinutes(-minutes).ToString("O", CultureInfo.InvariantCulture))}&to={Uri.EscapeDataString(to.ToString("O", CultureInfo.InvariantCulture))}");
+
+        Assert.Equal(seconds, chart.GetProperty("bucketSeconds").GetInt32());
+    }
+
+    [Fact]
     public async Task The_range_is_checked_and_the_log_is_for_admins_only()
     {
         var api = await db.ApiAsync();

@@ -54,6 +54,7 @@ internal static class AdminEndpoints
         admin.MapPost("/users/{id:guid}/enable", (Guid id, ReasonRequest body, HttpContext http) => SetDisabledAsync(id, body, http, disabled: false));
         admin.MapGet("/audit", AuditAsync).Produces<Page<AuditEntry>>().ProducesProblem(StatusCodes.Status400BadRequest);
         admin.MapGet("/events", EventsAsync).Produces<Page<LogEvent>>().ProducesProblem(StatusCodes.Status400BadRequest);
+        admin.MapGet("/events/histogram", HistogramAsync).Produces<EventHistogram>().ProducesProblem(StatusCodes.Status400BadRequest);
         admin.MapGet("/simulator", async (SimulatorControl simulator, CancellationToken cancellationToken) =>
             TypedResults.Ok(await simulator.ViewAsync(cancellationToken))).Produces<SimulatorView>();
         admin.MapPost("/simulator/runs", (SimulatorStartRequest body, SimulatorControl simulator, HttpContext http) => simulator.StartAsync(body, http))
@@ -164,6 +165,9 @@ internal static class AdminEndpoints
 
         return TypedResults.Ok(await log.PageAsync(query, before, size, cancellationToken));
     }
+
+    private static async Task<IResult> HistogramAsync([AsParameters] EventRequest request, EventLog log, CancellationToken cancellationToken) =>
+        TryEventQuery(request, out var query, out var problem) ? TypedResults.Ok(await log.HistogramAsync(query, cancellationToken)) : problem;
 
     // The log reads a bounded window: up to a week, ending now unless said otherwise, an hour long by default.
     private static bool TryEventQuery(EventRequest request, out EventQuery query, out IResult problem)
