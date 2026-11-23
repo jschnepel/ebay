@@ -15,11 +15,7 @@ public sealed class RedisOutageTests(MigratedDatabase db, Browsers browsers)
     [Fact]
     public async Task With_Redis_stopped_bids_succeed_pages_load_and_open_browsers_reconcile_within_ten_seconds()
     {
-        if (Environment.GetEnvironmentVariable(Browsers.BaseUrlVariable) is { Length: > 0 })
-        {
-            // Against an external stack the test can't stop its Redis.
-            return;
-        }
+        Assert.SkipWhen(Environment.GetEnvironmentVariable(Browsers.BaseUrlVariable) is { Length: > 0 }, "Against an external stack the test can't stop its Redis.");
 
         var site = await Browsers.SiteAsync(db);
         var api = await db.ApiAsync();

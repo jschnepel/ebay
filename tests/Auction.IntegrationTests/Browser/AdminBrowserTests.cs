@@ -67,11 +67,7 @@ public sealed class AdminBrowserTests(MigratedDatabase db, Browsers browsers)
     [Fact]
     public async Task An_admin_sees_new_bids_without_a_reload_and_a_suspension_reaches_an_open_auction_page()
     {
-        if (Environment.GetEnvironmentVariable(Browsers.BaseUrlVariable) is { Length: > 0 })
-        {
-            // The admin account is created in the test database, which an external stack doesn't share.
-            return;
-        }
+        Assert.SkipWhen(Environment.GetEnvironmentVariable(Browsers.BaseUrlVariable) is { Length: > 0 }, "The admin account is created in the test database, which an external stack doesn't share.");
 
         var site = await Browsers.SiteAsync(db);
         var api = await db.ApiAsync();
