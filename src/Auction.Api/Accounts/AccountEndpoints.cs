@@ -96,9 +96,12 @@ internal static class AccountEndpoints
     {
         var key = AccountStore.Normalize(body.Email ?? "");
         var guard = http.RequestServices.GetRequiredService<SignInGuard>();
+        var events = http.RequestServices.GetRequiredService<AccountEvents>();
         var typed = TypedEmail(body.Email);
         if (!await guard.TryAttemptAsync(key))
         {
+            var known = typed is null ? null : await accounts.FindAsync(typed, http.RequestAborted);
+            await events.RecordAsync(AccountEvents.SignInFailed, known?.Id.Value, typed, "too_many_attempts", null, http.RequestAborted);
             http.Response.Headers.RetryAfter = "60";
             return Problems.Of(StatusCodes.Status429TooManyRequests, "too_many_attempts", "Too many sign-in attempts for this account; try again later.");
         }
@@ -110,6 +113,9 @@ internal static class AccountEndpoints
             {
                 await guard.FailedAsync(key);
             }
+
+            await events.RecordAsync(
+                AccountEvents.SignInFailed, account?.Id.Value, typed, FailureCause(account, body.Password), null, http.RequestAborted);
 
             // The same answer whether the email is unknown or the password is wrong.
             return Problems.Of(StatusCodes.Status401Unauthorized, "sign_in_failed", "The email or password is incorrect.");
@@ -142,6 +148,16 @@ internal static class AccountEndpoints
         account.PasswordHash is not { } hash
             ? options.DemoMode && AccountKinds.IsVisitor(account.Kind)
             : !string.IsNullOrEmpty(password) && hasher.VerifyHashedPassword(account, hash, password) != PasswordVerificationResult.Failed;
+
+    // Why a sign-in failed, for the event log; the visitor is only ever told that the email or password is wrong.
+    private static string FailureCause(Account? account, string? password) => account switch
+    {
+        null => "unknown_email",
+        { Disabled: true } => "account_disabled",
+        { PasswordHash: null } => "email_sign_in_off",
+        _ when string.IsNullOrEmpty(password) => "no_password_given",
+        _ => "wrong_password",
+    };
 
     // The email as typed, trimmed and cut to the column's length, for the event log.
     private static string? TypedEmail(string? email) =>

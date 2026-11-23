@@ -182,6 +182,8 @@ internal static class AdminEndpoints
         if (disabled)
         {
             var ended = await http.RequestServices.GetRequiredService<SessionStore>().RevokeAllAsync(new Auction.Domain.UserId(id), http.RequestAborted);
+            await http.RequestServices.GetRequiredService<AccountEvents>().RecordManyAsync(
+                AccountEvents.SessionEnded, ended, id, "account_disabled", http.RequestAborted);
             await SignOuts.TellAsync(http.RequestServices, ended, http.RequestAborted);
         }
 
