@@ -14,7 +14,10 @@ public sealed record ModeratedAuction(
 /// <summary>One admin action (ADM-03): who, what, on which target, why and when.</summary>
 public sealed record AuditEntry(long Id, DateTimeOffset At, Guid AdminId, string AdminName, string Action, string TargetType, Guid TargetId, string Reason);
 
-public sealed record UserSummary(Guid Id, string DisplayName, string Kind, bool Disabled, DateTimeOffset CreatedAt);
+/// <summary>A row of the admin Users screen: who, what kind, whether disabled, when they last signed in, and how active.</summary>
+public sealed record UserSummary(
+    Guid Id, string DisplayName, string Email, string Kind, bool Disabled, DateTimeOffset CreatedAt, DateTimeOffset? LastSignInAt,
+    long ListingCount, long BidCount);
 
 /// <summary>
 /// The admin area's reads, as the api role, including the read-only audit log (ADM-03). Drafts are never listed: they stay private to their seller
@@ -45,12 +48,18 @@ internal sealed class AdminReader(NpgsqlDataSource dataSource)
         LIMIT $3
         """;
 
+    // $4 a name, email or id; $5 a kind; $6 enabled or disabled. A sign-up counts as the first sign-in.
     private const string UsersSql = """
-        SELECT id, display_name, kind, disabled_at IS NOT NULL, created_at
-        FROM auction.users
-        WHERE ($4::text IS NULL OR display_name ILIKE '%' || $4 || '%' OR id::text = $4)
-          AND ($1::timestamptz IS NULL OR (created_at, id) > ($1::timestamptz, $2::uuid))
-        ORDER BY created_at, id
+        SELECT u.id, u.display_name, u.email, u.kind, u.disabled_at IS NOT NULL, u.created_at,
+               (SELECT max(e.at) FROM auction.account_events e WHERE e.user_id = u.id AND e.type IN ('sign_in', 'sign_up')),
+               (SELECT count(*) FROM auction.auctions a WHERE a.seller_id = u.id AND a.status <> 'draft'),
+               (SELECT count(*) FROM auction.bids b WHERE b.bidder_id = u.id)
+        FROM auction.users u
+        WHERE ($4::text IS NULL OR u.display_name ILIKE '%' || $4 || '%' OR u.email ILIKE '%' || $4 || '%' OR u.id::text = $4)
+          AND ($5::text IS NULL OR u.kind = $5)
+          AND ($6::text IS NULL OR (u.disabled_at IS NOT NULL) = ($6 = 'disabled'))
+          AND ($1::timestamptz IS NULL OR (u.created_at, u.id) > ($1::timestamptz, $2::uuid))
+        ORDER BY u.created_at, u.id
         LIMIT $3
         """;
 
@@ -95,9 +104,11 @@ internal sealed class AdminReader(NpgsqlDataSource dataSource)
             reader.IsDBNull(5) ? null : reader.GetInt64(5), reader.GetInt64(6), reader.GetFieldValue<DateTimeOffset>(7), reader.GetInt64(8)),
             item => (item.EndsAt, item.Id)), after, pageSize, cancellationToken);
 
-    public Task<Page<UserSummary>> UsersAsync(string? query, (DateTimeOffset At, Guid Id)? after, int pageSize, CancellationToken cancellationToken) =>
-        PageAsync(new ListQuery<UserSummary>(UsersSql, [Blank(query)], reader => new UserSummary(
-            reader.GetGuid(0), reader.GetString(1), reader.GetString(2), reader.GetBoolean(3), reader.GetFieldValue<DateTimeOffset>(4)),
+    public Task<Page<UserSummary>> UsersAsync(
+        string? query, string? kind, string? state, (DateTimeOffset At, Guid Id)? after, int pageSize, CancellationToken cancellationToken) =>
+        PageAsync(new ListQuery<UserSummary>(UsersSql, [Blank(query), Blank(kind), Blank(state)], reader => new UserSummary(
+            reader.GetGuid(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetBoolean(4), reader.GetFieldValue<DateTimeOffset>(5),
+            reader.IsDBNull(6) ? null : reader.GetFieldValue<DateTimeOffset>(6), reader.GetInt64(7), reader.GetInt64(8)),
             item => (item.CreatedAt, item.Id)), after, pageSize, cancellationToken);
 
     public async Task<Page<AuditEntry>> AuditAsync(string? query, long? before, int pageSize, CancellationToken cancellationToken)

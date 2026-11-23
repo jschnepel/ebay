@@ -12,6 +12,9 @@ namespace Auction.Api.Admin;
 
 public sealed record ReasonRequest(string? Reason);
 
+/// <summary>The Users screen's query string: a name, email or id, a kind, enabled or disabled, and a page.</summary>
+public sealed record UsersRequest(string? Q, string? Kind, string? State, int? PageSize, string? Cursor);
+
 /// <summary>The event log's query string: a time range, categories (comma-separated), a search, a user and a page.</summary>
 public sealed record EventRequest(DateTimeOffset? From, DateTimeOffset? To, string? Category, string? Q, Guid? User, int? PageSize, string? Cursor);
 
@@ -123,14 +126,19 @@ internal static class AdminEndpoints
     }
 
     private static async Task<IResult> UsersAsync(
-        string? q, int? pageSize, string? cursor, AdminReader reader, ApiOptions options, CancellationToken cancellationToken)
+        [AsParameters] UsersRequest request, AdminReader reader, ApiOptions options, CancellationToken cancellationToken)
     {
-        if (!Paging.TryParse(pageSize, cursor, options, out var size, out var after, out var problem))
+        if (!Paging.TryParse(request.PageSize, request.Cursor, options, out var size, out var after, out var problem))
         {
             return problem;
         }
 
-        return TypedResults.Ok(await reader.UsersAsync(q, after, size, cancellationToken));
+        if (request.State is { Length: > 0 } state && state is not ("enabled" or "disabled"))
+        {
+            return Problems.BadRequest("invalid_state", "state must be enabled or disabled.");
+        }
+
+        return TypedResults.Ok(await reader.UsersAsync(request.Q, request.Kind, request.State, after, size, cancellationToken));
     }
 
     private static async Task<IResult> AuditAsync(
