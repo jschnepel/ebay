@@ -35,10 +35,7 @@ public sealed class SessionAndBellTests(MigratedDatabase db, Browsers browsers)
     [Fact]
     public async Task A_page_whose_session_a_reset_removed_shows_it_is_signed_out_instead_of_unauthorized()
     {
-        if (Environment.GetEnvironmentVariable(Browsers.BaseUrlVariable) is { Length: > 0 })
-        {
-            return; // Ends the session through the shared database and Redis, which an external stack doesn't share.
-        }
+        Assert.SkipWhen(Environment.GetEnvironmentVariable(Browsers.BaseUrlVariable) is { Length: > 0 }, "Ends the session through the shared database and Redis, which an external stack doesn't share.");
 
         var site = await Browsers.SiteAsync(db);
         var page = await browsers.NewPageAsync(site);
@@ -72,10 +69,7 @@ public sealed class SessionAndBellTests(MigratedDatabase db, Browsers browsers)
     [Fact]
     public async Task An_outbid_bidder_sees_the_bell_count_within_two_seconds_and_opening_it_clears_the_count()
     {
-        if (Environment.GetEnvironmentVariable(Browsers.BaseUrlVariable) is { Length: > 0 })
-        {
-            return; // The other users are created through the in-process API, which an external stack doesn't share.
-        }
+        Assert.SkipWhen(Environment.GetEnvironmentVariable(Browsers.BaseUrlVariable) is { Length: > 0 }, "The other users are created through the in-process API, which an external stack doesn't share.");
 
         var site = await Browsers.SiteAsync(db);
         var api = await db.ApiAsync();
@@ -111,10 +105,7 @@ public sealed class SessionAndBellTests(MigratedDatabase db, Browsers browsers)
     [Fact]
     public async Task The_unread_badge_shows_its_number_on_the_bells_corner_inside_the_bar()
     {
-        if (Environment.GetEnvironmentVariable(Browsers.BaseUrlVariable) is { Length: > 0 })
-        {
-            return; // The notices are written straight to the test database.
-        }
+        Assert.SkipWhen(Environment.GetEnvironmentVariable(Browsers.BaseUrlVariable) is { Length: > 0 }, "The notices are written straight to the test database.");
 
         var page = await browsers.NewPageAsync(await Browsers.SiteAsync(db));
         var email = await page.SignUpAsync("Badge reader");

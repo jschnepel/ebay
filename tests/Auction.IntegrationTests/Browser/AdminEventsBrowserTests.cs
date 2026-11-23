@@ -13,10 +13,7 @@ public sealed partial class AdminEventsBrowserTests(MigratedDatabase db, Browser
     [Fact]
     public async Task The_event_log_shows_a_disable_with_both_names_and_its_reason()
     {
-        if (Environment.GetEnvironmentVariable(Browsers.BaseUrlVariable) is { Length: > 0 })
-        {
-            return; // The target account is made through the in-process API.
-        }
+        Assert.SkipWhen(Environment.GetEnvironmentVariable(Browsers.BaseUrlVariable) is { Length: > 0 }, "The target account is made through the in-process API.");
 
         var name = $"Logged {Guid.NewGuid():N}"[..14];
         var target = await (await db.ApiAsync()).SignUpAsync(name);
@@ -44,10 +41,7 @@ public sealed partial class AdminEventsBrowserTests(MigratedDatabase db, Browser
     [Fact]
     public async Task The_event_log_filters_by_category_and_keeps_its_view_in_the_address()
     {
-        if (Environment.GetEnvironmentVariable(Browsers.BaseUrlVariable) is { Length: > 0 })
-        {
-            return;
-        }
+        Assert.SkipWhen(Environment.GetEnvironmentVariable(Browsers.BaseUrlVariable) is { Length: > 0 }, "Needs the in-process API, which an external stack doesn't share.");
 
         var api = await db.ApiAsync();
         var seller = await api.SignUpAsync("Event seller");
@@ -79,10 +73,7 @@ public sealed partial class AdminEventsBrowserTests(MigratedDatabase db, Browser
     [Fact]
     public async Task Live_mode_adds_a_new_event_without_a_reload_and_polls_once_however_often_it_is_toggled()
     {
-        if (Environment.GetEnvironmentVariable(Browsers.BaseUrlVariable) is { Length: > 0 })
-        {
-            return; // The new account is made through the in-process API.
-        }
+        Assert.SkipWhen(Environment.GetEnvironmentVariable(Browsers.BaseUrlVariable) is { Length: > 0 }, "The new account is made through the in-process API.");
 
         var admin = await browsers.NewPageAsync(await Browsers.SiteAsync(db));
         await admin.SignUpAsync("Live watcher", role: "Admin");
@@ -120,10 +111,7 @@ public sealed partial class AdminEventsBrowserTests(MigratedDatabase db, Browser
     [Fact]
     public async Task Live_mode_keeps_going_after_the_open_row_leaves_the_view()
     {
-        if (Environment.GetEnvironmentVariable(Browsers.BaseUrlVariable) is { Length: > 0 })
-        {
-            return; // The new accounts are made through the in-process API.
-        }
+        Assert.SkipWhen(Environment.GetEnvironmentVariable(Browsers.BaseUrlVariable) is { Length: > 0 }, "The new accounts are made through the in-process API.");
 
         var token = $"Stream{Guid.NewGuid():N}"[..14];
         var api = await db.ApiAsync();
@@ -184,10 +172,7 @@ public sealed partial class AdminEventsBrowserTests(MigratedDatabase db, Browser
     [Fact]
     public async Task A_users_page_shows_their_activity()
     {
-        if (Environment.GetEnvironmentVariable(Browsers.BaseUrlVariable) is { Length: > 0 })
-        {
-            return;
-        }
+        Assert.SkipWhen(Environment.GetEnvironmentVariable(Browsers.BaseUrlVariable) is { Length: > 0 }, "Needs the in-process API, which an external stack doesn't share.");
 
         var api = await db.ApiAsync();
         var name = $"Active {Guid.NewGuid():N}"[..14];

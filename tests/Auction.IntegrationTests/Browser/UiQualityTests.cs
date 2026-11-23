@@ -48,10 +48,7 @@ public sealed class UiQualityTests(MigratedDatabase db, Browsers browsers)
     [Fact]
     public async Task The_admin_users_user_and_event_log_pages_pass_the_accessibility_check_and_fit_a_phone()
     {
-        if (Environment.GetEnvironmentVariable(Browsers.BaseUrlVariable) is { Length: > 0 })
-        {
-            return; // The long-named account is made through the in-process API.
-        }
+        Assert.SkipWhen(Environment.GetEnvironmentVariable(Browsers.BaseUrlVariable) is { Length: > 0 }, "The long-named account is made through the in-process API.");
 
         // The longest name and a long email, so wrapping is tested with the worst case.
         var api = await db.ApiAsync();
@@ -226,10 +223,7 @@ public sealed class UiQualityTests(MigratedDatabase db, Browsers browsers)
     [Fact]
     public async Task A_buyer_searches_a_keyword_and_filters_by_status()
     {
-        if (Environment.GetEnvironmentVariable(Browsers.BaseUrlVariable) is { Length: > 0 })
-        {
-            return; // The auctions are created through the in-process API.
-        }
+        Assert.SkipWhen(Environment.GetEnvironmentVariable(Browsers.BaseUrlVariable) is { Length: > 0 }, "The auctions are created through the in-process API.");
 
         var site = await Browsers.SiteAsync(db);
         var api = await db.ApiAsync();

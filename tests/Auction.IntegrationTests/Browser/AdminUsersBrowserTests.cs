@@ -13,10 +13,7 @@ public sealed partial class AdminUsersBrowserTests(MigratedDatabase db, Browsers
     [Fact]
     public async Task Disabling_a_user_asks_for_the_reason_beside_their_row()
     {
-        if (Environment.GetEnvironmentVariable(Browsers.BaseUrlVariable) is { Length: > 0 })
-        {
-            return; // The target account is made through the in-process API.
-        }
+        Assert.SkipWhen(Environment.GetEnvironmentVariable(Browsers.BaseUrlVariable) is { Length: > 0 }, "The target account is made through the in-process API.");
 
         var name = $"Target {Guid.NewGuid():N}"[..14];
         await (await db.ApiAsync()).SignUpAsync(name);
@@ -46,10 +43,7 @@ public sealed partial class AdminUsersBrowserTests(MigratedDatabase db, Browsers
     [Fact]
     public async Task The_popover_closes_on_escape_without_changing_anything()
     {
-        if (Environment.GetEnvironmentVariable(Browsers.BaseUrlVariable) is { Length: > 0 })
-        {
-            return;
-        }
+        Assert.SkipWhen(Environment.GetEnvironmentVariable(Browsers.BaseUrlVariable) is { Length: > 0 }, "Needs the in-process API, which an external stack doesn't share.");
 
         var name = $"Kept {Guid.NewGuid():N}"[..12];
         await (await db.ApiAsync()).SignUpAsync(name);
@@ -70,10 +64,7 @@ public sealed partial class AdminUsersBrowserTests(MigratedDatabase db, Browsers
     [Fact]
     public async Task Enter_on_cancel_cancels_and_enter_in_the_field_confirms_once()
     {
-        if (Environment.GetEnvironmentVariable(Browsers.BaseUrlVariable) is { Length: > 0 })
-        {
-            return;
-        }
+        Assert.SkipWhen(Environment.GetEnvironmentVariable(Browsers.BaseUrlVariable) is { Length: > 0 }, "Needs the in-process API, which an external stack doesn't share.");
 
         var name = $"Keyed {Guid.NewGuid():N}"[..13];
         var target = await (await db.ApiAsync()).SignUpAsync(name);
@@ -113,10 +104,7 @@ public sealed partial class AdminUsersBrowserTests(MigratedDatabase db, Browsers
     [Fact]
     public async Task The_users_screen_pages_and_filters_by_state()
     {
-        if (Environment.GetEnvironmentVariable(Browsers.BaseUrlVariable) is { Length: > 0 })
-        {
-            return;
-        }
+        Assert.SkipWhen(Environment.GetEnvironmentVariable(Browsers.BaseUrlVariable) is { Length: > 0 }, "Needs the in-process API, which an external stack doesn't share.");
 
         var api = await db.ApiAsync();
         for (var i = 0; i < 26; i++)
@@ -153,10 +141,7 @@ public sealed partial class AdminUsersBrowserTests(MigratedDatabase db, Browsers
     [Fact]
     public async Task Clicking_a_user_opens_their_page()
     {
-        if (Environment.GetEnvironmentVariable(Browsers.BaseUrlVariable) is { Length: > 0 })
-        {
-            return;
-        }
+        Assert.SkipWhen(Environment.GetEnvironmentVariable(Browsers.BaseUrlVariable) is { Length: > 0 }, "Needs the in-process API, which an external stack doesn't share.");
 
         var name = $"Opened {Guid.NewGuid():N}"[..14];
         var user = await (await db.ApiAsync()).SignUpAsync(name);
@@ -183,10 +168,7 @@ public sealed partial class AdminUsersBrowserTests(MigratedDatabase db, Browsers
     [Fact]
     public async Task A_users_page_shows_who_they_are_and_their_selling_and_bidding()
     {
-        if (Environment.GetEnvironmentVariable(Browsers.BaseUrlVariable) is { Length: > 0 })
-        {
-            return;
-        }
+        Assert.SkipWhen(Environment.GetEnvironmentVariable(Browsers.BaseUrlVariable) is { Length: > 0 }, "Needs the in-process API, which an external stack doesn't share.");
 
         var api = await db.ApiAsync();
         var seller = await api.SignUpAsync("Paged seller");
@@ -221,10 +203,7 @@ public sealed partial class AdminUsersBrowserTests(MigratedDatabase db, Browsers
     [Fact]
     public async Task A_users_page_says_when_their_listings_couldnt_be_loaded()
     {
-        if (Environment.GetEnvironmentVariable(Browsers.BaseUrlVariable) is { Length: > 0 })
-        {
-            return; // The user is made through the in-process API.
-        }
+        Assert.SkipWhen(Environment.GetEnvironmentVariable(Browsers.BaseUrlVariable) is { Length: > 0 }, "The user is made through the in-process API.");
 
         var user = await (await db.ApiAsync()).SignUpAsync("Half loaded");
         var admin = await browsers.NewPageAsync(await Browsers.SiteAsync(db));

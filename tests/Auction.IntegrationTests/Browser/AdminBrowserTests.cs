@@ -118,10 +118,7 @@ public sealed class AdminBrowserTests(MigratedDatabase db, Browsers browsers)
     [Fact]
     public async Task An_admin_starts_the_smoke_profile_watches_simulated_bids_arrive_and_stops_it()
     {
-        if (Environment.GetEnvironmentVariable(Browsers.BaseUrlVariable) is { Length: > 0 })
-        {
-            return;
-        }
+        Assert.SkipWhen(Environment.GetEnvironmentVariable(Browsers.BaseUrlVariable) is { Length: > 0 }, "Needs the in-process API, which an external stack doesn't share.");
 
         // The same simulator password as the simulator tests: seeding never changes an existing account's password.
         const string simulatorPassword = "simulator-pass-for-tests";
