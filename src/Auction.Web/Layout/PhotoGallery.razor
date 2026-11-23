@@ -55,12 +55,26 @@
     [Parameter, EditorRequired]
     public string Title { get; set; } = "";
 
+    /// <summary>The photo the seller chose as the cover; the gallery opens on it.</summary>
+    [Parameter]
+    public Guid? Cover { get; set; }
+
     private int _at;
+    private bool _opened;
     private bool _larger;
     private bool _focusLarger;
     private ElementReference _dialog;
 
-    protected override void OnParametersSet() => _at = Math.Clamp(_at, 0, Math.Max(0, Images.Count - 1));
+    protected override void OnParametersSet()
+    {
+        if (!_opened && Images.Count > 0)
+        {
+            _opened = true;
+            _at = Cover is { } cover && Images.ToList().IndexOf(cover) is >= 0 and var index ? index : 0;
+        }
+
+        _at = Math.Clamp(_at, 0, Math.Max(0, Images.Count - 1));
+    }
 
     private static string Source(Guid image) => $"api/v1/images/{image}";
 

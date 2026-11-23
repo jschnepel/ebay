@@ -33,6 +33,42 @@ public sealed class ClientFormatTests
     }
 
     [Theory]
+    [InlineData("absolute", null, "No reserve")]
+    [InlineData("minimum_bid", null, "No reserve beyond the opening price")]
+    [InlineData("reserve", false, "Hidden reserve, not met yet")]
+    [InlineData("reserve", true, "Hidden reserve, met")]
+    public void A_bidder_is_told_the_price_floor_of_a_live_auction(string floorType, bool? reserveMet, string expected)
+    {
+        var auction = new AuctionSummary { Status = "active", FloorType = floorType, ReserveMet = reserveMet };
+
+        Assert.Equal(expected, Format.Floor(auction));
+    }
+
+    [Theory]
+    [InlineData("closed", 0L, "reserve", false, "No bids")]
+    [InlineData("closed", 3L, "reserve", false, "Reserve not met")]
+    [InlineData("closed", 3L, "reserve", true, "Sold")]
+    [InlineData("closed", 1L, "absolute", null, "Sold")]
+    [InlineData("active", 1L, "absolute", null, null)]
+    [InlineData("cancelled", 1L, "absolute", null, null)]
+    public void An_ended_auction_says_how_it_came_out(string status, long bids, string floorType, bool? reserveMet, string? expected)
+    {
+        var auction = new AuctionSummary { Status = status, BidCount = bids, FloorType = floorType, ReserveMet = reserveMet };
+
+        Assert.Equal(expected, Format.Outcome(auction));
+    }
+
+    [Theory]
+    [InlineData(true, true, 7000L, 2000L, "Bid placed. You are the highest bidder, up to your maximum of $70.00. The price shows only what it takes to lead.")]
+    [InlineData(true, false, 1100L, 1100L, "Bid placed. You are the highest bidder.")]
+    [InlineData(false, true, 5000L, 5000L, "Bid placed, but an earlier bid with the same maximum leads.")]
+    [InlineData(false, true, 5000L, 5100L, "Bid placed, but another bidder's maximum is higher.")]
+    public void A_placed_bid_is_described_as_it_landed(bool leads, bool proxy, long cents, long price, string expected)
+    {
+        Assert.Equal(expected, Format.Placed(leads, proxy, cents, price));
+    }
+
+    [Theory]
     [InlineData(0, "live auctions")]
     [InlineData(1, "live auction")]
     [InlineData(2, "live auctions")]

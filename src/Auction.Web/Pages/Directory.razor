@@ -43,8 +43,16 @@
                     <div class="lot-body">
                         <a href="@($"auctions/{auction.Id}")" class="lot-title" title="@auction.Title">@auction.Title</a>
                         <LotPrice Auction="auction" />
+                        @if (auction.Status == "active" && auction.FloorType == "absolute")
+                        {
+                            <span class="tag lot-tag">No reserve</span>
+                        }
+                        else if (auction.Status == "active" && auction.ReserveMet == false)
+                        {
+                            <span class="tag lot-tag">Reserve not met</span>
+                        }
                         <div class="lot-foot">
-                            <span>@Bids(auction.BidCount)</span>
+                            <span>@Bids(auction.BidCount)@(Format.Outcome(auction) is { } outcome ? $", {outcome.ToLowerInvariant()}" : "")</span>
                             <LotClock Auction="auction" />
                         </div>
                     </div>

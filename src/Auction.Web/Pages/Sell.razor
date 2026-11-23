@@ -49,7 +49,7 @@ else
                         <td><MudLink Href="@($"auctions/{auction.Id}")">@auction.Title</MudLink></td>
                         <td>@Format.Price(auction)</td>
                         <td>@auction.BidCount</td>
-                        <td>@Format.Status(auction.Status)</td>
+                        <td>@Format.Status(auction.Status)@(Format.Outcome(auction) is { } outcome ? $", {outcome.ToLowerInvariant()}" : "")</td>
                         <td>@Format.Time(auction.EndsAt)</td>
                         <td>
                             @if (auction.Status == "draft")

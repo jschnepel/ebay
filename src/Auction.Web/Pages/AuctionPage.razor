@@ -21,7 +21,7 @@ else
         <div class="lot-page-media">
             @if (auction.ImageIds.Count > 0)
             {
-                <PhotoGallery Images="auction.ImageIds" Title="@auction.Title" />
+                <PhotoGallery Images="auction.ImageIds" Title="@auction.Title" Cover="auction.CoverImageId" />
             }
             else
             {
@@ -39,6 +39,8 @@ else
                 <dd class="num">@Format.Dollars(auction.OpeningPriceCents)</dd>
                 <dt>Bid increment</dt>
                 <dd class="num" data-testid="increment">@Format.Dollars(auction.IncrementCents)</dd>
+                <dt>Price floor</dt>
+                <dd data-testid="floor">@Format.Floor(auction)</dd>
                 @if (auction.ReserveCents is { } reserve)
                 {
                     <dt>Your reserve</dt>
@@ -115,7 +117,7 @@ else
                 @if (auction.ReserveMet is { } met)
                 {
                     <dt>Reserve</dt>
-                    <dd class="@(met ? "leading" : "")">@(met ? "Met" : "Not met yet")</dd>
+                    <dd class="@(met ? "leading" : "")">@ReserveWord(auction, met)</dd>
                 }
                 @* The price shows only what it takes to lead, so a proxy bidder's own maximum gets a line of its own. *@
                 @if (auction.YourMaximumCents is { } maximum)
@@ -170,6 +172,11 @@ else
             else if (auction.YouAreSeller)
             {
                 <MudText Typo="Typo.body2" Class="muted">This is your listing.</MudText>
+            }
+
+            @if (auction.Status == "active" && Session.Account?.IsAdmin == true)
+            {
+                <MudText Typo="Typo.body2" Class="muted" data-testid="admin-note">Admin accounts moderate; they can't bid.</MudText>
             }
         </aside>
     </div>
@@ -360,13 +367,16 @@ else
     private static string StepLabel(AuctionDetail auction) =>
         auction.YouLead ? $"Raise your own bid to {Format.Dollars(auction.MinimumNextBidCents)}" : $"Bid {Format.Dollars(auction.MinimumNextBidCents)}";
 
-    // A proxy bid moves the price only as far as it takes to lead, so the result says where the maximum went.
-    private static string Placed(bool leads, bool proxy, long cents) => (leads, proxy) switch
+    // "Yet" only while it can still be met.
+    private static string ReserveWord(AuctionDetail auction, bool met)
     {
-        (true, true) => $"Bid placed. You are the highest bidder, up to your maximum of {Format.Dollars(cents)}. The price only rises when someone bids against you.",
-        (true, false) => "Bid placed. You are the highest bidder.",
-        _ => "Bid placed, but another bidder's maximum is higher.",
-    };
+        if (met)
+        {
+            return "Met";
+        }
+
+        return auction.Status == "closed" ? "Not met" : "Not met yet";
+    }
 
     private void ShowBidMessage(bool accepted, string message, long? version) =>
         (_bidAccepted, _bidMessage, _bidMessageVersion) = (accepted, message, version);
@@ -409,7 +419,7 @@ else
         {
             _pending = null;
             (_amount, _lastCode) = ("", null);
-            ShowBidMessage(true, Placed(result.Value!.YouLead == true, _auction?.BidEntry == "proxy", cents), result.Value.Version);
+            ShowBidMessage(true, Format.Placed(result.Value!.YouLead == true, _auction?.BidEntry == "proxy", cents, result.Value.CurrentPriceCents), result.Value.Version);
             await LoadAsync();
         }
         else

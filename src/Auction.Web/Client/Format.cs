@@ -55,6 +55,36 @@ public static class Format
         _ => status,
     };
 
+    /// <summary>What the price floor means to a bidder. "No reserve" is said in those words.</summary>
+    public static string Floor(AuctionSummary auction) => (auction.FloorType, auction.ReserveMet) switch
+    {
+        ("reserve", true) => "Hidden reserve, met",
+        ("reserve", _) => auction.Status == "closed" ? "Hidden reserve, not met" : "Hidden reserve, not met yet",
+        ("minimum_bid", _) => "No reserve beyond the opening price",
+        _ => "No reserve",
+    };
+
+    /// <summary>How a closed auction came out, or null for one that hasn't closed.</summary>
+    public static string? Outcome(AuctionSummary auction) => auction switch
+    {
+        { Status: not "closed" } => null,
+        { BidCount: 0 } => "No bids",
+        { ReserveMet: false } => "Reserve not met",
+        _ => "Sold",
+    };
+
+    /// <summary>
+    /// The result of an accepted bid. A proxy bid moves the price only as far as it takes to lead (or to the
+    /// reserve), and a bid that lands on the price without leading tied with an earlier maximum.
+    /// </summary>
+    public static string Placed(bool leads, bool proxy, long cents, long? priceCents) => (leads, proxy) switch
+    {
+        (true, true) => $"Bid placed. You are the highest bidder, up to your maximum of {Dollars(cents)}. The price shows only what it takes to lead.",
+        (true, false) => "Bid placed. You are the highest bidder.",
+        _ when priceCents == cents => "Bid placed, but an earlier bid with the same maximum leads.",
+        _ => "Bid placed, but another bidder's maximum is higher.",
+    };
+
     /// <summary>
     /// Where the bidder stands, for My bids. The leader of a closed auction won it unless its reserve wasn't met.
     /// </summary>
