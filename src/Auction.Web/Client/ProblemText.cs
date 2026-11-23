@@ -64,6 +64,7 @@ internal static class ProblemText
         { Errors: { Count: > 0 } errors } => string.Join('\n', errors.SelectMany(e => e.Value.Select(code => Sentence(e.Key, code)))),
         { Status: 401, Code: not "sign_in_failed" } => "You're signed out. Sign in again to continue.",
         { Code: "busy" } => "The auction service is busy. Try again in a moment.",
+        { Code: "maximum_lowered" } => "You already have a higher maximum on this auction. A maximum can't be lowered.",
         { Status: 502 or 504 } or { Status: 503, Code: null } => "The site is updating. Try again in a moment.",
         _ => problem.Title ?? "The request failed.",
     };

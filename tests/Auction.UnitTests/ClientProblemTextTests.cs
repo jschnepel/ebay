@@ -5,6 +5,14 @@ namespace Auction.UnitTests;
 /// <summary>The error text a person sees when the API refuses a request.</summary>
 public sealed class ClientProblemTextTests
 {
+    [Fact]
+    public void A_lower_maximum_is_explained_by_the_one_already_placed()
+    {
+        var problem = new Problem { Status = 422, Code = "maximum_lowered", Title = "A maximum can't be lowered." };
+
+        Assert.Equal("You already have a higher maximum on this auction. A maximum can't be lowered.", new ApiResult<object>(null, problem).Message);
+    }
+
     private static string Shown(Problem problem) => new ApiResult<object>(null, problem).Message;
 
     private static Problem Invalid(params (string Field, string Code)[] errors) => new()

@@ -109,6 +109,17 @@ public sealed class FixedStepBidTests(MigratedDatabase db, Browsers browsers)
 
         await Assertions.Expect(page.GetByLabel("Your maximum ($)")).ToBeVisibleAsync();
         await Assertions.Expect(page.GetByTestId("bid-next-step")).ToHaveCountAsync(0);
+        await Assertions.Expect(page.GetByTestId("your-maximum")).ToHaveCountAsync(0);
+
+        // The price moves only as far as it takes to lead, so the card says what the bidder's maximum is,
+        // when the bid lands and after a reload.
+        await page.BidAsync("70.00");
+
+        await Assertions.Expect(page.GetByTestId("bid-result")).ToContainTextAsync("You are the highest bidder, up to your maximum of $70.00");
+        await Assertions.Expect(page.GetByTestId("current-price")).ToHaveTextAsync("$20.00"); // the reserve, far below the maximum
+        await Assertions.Expect(page.GetByTestId("your-maximum")).ToHaveTextAsync("$70.00");
+        await page.ReloadAsync();
+        await Assertions.Expect(page.GetByTestId("your-maximum")).ToHaveTextAsync("$70.00");
     }
 
     // A fixed-step auction opening at $10.00 with $1.00 steps, and a signed-in bidder's page.

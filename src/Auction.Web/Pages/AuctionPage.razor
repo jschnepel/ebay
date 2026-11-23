@@ -109,6 +109,12 @@ else
                     <dt>Reserve</dt>
                     <dd class="@(met ? "leading" : "")">@(met ? "Met" : "Not met yet")</dd>
                 }
+                @* The price shows only what it takes to lead, so a proxy bidder's own maximum gets a line of its own. *@
+                @if (auction.YourMaximumCents is { } maximum)
+                {
+                    <dt>Your maximum</dt>
+                    <dd class="num" data-testid="your-maximum">@Format.Dollars(maximum)</dd>
+                }
             </dl>
             </div>
 
@@ -329,6 +335,14 @@ else
     private static string StepLabel(AuctionDetail auction) =>
         auction.YouLead ? $"Raise your own bid to {Format.Dollars(auction.MinimumNextBidCents)}" : $"Bid {Format.Dollars(auction.MinimumNextBidCents)}";
 
+    // A proxy bid moves the price only as far as it takes to lead, so the result says where the maximum went.
+    private static string Placed(bool leads, bool proxy, long cents) => (leads, proxy) switch
+    {
+        (true, true) => $"Bid placed. You are the highest bidder, up to your maximum of {Format.Dollars(cents)}. The price only rises when someone bids against you.",
+        (true, false) => "Bid placed. You are the highest bidder.",
+        _ => "Bid placed, but another bidder's maximum is higher.",
+    };
+
     private void ShowBidMessage(bool accepted, string message, long? version) =>
         (_bidAccepted, _bidMessage, _bidMessageVersion) = (accepted, message, version);
 
@@ -370,7 +384,7 @@ else
         {
             _pending = null;
             (_amount, _lastCode) = ("", null);
-            ShowBidMessage(true, result.Value!.YouLead == true ? "Bid placed. You are the highest bidder." : "Bid placed, but another bidder's maximum is higher.", result.Value.Version);
+            ShowBidMessage(true, Placed(result.Value!.YouLead == true, _auction?.BidEntry == "proxy", cents), result.Value.Version);
             await LoadAsync();
         }
         else
