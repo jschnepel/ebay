@@ -200,6 +200,10 @@ else
             }
 
             (_auction, _bids, _error, _watching) = (null, null, null, Id);
+
+            // Nothing typed or answered on the last auction carries over to this one.
+            (_amount, _pending, _lastCode) = ("", null, null);
+            (_bidMessage, _bidAccepted, _bidMessageVersion) = (null, false, null);
             (_bidCursors, _bidNext) = (new([null]), null);
             await Live.WatchAsync(Id);
         }
