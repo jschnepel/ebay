@@ -37,6 +37,8 @@ else
                 <dd>@(auction.BidEntry == "proxy" ? "Proxy: enter your maximum and the system bids for you, one step at a time" : $"Fixed steps of {Format.Dollars(auction.IncrementCents)}")</dd>
                 <dt>Opening price</dt>
                 <dd class="num">@Format.Dollars(auction.OpeningPriceCents)</dd>
+                <dt>Bid increment</dt>
+                <dd class="num" data-testid="increment">@Format.Dollars(auction.IncrementCents)</dd>
                 @if (auction.ReserveCents is { } reserve)
                 {
                     <dt>Your reserve</dt>
@@ -119,8 +121,10 @@ else
                 @if (auction.YourMaximumCents is { } maximum)
                 {
                     <dt>Your maximum</dt>
-                    <dd class="num" data-testid="your-maximum">@Format.Dollars(maximum)</dd>
+                    <dd class="num" data-testid="your-maximum">@Format.Dollars(maximum)@(auction.Status == "active" && !auction.YouLead ? ", passed" : "")</dd>
                 }
+                <dt>@(auction.Status is "closed" or "cancelled" ? "Ended" : "Ends")</dt>
+                <dd class="num" data-testid="ends-at">@Format.Time(auction.ClosedAt ?? auction.EndsAt)</dd>
             </dl>
             </div>
 
@@ -155,6 +159,7 @@ else
                             <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth="true" Size="Size.Large"
                                        OnClick="() => BidNextStepAsync(auction)" Disabled="_busy" data-testid="bid-next-step">@StepLabel(auction)</MudButton>
                         }
+                        <p class="binding-note" data-testid="binding-note">A bid is binding: if you win, you agree to buy at the final price.</p>
                         @if (_bidMessage is not null)
                         {
                             <MudAlert Class="mt-2" Dense="true" Severity="@(_bidAccepted ? Severity.Success : Severity.Error)" data-testid="bid-result"><MessageText Text="@_bidMessage" /></MudAlert>
@@ -264,7 +269,14 @@ else
 
         if (_bidMessage is not null && _auction.Version > (_bidMessageVersion ?? long.MaxValue))
         {
-            (_bidMessage, _bidMessageVersion) = (null, null);
+            // The auction has moved on from what the message and the typed amount were about.
+            (_bidMessage, _bidMessageVersion, _amount) = (null, null, "");
+        }
+
+        if (shown is { YouLead: true } && !_auction.YouLead)
+        {
+            // Outbid: whatever was half-typed was against the old price.
+            _amount = "";
         }
 
         if (Session.Account?.IsAdmin != true)
@@ -334,7 +346,9 @@ else
     private static (Severity Severity, string Text)? Standing(AuctionDetail auction) => auction.Status switch
     {
         "active" when auction.YouLead => (Severity.Success, "You are the highest bidder."),
-        "active" when auction.YouHaveBid => (Severity.Warning, "You've been outbid."),
+        "active" when auction.YouHaveBid && auction.BidEntry == "proxy" =>
+            (Severity.Warning, $"You've been outbid. Bid {Format.Dollars(auction.MinimumNextBidCents)} or more to lead again."),
+        "active" when auction.YouHaveBid => (Severity.Warning, $"You've been outbid. The next bid is {Format.Dollars(auction.MinimumNextBidCents)}."),
         "closed" when auction.YouLead && auction.Outcome == "sold" => (Severity.Info, "This auction has ended. You won it."),
         "closed" when auction.YouHaveBid => (Severity.Info, "This auction has ended. You didn't win it."),
         "closed" => (Severity.Info, "This auction has ended."),

@@ -46,7 +46,7 @@ public sealed class FixedStepBidTests(MigratedDatabase db, Browsers browsers)
             Assert.Equal(HttpStatusCode.Created, outbid.StatusCode);
         }
 
-        await Assertions.Expect(page.GetByTestId("standing")).ToHaveTextAsync("You've been outbid.");
+        await Assertions.Expect(page.GetByTestId("standing")).ToHaveTextAsync("You've been outbid. The next bid is $12.00.");
         await Assertions.Expect(page.GetByTestId("bid-result")).ToHaveCountAsync(0);
         await Assertions.Expect(page.GetByText("highest bidder")).ToHaveCountAsync(0);
         await Assertions.Expect(page.GetByTestId("bid-next-step")).ToHaveTextAsync("Bid $12.00");
@@ -120,6 +120,23 @@ public sealed class FixedStepBidTests(MigratedDatabase db, Browsers browsers)
         await Assertions.Expect(page.GetByTestId("your-maximum")).ToHaveTextAsync("$70.00");
         await page.ReloadAsync();
         await Assertions.Expect(page.GetByTestId("your-maximum")).ToHaveTextAsync("$70.00");
+
+        // The card states what a bid commits to, when the auction ends as a date, and the size of a step.
+        await Assertions.Expect(page.GetByTestId("binding-note")).ToContainTextAsync("A bid is binding");
+        await Assertions.Expect(page.GetByTestId("ends-at")).ToHaveTextAsync(new System.Text.RegularExpressions.Regex(@"\d{4}|\d{1,2}:\d{2}"));
+        await Assertions.Expect(page.GetByTestId("increment")).ToHaveTextAsync("$1.00");
+
+        // Outbid: the card says what it takes to lead again, the passed maximum is marked, and the box is empty.
+        await page.GetByLabel("Your maximum ($)").FillAsync("75");
+        var rival = await (await db.ApiAsync()).SignUpAsync();
+        using (var higher = await rival.Http.BidAsync(id, 9000))
+        {
+            Assert.Equal(HttpStatusCode.Created, higher.StatusCode);
+        }
+
+        await Assertions.Expect(page.GetByTestId("standing")).ToHaveTextAsync("You've been outbid. Bid $72.00 or more to lead again.");
+        await Assertions.Expect(page.GetByTestId("your-maximum")).ToHaveTextAsync("$70.00, passed");
+        await Assertions.Expect(page.GetByLabel("Your maximum ($)")).ToHaveValueAsync("");
     }
 
     // A fixed-step auction opening at $10.00 with $1.00 steps, and a signed-in bidder's page.
