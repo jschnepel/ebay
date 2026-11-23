@@ -2,7 +2,7 @@ using Auction.Web.Client;
 
 namespace Auction.UnitTests;
 
-/// <summary>Live mode adds what's new at the top and never shows an event twice.</summary>
+/// <summary>Live mode adds what's new in its place, never shows an event twice, and fetches every page of a busy moment.</summary>
 public sealed class ClientLiveEventsTests
 {
     private static LogEvent At(string key, int second) =>
@@ -25,5 +25,53 @@ public sealed class ClientLiveEventsTests
         IReadOnlyList<LogEvent> shown = [At("b", 20), At("a", 10)];
 
         Assert.Equal(["b", "a"], LiveEvents.Merge(shown, []).Select(e => e.Key));
+    }
+
+    [Fact]
+    public void An_event_that_committed_late_goes_in_its_place_by_time_not_on_top()
+    {
+        // Stamped before the newest shown event, but only visible once its transaction committed.
+        IReadOnlyList<LogEvent> shown = [At("c", 30), At("a", 10)];
+        IReadOnlyList<LogEvent> newer = [At("d", 40), At("b", 20)];
+
+        Assert.Equal(["d", "c", "b", "a"], LiveEvents.Merge(shown, newer).Select(e => e.Key));
+    }
+
+    [Fact]
+    public async Task Collecting_follows_the_cursor_until_the_last_page()
+    {
+        var pages = new Dictionary<string, Page<LogEvent>>
+        {
+            [""] = new([At("f", 59), At("e", 50)], "2"),
+            ["2"] = new([At("d", 40), At("c", 30)], "3"),
+            ["3"] = new([At("b", 20)], null),
+        };
+
+        var (events, complete) = await LiveEvents.CollectAsync(cursor => Task.FromResult<Page<LogEvent>?>(pages[cursor ?? ""]), maxPages: 5);
+
+        Assert.Equal(["f", "e", "d", "c", "b"], events.Select(e => e.Key));
+        Assert.True(complete);
+    }
+
+    [Fact]
+    public async Task Collecting_stops_at_its_cap_and_says_it_did()
+    {
+        var calls = 0;
+        var (events, complete) = await LiveEvents.CollectAsync(
+            _ => { calls++; return Task.FromResult<Page<LogEvent>?>(new([At($"k{calls}", 59 - calls)], "more")); },
+            maxPages: 3);
+
+        Assert.Equal(3, calls);
+        Assert.Equal(3, events.Count);
+        Assert.False(complete);
+    }
+
+    [Fact]
+    public async Task A_failed_page_ends_collecting_as_incomplete()
+    {
+        var (events, complete) = await LiveEvents.CollectAsync(_ => Task.FromResult<Page<LogEvent>?>(null), maxPages: 3);
+
+        Assert.Empty(events);
+        Assert.False(complete);
     }
 }
