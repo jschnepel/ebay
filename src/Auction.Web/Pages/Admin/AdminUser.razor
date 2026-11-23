@@ -172,7 +172,9 @@ else
         _forbidden = Session.Account?.IsAdmin != true;
         if (!_forbidden)
         {
+            // Another user's page starts empty: nothing of the last one may show under the new name.
             (_listingCursors, _biddingCursors) = (new([null]), new([null]));
+            (_listings, _bidding, _activity, _message) = (null, null, null, null);
             await LoadAsync();
         }
     }
@@ -234,15 +236,20 @@ else
 
     private async Task LoadActivityAsync()
     {
-        var page = (await Api.AdminEventsAsync(ActivityFilter, null)).Value;
-        (_activity, _activityNext) = ([.. page?.Items ?? []], page?.NextCursor);
+        var result = await Api.AdminEventsAsync(ActivityFilter, null);
+        if (!result.Succeeded)
+        {
+            (_failed, _message) = (true, result.Message);
+        }
+
+        (_activity, _activityNext) = ([.. result.Value?.Items ?? []], result.Value?.NextCursor);
     }
 
     private async Task MoreActivityAsync()
     {
         if ((await Api.AdminEventsAsync(ActivityFilter, _activityNext)).Value is { } page)
         {
-            _activity!.AddRange(page.Items);
+            _activity = [.. LiveEvents.Append(_activity!, page.Items)];
             _activityNext = page.NextCursor;
         }
     }
