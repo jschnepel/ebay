@@ -12,6 +12,48 @@ public sealed class RedisJobTests(MigratedDatabase db)
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     [Fact]
+    public async Task Whether_a_viewer_has_bid_is_remembered_between_views()
+    {
+        var api = await db.ApiAsync();
+        var seller = await api.SignUpAsync();
+        var watcher = await api.SignUpAsync();
+        var id = await seller.PublishedAsync();
+        var redis = api.Services.GetRequiredService<Auction.Api.Caching.RedisJobs>();
+        var key = $"has-bid:{id:N}:{watcher.Id:N}";
+
+        await watcher.Http.GetJsonAsync($"/api/v1/auctions/{id}");
+        Assert.Equal("0", (string?)await redis.TryAsync(r => r.StringGetAsync(key)));
+
+        // The remembered answer is the one used: flipped by hand, the next view reports it without asking the database.
+        await redis.TryAsync(r => r.StringSetAsync(key, "1"));
+        Assert.True((await watcher.Http.GetJsonAsync($"/api/v1/auctions/{id}")).GetProperty("youHaveBid").GetBoolean());
+    }
+
+    [Fact]
+    public async Task A_bid_through_the_api_is_known_at_once_even_after_the_viewer_was_told_they_had_none()
+    {
+        var api = await db.ApiAsync();
+        var seller = await api.SignUpAsync();
+        var watcher = await api.SignUpAsync();
+        var rival = await api.SignUpAsync();
+        var id = await seller.PublishedAsync(ApiCalls.Terms(bidEntry: "fixed_increment", floorType: "minimum_bid", reserveCents: null));
+        Assert.False((await watcher.Http.GetJsonAsync($"/api/v1/auctions/{id}")).GetProperty("youHaveBid").GetBoolean());
+
+        using (var bid = await watcher.Http.BidAsync(id, 1000))
+        {
+            Assert.Equal(HttpStatusCode.Created, bid.StatusCode);
+        }
+
+        using (var outbid = await rival.Http.BidAsync(id, 1100))
+        {
+            Assert.Equal(HttpStatusCode.Created, outbid.StatusCode);
+        }
+
+        var detail = await watcher.Http.GetJsonAsync($"/api/v1/auctions/{id}");
+        Assert.Equal((false, true), (detail.GetProperty("youLead").GetBoolean(), detail.GetProperty("youHaveBid").GetBoolean()));
+    }
+
+    [Fact]
     public async Task An_auction_cached_by_an_older_release_still_reads_after_a_deploy()
     {
         var api = await db.ApiAsync();

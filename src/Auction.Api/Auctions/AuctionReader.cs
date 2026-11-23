@@ -180,10 +180,17 @@ internal sealed class AuctionReader(NpgsqlDataSource dataSource, Caching.Auction
 
     private async Task<bool> HasBidAsync(Guid id, UserId bidder, CancellationToken cancellationToken)
     {
+        if (await cache.HasBidAsync(id, bidder.Value) is { } remembered)
+        {
+            return remembered;
+        }
+
         await using var command = dataSource.CreateCommand(HasBidSql);
         command.Parameters.Add(Param(id));
         command.Parameters.Add(Param(bidder.Value));
-        return await command.ExecuteScalarAsync(cancellationToken) is true;
+        var hasBid = await command.ExecuteScalarAsync(cancellationToken) is true;
+        await cache.RememberHasBidAsync(id, bidder.Value, hasBid);
+        return hasBid;
     }
 
     /// <summary>

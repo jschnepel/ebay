@@ -99,6 +99,22 @@ public sealed class AuctionCache(RedisJobs redis)
             await db.StringIncrementAsync(DirectoryGeneration);
         });
 
+    /// <summary>
+    /// Whether the viewer has bid on the auction, if it was looked up lately: every signed-in viewer of a busy
+    /// auction asks on each refresh. Bids reach the database only through the API, which records each one here as
+    /// it is accepted, so a remembered "no" can be wrong only if that record was lost, and then for a minute.
+    /// </summary>
+    public async Task<bool?> HasBidAsync(Guid auction, Guid bidder)
+    {
+        var value = await redis.TryAsync(db => db.StringGetAsync(HasBidKey(auction, bidder)));
+        return value.HasValue ? value == "1" : null;
+    }
+
+    public Task RememberHasBidAsync(Guid auction, Guid bidder, bool hasBid) =>
+        redis.TryAsync(db => db.StringSetAsync(HasBidKey(auction, bidder), hasBid ? "1" : "0", hasBid ? TimeSpan.FromMinutes(10) : TimeSpan.FromMinutes(1)));
+
+    private static string HasBidKey(Guid auction, Guid bidder) => $"has-bid:{auction:N}:{bidder:N}";
+
     private const string DirectoryGeneration = "directory-generation";
 
     private static string DirectoryKey(long generation, int pageSize) => $"directory:{generation}:{pageSize}";

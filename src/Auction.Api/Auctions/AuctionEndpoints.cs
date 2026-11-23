@@ -218,10 +218,23 @@ internal static class AuctionEndpoints
 
         var actor = EngineGateway.Actor(http);
         var request = new PlaceBidRequest { RequestId = key, ActorId = actor, AuctionId = id.ToString(), AmountCents = amount };
-        return await engine.SendAsync(
+        var accepted = false;
+        var response = await engine.SendAsync(
             http,
             async call => (await engine.Client.PlaceBidAsync(request, call)).Result,
-            result => TypedResults.Created($"/api/v1/auctions/{id}/bids", EngineGateway.Response(result, actor, isBid: true)));
+            result =>
+            {
+                accepted = true;
+                return TypedResults.Created($"/api/v1/auctions/{id}/bids", EngineGateway.Response(result, actor, isBid: true));
+            });
+
+        // The auction page asks whether its viewer has bid; this keeps a remembered "no" from outliving the bid.
+        if (accepted && http.User.UserIdOf() is { } bidder)
+        {
+            await http.RequestServices.GetRequiredService<Caching.AuctionCache>().RememberHasBidAsync(id, bidder.Value, hasBid: true);
+        }
+
+        return response;
     }
 
     private static Ok<CommandResponse> Ok(CommandResult result, string actor) => TypedResults.Ok(EngineGateway.Response(result, actor));
