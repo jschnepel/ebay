@@ -293,3 +293,15 @@ h2.mud-typography { font-size: 1.25rem; }
 .facts { padding: 1rem 1.25rem; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-lg); }
 .ticket > .mud-button-root, .ticket > .mud-typography { margin-top: 1rem; }
 .ticket > .board:last-child { margin: 0; }
+
+/* The listing form: four labelled sections, two fields a row on a wide screen. */
+.form-panel { max-width: 52rem; }
+.form-lede { margin: 0 0 0.5rem; }
+/* A fieldset won't shrink below its content's width unless told to; on a phone it must. */
+.form-section { border: 0; margin: 0; min-width: 0; padding: 1.25rem 0 0.25rem; display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.75rem; }
+.form-section + .form-section { border-top: 1px solid var(--line); }
+.form-section legend { float: left; width: 100%; padding: 0; margin-bottom: 0.25rem; font-family: var(--display); font-stretch: 87.5%; font-weight: 600; font-size: 1.1rem; color: var(--ink); }
+.form-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem 1rem; align-items: start; }
+@media (max-width: 599.98px) { .form-row { grid-template-columns: minmax(0, 1fr); } }
+.form-section > *, .form-row > * { min-width: 0; }
+.form-actions { display: flex; gap: 0.5rem; padding-top: 1.25rem; margin-top: 0.75rem; border-top: 1px solid var(--line); }

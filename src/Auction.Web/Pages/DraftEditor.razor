@@ -17,31 +17,58 @@ else if (_loadError is not null)
 }
 else
 {
-    <MudPaper Class="pa-4" Outlined="true">
-        <MudText Typo="Typo.body2" Class="mb-2">Saving keeps a private draft; nobody else sees it until you publish it from the Sell page.</MudText>
-        <MudTextField @bind-Value="_title" Label="Title" Immediate="true" MaxLength="120" />
-        <MudTextField @bind-Value="_description" Label="Description" Immediate="true" Lines="3" MaxLength="4000" />
-        <MudTextField @bind-Value="_opening" Label="Opening price ($)" Immediate="true" />
-        <MudTextField @bind-Value="_increment" Label="Bid increment ($)" Immediate="true" />
-        <MudSelect T="string" @bind-Value="_floorType" Label="Price floor">
-            <MudSelectItem T="string" Value="@("reserve")">Hidden reserve</MudSelectItem>
-            <MudSelectItem T="string" Value="@("minimum_bid")">Minimum bid (the opening price)</MudSelectItem>
-            <MudSelectItem T="string" Value="@("absolute")">No reserve</MudSelectItem>
-        </MudSelect>
-        @if (_floorType == "reserve")
-        {
-            <MudTextField @bind-Value="_reserve" Label="Reserve ($)" Immediate="true" HelperText="Hidden from bidders; they only see whether it's met." />
-        }
-        <MudSelect T="string" @bind-Value="_bidEntry" Label="Bidding"
-                   HelperText="@(_bidEntry == "proxy" ? "Bidders set a private maximum and the system bids for them, one step at a time." : "Bidders can only bid the next step: the current price plus your increment.")">
-            <MudSelectItem T="string" Value="@("proxy")">Proxy: bidders enter a private maximum</MudSelectItem>
-            <MudSelectItem T="string" Value="@("fixed_increment")">Fixed steps of one increment</MudSelectItem>
-        </MudSelect>
-        <MudTextField @bind-Value="_startsAt" Label="Starts" InputType="InputType.DateTimeLocal" Immediate="true" />
-        <MudTextField @bind-Value="_endsAt" Label="Ends" InputType="InputType.DateTimeLocal" Immediate="true" />
-        <MudButton Class="mt-3" Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveAsync" Disabled="_busy">Save draft</MudButton>
-        <MudButton Class="mt-3 ml-2" Href="sell">Back</MudButton>
-    </MudPaper>
+    @* One form in four sections, in the order a seller thinks: the item, its price, how bidding works, and when. *@
+    <section class="panel form-panel">
+        <p class="muted form-lede">Saving keeps a private draft; nobody else sees it until you publish it from the Sell page.</p>
+
+        <fieldset class="form-section">
+            <legend>The item</legend>
+            <MudTextField @bind-Value="_title" Label="Title" Immediate="true" MaxLength="120" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            <MudTextField @bind-Value="_description" Label="Description" Immediate="true" Lines="4" MaxLength="4000" Variant="Variant.Outlined" Margin="Margin.Dense" />
+        </fieldset>
+
+        <fieldset class="form-section">
+            <legend>Price</legend>
+            <div class="form-row">
+                <MudTextField @bind-Value="_opening" Label="Opening price ($)" Immediate="true" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                <MudTextField @bind-Value="_increment" Label="Bid increment ($)" Immediate="true" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            </div>
+            <div class="form-row">
+                <MudSelect T="string" @bind-Value="_floorType" Label="Price floor" Variant="Variant.Outlined" Margin="Margin.Dense">
+                    <MudSelectItem T="string" Value="@("reserve")">Hidden reserve</MudSelectItem>
+                    <MudSelectItem T="string" Value="@("minimum_bid")">Minimum bid (the opening price)</MudSelectItem>
+                    <MudSelectItem T="string" Value="@("absolute")">No reserve</MudSelectItem>
+                </MudSelect>
+                @if (_floorType == "reserve")
+                {
+                    <MudTextField @bind-Value="_reserve" Label="Reserve ($)" Immediate="true" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                  HelperText="Hidden from bidders; they only see whether it's met." />
+                }
+            </div>
+        </fieldset>
+
+        <fieldset class="form-section">
+            <legend>Bidding</legend>
+            <MudSelect T="string" @bind-Value="_bidEntry" Label="Bidding" Variant="Variant.Outlined" Margin="Margin.Dense"
+                       HelperText="@(_bidEntry == "proxy" ? "Bidders set a private maximum and the system bids for them, one step at a time." : "Bidders can only bid the next step: the current price plus your increment.")">
+                <MudSelectItem T="string" Value="@("proxy")">Proxy: bidders enter a private maximum</MudSelectItem>
+                <MudSelectItem T="string" Value="@("fixed_increment")">Fixed steps of one increment</MudSelectItem>
+            </MudSelect>
+        </fieldset>
+
+        <fieldset class="form-section">
+            <legend>Timing</legend>
+            <div class="form-row">
+                <MudTextField @bind-Value="_startsAt" Label="Starts" InputType="InputType.DateTimeLocal" Immediate="true" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                <MudTextField @bind-Value="_endsAt" Label="Ends" InputType="InputType.DateTimeLocal" Immediate="true" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            </div>
+        </fieldset>
+
+        <div class="form-actions">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveAsync" Disabled="_busy">Save draft</MudButton>
+            <MudButton Href="sell">Back</MudButton>
+        </div>
+    </section>
 
     @if (_error is not null)
     {
@@ -54,7 +81,7 @@ else
     }
     else
     {
-        <MudText Typo="Typo.body2" Class="mt-4">Save the draft first, then add images from Edit.</MudText>
+        <p class="muted mt-4">Save the draft first, then add photos from Edit.</p>
     }
 }
 
