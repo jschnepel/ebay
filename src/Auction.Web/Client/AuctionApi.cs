@@ -18,6 +18,12 @@ public sealed class AuctionApi(HttpClient http, Func<TimeSpan, Task>? wait = nul
 
     private readonly Func<TimeSpan, Task> _wait = wait ?? (delay => Task.Delay(delay));
 
+    /// <summary>
+    /// The API refused a request because there's no valid session: it ended without this page being told, as
+    /// the daily demo reset ends them. A wrong sign-in is not this.
+    /// </summary>
+    public event Action? SessionEnded;
+
     public async Task<Account?> MeAsync() => (await SendAsync<Account>(HttpMethod.Get, "account/me")).Value;
 
     /// <summary>Creates a demo account; <paramref name="role"/> is "user" or "admin".</summary>
@@ -186,7 +192,13 @@ public sealed class AuctionApi(HttpClient http, Func<TimeSpan, Task>? wait = nul
         {
             if (!response.IsSuccessStatusCode)
             {
-                return new ApiResult<T>(default, await ReadProblemAsync(response));
+                var problem = await ReadProblemAsync(response);
+                if (problem is { Status: 401, Code: not "sign_in_failed" })
+                {
+                    SessionEnded?.Invoke();
+                }
+
+                return new ApiResult<T>(default, problem);
             }
 
             return response.StatusCode == HttpStatusCode.NoContent

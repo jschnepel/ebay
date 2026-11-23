@@ -1,6 +1,7 @@
 using System.Net;
 using Auction.IntegrationTests.Api;
 using Auction.IntegrationTests.Database;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Playwright;
 
 namespace Auction.IntegrationTests.Browser;
@@ -29,6 +30,43 @@ public sealed class SessionAndBellTests(MigratedDatabase db, Browsers browsers)
         await Assertions.Expect(first.GetByTestId("signed-out-notice")).ToContainTextAsync("signed in elsewhere", new() { Timeout = 2_000 });
         await second.GotoAsync("/my-bids");
         await Assertions.Expect(second.GetByTestId("signed-in-as")).ToHaveTextAsync("Two browsers"); // control
+    }
+
+    [Fact]
+    public async Task A_page_whose_session_a_reset_removed_shows_it_is_signed_out_instead_of_unauthorized()
+    {
+        if (Environment.GetEnvironmentVariable(Browsers.BaseUrlVariable) is { Length: > 0 })
+        {
+            return; // Ends the session through the shared database and Redis, which an external stack doesn't share.
+        }
+
+        var site = await Browsers.SiteAsync(db);
+        var page = await browsers.NewPageAsync(site);
+        var email = await page.SignUpAsync("Reset sleeper");
+        await page.GotoAsync("/");
+        await Assertions.Expect(page.GetByTestId("signed-in-as")).ToHaveTextAsync("Reset sleeper");
+
+        // The daily reset ends sessions in the database and clears Redis, and tells no open page.
+        var redis = (await db.ApiAsync()).Services.GetRequiredService<Auction.Api.Caching.RedisJobs>();
+        var sessions = await db.ScalarAsync<Guid[]>(
+            MigratedDatabase.Migrator,
+            """
+            WITH ended AS (
+                UPDATE sessions SET revoked_at = now() WHERE user_id = (SELECT id FROM users WHERE email = $1) AND revoked_at IS NULL RETURNING id)
+            SELECT coalesce(array_agg(id), '{}') FROM ended
+            """,
+            email);
+        foreach (var session in sessions!)
+        {
+            await redis.TryAsync(r => r.KeyDeleteAsync($"session:{session:N}"));
+        }
+
+        await page.GetByRole(AriaRole.Link, new() { Name = "My bids" }).ClickAsync();
+
+        await Assertions.Expect(page.GetByText("Sign in to see your bids.")).ToBeVisibleAsync();
+        await Assertions.Expect(page.GetByTestId("signed-out-notice")).ToContainTextAsync("You've been signed out");
+        await Assertions.Expect(page.GetByTestId("signed-in-as")).ToHaveCountAsync(0);
+        await Assertions.Expect(page.GetByText("Unauthorized")).ToHaveCountAsync(0);
     }
 
     [Fact]

@@ -8,7 +8,8 @@
 <PageTitle>My bids</PageTitle>
 <MudText Typo="Typo.h4" HtmlTag="h1" Class="mb-4">My bids</MudText>
 
-@if (_signedOut)
+@* A session can also end while the page is open: the first refused request signs it out. *@
+@if (_signedOut || Session.Account is null)
 {
     <PageState State="ViewState.Forbidden" ForbiddenText="Sign in to see your bids." SignInReturn="/my-bids" />
 }

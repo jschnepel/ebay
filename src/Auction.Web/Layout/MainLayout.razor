@@ -47,6 +47,12 @@
                     Signed out: your account signed in elsewhere. <MudLink Href="sign-in">Sign in again</MudLink> to continue here.
                 </MudAlert>
             }
+            else if (Session.Ended)
+            {
+                <MudAlert Severity="Severity.Warning" Class="mb-4" data-testid="signed-out-notice">
+                    You've been signed out. <MudLink Href="sign-in">Sign in again</MudLink> to continue. Accounts you create are removed at the daily reset, so you may need to create yours again.
+                </MudAlert>
+            }
             @Body
         </MudContainer>
     </MudMainContent>
