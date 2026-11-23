@@ -1,5 +1,6 @@
 using System.Net.Mail;
 using System.Security.Claims;
+using System.Text.RegularExpressions;
 using Auction.Api.Hosting;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -14,7 +15,7 @@ namespace Auction.Api.Accounts;
 /// and a role (user, the default, or admin) and signs back in with the email alone; seeded, simulator and the
 /// seeded admin account always need their password. Outside DEMO_MODE only password accounts sign in.
 /// </summary>
-internal static class AccountEndpoints
+internal static partial class AccountEndpoints
 {
     public const int DisplayNameMaxLength = 50;
     public const int EmailMaxLength = 254;
@@ -94,22 +95,30 @@ internal static class AccountEndpoints
     private static async Task<IResult> SignInAsync(
         SignInRequest body, HttpContext http, AccountStore accounts, IPasswordHasher<Account> hasher, ApiOptions options)
     {
-        var key = AccountStore.Normalize(body.Email ?? "");
         var guard = http.RequestServices.GetRequiredService<SignInGuard>();
         var events = http.RequestServices.GetRequiredService<AccountEvents>();
         var typed = TypedEmail(body.Email);
 
-        // Only a real address is kept for the log: text that isn't one may be a password typed in the wrong box.
-        var recorded = typed is not null && IsEmail(typed) ? typed : null;
+        // The limits count under the same text the account is looked up by, so no other spelling of it
+        // (padding past the cut, say) reaches the account under a counter of its own.
+        var key = AccountStore.Normalize(typed ?? "");
+
+        // Nothing here stops when the client hangs up: a request that reached the API is decided and logged.
         if (!await guard.TryAttemptAsync(key))
         {
-            var known = typed is null ? null : await accounts.FindAsync(typed, http.RequestAborted);
-            await events.RecordAsync(AccountEvents.SignInFailed, known?.Id.Value, recorded, "too_many_attempts", null, CancellationToken.None);
+            // Logged once a minute for each email, so a refused flood costs the database nothing more.
+            if (await guard.FirstRefusalAsync(key))
+            {
+                var known = typed is null ? null : await accounts.FindAsync(typed, CancellationToken.None);
+                await events.RecordAsync(AccountEvents.SignInFailed, known?.Id.Value, Loggable(typed, known), "too_many_attempts", null);
+            }
+
             http.Response.Headers.RetryAfter = "60";
             return Problems.Of(StatusCodes.Status429TooManyRequests, "too_many_attempts", "Too many sign-in attempts for this account; try again later.");
         }
 
-        var account = typed is null ? null : await accounts.FindAsync(typed, http.RequestAborted);
+        var account = typed is null ? null : await accounts.FindAsync(typed, CancellationToken.None);
+        var recorded = Loggable(typed, account);
         if (account is null || account.Disabled || !MaySignIn(account, body.Password, hasher, options))
         {
             if (!string.IsNullOrEmpty(body.Password))
@@ -118,7 +127,7 @@ internal static class AccountEndpoints
             }
 
             await events.RecordAsync(
-                AccountEvents.SignInFailed, account?.Id.Value, recorded, FailureCause(account, body.Password, recorded is not null), null, CancellationToken.None);
+                AccountEvents.SignInFailed, account?.Id.Value, recorded, FailureCause(account, body.Password, recorded is not null), null);
 
             // The same answer whether the email is unknown or the password is wrong.
             return Problems.Of(StatusCodes.Status401Unauthorized, "sign_in_failed", "The email or password is incorrect.");
@@ -133,9 +142,9 @@ internal static class AccountEndpoints
     {
         if (http.User.SessionOf() is { } session)
         {
-            await http.RequestServices.GetRequiredService<SessionStore>().RevokeAsync(session, http.RequestAborted);
+            await http.RequestServices.GetRequiredService<SessionStore>().RevokeAsync(session, CancellationToken.None);
             await http.RequestServices.GetRequiredService<AccountEvents>().RecordAsync(
-                AccountEvents.SignOut, http.User.UserIdOf()?.Value, null, null, session, CancellationToken.None);
+                AccountEvents.SignOut, http.User.UserIdOf()?.Value, null, null, session);
         }
 
         await http.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
@@ -163,21 +172,30 @@ internal static class AccountEndpoints
         _ => "wrong_password",
     };
 
-    // The email as typed, trimmed and cut to the column's length, for the event log.
+    // The email as typed, trimmed and cut to the longest an address can be.
     private static string? TypedEmail(string? email) =>
         email?.Trim() is { Length: > 0 } trimmed ? trimmed[..Math.Min(trimmed.Length, EmailMaxLength)] : null;
+
+    // What the event log keeps of the typed text: an account's own address, or else only text shaped like a
+    // plain address (name@host.tld, no quotes or spaces). Anything else may be a password typed in the wrong
+    // box; one that happens to look like an address can't be told apart and is kept.
+    private static string? Loggable(string? typed, Account? account) =>
+        typed is not null && (account is not null || PlainAddress().IsMatch(typed)) ? typed : null;
+
+    [GeneratedRegex(@"^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 100)]
+    private static partial Regex PlainAddress();
 
     // One active session per account (AUTH-02): this sign-in ends every other one, and any page still open on
     // an ended session is told at once. The event log gets the sign-in and each session it replaced.
     private static async Task IssueCookieAsync(HttpContext http, Account account, string eventType, string? email)
     {
-        var (session, ended) = await http.RequestServices.GetRequiredService<SessionStore>().StartAsync(account.Id, http.RequestAborted);
+        var (session, ended) = await http.RequestServices.GetRequiredService<SessionStore>().StartAsync(account.Id, CancellationToken.None);
         var events = http.RequestServices.GetRequiredService<AccountEvents>();
-        await events.RecordAsync(eventType, account.Id.Value, email, null, session, CancellationToken.None);
-        await events.RecordManyAsync(AccountEvents.SessionReplaced, ended, account.Id.Value, null, CancellationToken.None);
+        await events.RecordAsync(eventType, account.Id.Value, email, null, session);
+        await events.RecordManyAsync(AccountEvents.SessionReplaced, ended, account.Id.Value, null);
         await http.SignInAsync(
             CookieAuthenticationDefaults.AuthenticationScheme, Principal.For(account, session), new AuthenticationProperties { IsPersistent = true });
-        await Live.SignOuts.TellAsync(http.RequestServices, ended, http.RequestAborted);
+        await Live.SignOuts.TellAsync(http.RequestServices, ended, CancellationToken.None);
     }
 
     private static bool IsEmail(string email) =>

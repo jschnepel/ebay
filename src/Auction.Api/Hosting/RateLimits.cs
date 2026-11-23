@@ -85,6 +85,10 @@ internal sealed class SignInGuard(SharedCounters counters, ApiOptions options)
         return count <= options.RateLimits.SignInPerAccountPerMinute;
     }
 
+    /// <summary>True for the first refusal of this email in a minute, which is the one worth logging.</summary>
+    public async Task<bool> FirstRefusalAsync(string normalizedEmail) =>
+        (await counters.IncrementAsync($"sign-in-refused:{normalizedEmail}", TimeSpan.FromMinutes(1))).Count == 1;
+
     public async Task FailedAsync(string normalizedEmail)
     {
         var (failures, _) = await counters.IncrementAsync($"sign-in-failed:{normalizedEmail}", options.RateLimits.LockoutDuration);

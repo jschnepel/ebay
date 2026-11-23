@@ -26,6 +26,66 @@ public sealed class AccountEventTests(MigratedDatabase db)
         Assert.All(rows, r => Assert.Equal(user.Id, r.UserId));
         Assert.All(rows, r => Assert.NotNull(r.SessionId));
         Assert.Equal(rows[2].SessionId, rows[3].SessionId);
+        // The email as typed is kept for the sign-up and the sign-in; a sign-out types none.
+        Assert.Equal([user.Email, null, user.Email, null], rows.Select(r => r.Email));
+    }
+
+    [Fact]
+    public async Task A_visitor_account_refused_outside_the_demo_records_that_email_sign_in_is_off()
+    {
+        var user = await (await db.ApiAsync()).SignUpAsync("Demo only");
+        var closed = await db.ApiAsync(demoMode: false);
+
+        (_, var response) = await closed.SignInAsync(user.Email);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        var failed = Assert.Single(await RowsForEmailAsync(user.Email), r => r.Type == "sign_in_failed");
+        Assert.Equal(("email_sign_in_off", (Guid?)user.Id), (failed.Detail, failed.UserId));
+    }
+
+    [Fact]
+    public async Task Padding_the_email_does_not_get_around_the_lockout()
+    {
+        var api = await db.ApiWithAsync(new Dictionary<string, string> { ["Api:RateLimits:LockoutFailures"] = "2" });
+        var email = await db.InsertPasswordAccountAsync("seeded", "the-right-password");
+
+        // Each attempt reaches the same account (the address is cut to its longest length), under a different spelling.
+        foreach (var suffix in new[] { "a", "b" })
+        {
+            (_, var wrong) = await api.SignInAsync(email + new string(' ', 300) + suffix, "a-wrong-password");
+            Assert.Equal(HttpStatusCode.Unauthorized, wrong.StatusCode);
+        }
+
+        (_, var locked) = await api.SignInAsync(email, "the-right-password");
+        await locked.AssertProblemAsync(HttpStatusCode.TooManyRequests, "too_many_attempts");
+    }
+
+    [Fact]
+    public async Task A_sign_in_still_works_when_its_event_cant_be_written()
+    {
+        var api = await db.ApiAsync();
+        var user = await api.SignUpAsync("Logged or not");
+        var name = $"refuse_{Guid.NewGuid():N}";
+        await db.ExecuteAsync(MigratedDatabase.Migrator, $"""
+            CREATE FUNCTION auction.{name}() RETURNS trigger LANGUAGE plpgsql AS $$
+            BEGIN
+                IF NEW.user_id = '{user.Id}' THEN RAISE EXCEPTION 'the log is unavailable'; END IF;
+                RETURN NEW;
+            END $$
+            """);
+        await db.ExecuteAsync(MigratedDatabase.Migrator, $"CREATE TRIGGER {name} BEFORE INSERT ON auction.account_events FOR EACH ROW EXECUTE FUNCTION auction.{name}()");
+        try
+        {
+            var (http, response) = await api.SignInAsync(user.Email);
+
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.Equal(HttpStatusCode.OK, await http.StatusOfGetAsync("/api/v1/account/me"));
+        }
+        finally
+        {
+            await db.ExecuteAsync(MigratedDatabase.Migrator, $"DROP TRIGGER {name} ON auction.account_events");
+            await db.ExecuteAsync(MigratedDatabase.Migrator, $"DROP FUNCTION auction.{name}()");
+        }
     }
 
     [Theory]
@@ -79,9 +139,11 @@ public sealed class AccountEventTests(MigratedDatabase db)
 
         (_, var first) = await api.SignInAsync(user.Email);
         (_, var second) = await api.SignInAsync(user.Email);
+        (_, var third) = await api.SignInAsync(user.Email);
 
+        // Recorded once a minute, not once a request: a refused flood mustn't become a flood of writes.
         Assert.Equal(HttpStatusCode.OK, first.StatusCode);
-        Assert.Equal(HttpStatusCode.TooManyRequests, second.StatusCode);
+        Assert.Equal((HttpStatusCode.TooManyRequests, HttpStatusCode.TooManyRequests), (second.StatusCode, third.StatusCode));
         var refused = Assert.Single(await RowsForEmailAsync(user.Email), r => r.Type == "sign_in_failed");
         Assert.Equal(("too_many_attempts", (Guid?)user.Id), (refused.Detail, refused.UserId));
     }
@@ -136,19 +198,25 @@ public sealed class AccountEventTests(MigratedDatabase db)
         Assert.Equal(0, leaks);
     }
 
-    [Fact]
-    public async Task Text_typed_in_the_email_box_that_isnt_an_email_is_never_stored()
+    [Theory]
+    [InlineData("my-secret-{0}")]
+    [InlineData("Tr0ub4dor{0}@home")]
+    [InlineData("\"pass phrase {0}\"@example.test")]
+    public async Task Text_typed_in_the_email_box_that_isnt_a_plain_address_is_never_stored(string shape)
     {
         var api = await db.ApiAsync();
-        var typed = $"my-secret-{Guid.NewGuid():N}";
+        var typed = string.Format(System.Globalization.CultureInfo.InvariantCulture, shape, Guid.NewGuid().ToString("N"));
+
+        var before = await db.ScalarAsync<long>(MigratedDatabase.Migrator, "SELECT coalesce(max(id), 0) FROM account_events");
 
         (_, var response) = await api.SignInAsync(typed);
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
         var leaks = await db.ScalarAsync<long>(MigratedDatabase.Migrator, "SELECT count(*) FROM account_events WHERE account_events::text LIKE '%' || $1 || '%'", typed);
         Assert.Equal(0, leaks);
-        Assert.Equal(1, await db.ScalarAsync<long>(
-            MigratedDatabase.Migrator, "SELECT count(*) FROM account_events WHERE type = 'sign_in_failed' AND detail = 'not_an_email' AND email IS NULL AND at > clock_timestamp() - interval '1 minute'"));
+        // The attempt itself is still logged, without the text. Other cases of this test may add rows of their own.
+        Assert.True(await db.ScalarAsync<long>(
+            MigratedDatabase.Migrator, "SELECT count(*) FROM account_events WHERE id > $1 AND type = 'sign_in_failed' AND detail = 'not_an_email' AND email IS NULL", before) >= 1);
     }
 
     private static async Task SignOutAsync(HttpClient http)
@@ -164,7 +232,7 @@ public sealed class AccountEventTests(MigratedDatabase db)
     private async Task<List<Row>> ReadAsync(string where, object value)
     {
         await using var connection = await db.OpenAsync(MigratedDatabase.Migrator);
-        await using var command = new Npgsql.NpgsqlCommand($"SELECT type, user_id, detail, session_id FROM account_events {where} ORDER BY id", connection);
+        await using var command = new Npgsql.NpgsqlCommand($"SELECT type, user_id, detail, session_id, email FROM account_events {where} ORDER BY id", connection);
         command.Parameters.Add(new Npgsql.NpgsqlParameter { Value = value });
         await using var reader = await command.ExecuteReaderAsync(TestContext.Current.CancellationToken);
         var rows = new List<Row>();
@@ -175,11 +243,12 @@ public sealed class AccountEventTests(MigratedDatabase db)
                 reader.GetString(0),
                 await reader.IsDBNullAsync(1, token) ? null : reader.GetGuid(1),
                 await reader.IsDBNullAsync(2, token) ? null : reader.GetString(2),
-                await reader.IsDBNullAsync(3, token) ? null : reader.GetGuid(3)));
+                await reader.IsDBNullAsync(3, token) ? null : reader.GetGuid(3),
+                await reader.IsDBNullAsync(4, token) ? null : reader.GetString(4)));
         }
 
         return rows;
     }
 
-    private sealed record Row(string Type, Guid? UserId, string? Detail, Guid? SessionId);
+    private sealed record Row(string Type, Guid? UserId, string? Detail, Guid? SessionId, string? Email);
 }
