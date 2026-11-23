@@ -1,4 +1,5 @@
 @page "/admin/events"
+@implements IAsyncDisposable
 @inject AuctionApi Api
 @inject Session Session
 @inject NavigationManager Navigation
@@ -9,6 +10,9 @@
         <MudText Typo="Typo.h4" HtmlTag="h1">Event log</MudText>
         <p class="muted page-sub">Everything that happens on the site: accounts, admin actions, listings and bids. Entries can't be changed or removed.</p>
     </div>
+    <button type="button" class="@($"live-toggle{(_live ? " is-on" : "")}")" aria-pressed="@(_live ? "true" : "false")" @onclick="ToggleLiveAsync">
+        <span class="beacon @(_live ? "is-live" : "is-off")" aria-hidden="true"></span>Live
+    </button>
 </div>
 
 @if (_forbidden)
@@ -62,7 +66,7 @@ else
     else
     {
         <section class="panel events-panel" aria-label="Events">
-            <EventList Events="_events" />
+            <EventList Events="_events" OnReading="reading => _reading = reading" />
         </section>
         @if (_next is not null)
         {
@@ -98,6 +102,7 @@ else
     [SupplyParameterFromQuery(Name = "to")]
     public string? To { get; set; }
 
+    private readonly CancellationTokenSource _stop = new();
     private List<string> _categories = [];
     private string _search = "";
     private DateTimeOffset _from;
@@ -107,6 +112,8 @@ else
     private string? _next;
     private string? _message;
     private bool _forbidden;
+    private bool _live;
+    private bool _reading;
 
     private string RangeLabel => Range switch
     {
@@ -197,4 +204,58 @@ else
         return Task.CompletedTask;
     }
 
+    // Live mode slides the window to now every 5 seconds and adds what's new on top; it holds still while a row is open.
+    private Task ToggleLiveAsync()
+    {
+        _live = !_live;
+        if (_live)
+        {
+            _ = PollAsync(_stop.Token);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private async Task PollAsync(CancellationToken cancellationToken)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(5));
+        try
+        {
+            while (_live && await timer.WaitForNextTickAsync(cancellationToken))
+            {
+                if (_reading || Range == "custom")
+                {
+                    continue;
+                }
+
+                await InvokeAsync(TickAsync);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Left the page.
+        }
+    }
+
+    private async Task TickAsync()
+    {
+        var span = Ranges.First(r => r.Value == Range).Span;
+        var newest = _events is { Count: > 0 } shown ? shown[0].At : _from;
+        (_to, _from) = (DateTimeOffset.UtcNow.AddSeconds(1), DateTimeOffset.UtcNow.AddSeconds(1) - span);
+        var newer = await Api.AdminEventsAsync(Filter with { From = newest > _from ? newest : _from }, null);
+        if (newer.Succeeded && _events is not null)
+        {
+            _events = [.. LiveEvents.Merge(_events, newer.Value!.Items)];
+        }
+
+        _histogram = (await Api.AdminEventHistogramAsync(Filter)).Value ?? _histogram;
+        StateHasChanged();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _live = false;
+        await _stop.CancelAsync();
+        _stop.Dispose();
+    }
 }
