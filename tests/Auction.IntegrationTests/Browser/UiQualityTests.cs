@@ -46,6 +46,68 @@ public sealed class UiQualityTests(MigratedDatabase db, Browsers browsers)
     }
 
     [Fact]
+    public async Task The_admin_users_user_and_event_log_pages_pass_the_accessibility_check_and_fit_a_phone()
+    {
+        if (Environment.GetEnvironmentVariable(Browsers.BaseUrlVariable) is { Length: > 0 })
+        {
+            return; // The long-named account is made through the in-process API.
+        }
+
+        // The longest name and a long email, so wrapping is tested with the worst case.
+        var api = await db.ApiAsync();
+        var longName = $"Maximilian Bartholomew {Guid.NewGuid():N}"[..50];
+        var user = await api.SignUpAsync(longName);
+        var seller = await api.SignUpAsync("Quality seller");
+        var listed = await seller.PublishedAsync(Api.ApiCalls.Terms(title: $"Quality lot {Guid.NewGuid():N}"[..30], bidEntry: "fixed_increment"));
+        using (var bid = await user.Http.BidAsync(listed, 1000))
+        {
+            Assert.Equal(System.Net.HttpStatusCode.Created, bid.StatusCode);
+        }
+
+        var site = await Browsers.SiteAsync(db);
+        var page = await browsers.NewPageAsync(site);
+        await page.SignUpAsync("Quality admin", role: "Admin");
+        var paths = new[] { $"/admin/users?q={Uri.EscapeDataString(longName)}", $"/admin/users/{user.Id}", "/admin/events?range=15m" };
+        var problems = new List<string>();
+
+        foreach (var path in paths)
+        {
+            await page.SetViewportSizeAsync(1280, 900);
+            await page.GotoAsync(path);
+            await Assertions.Expect(page.Locator("h1")).ToBeVisibleAsync();
+            await Assertions.Expect(page.GetByTestId("state-loading")).ToHaveCountAsync(0);
+            problems.AddRange((await page.RunAxe()).Violations
+                .Where(v => v.Impact is "serious" or "critical")
+                .Select(v => $"{path}: {v.Id} ({v.Impact}) {string.Join(" | ", v.Nodes.Take(2).Select(n => n.Html))}"));
+
+            await page.SetViewportSizeAsync(360, 740);
+            await page.ReloadAsync();
+            await Assertions.Expect(page.Locator("h1")).ToBeVisibleAsync();
+            await Assertions.Expect(page.GetByTestId("state-loading")).ToHaveCountAsync(0);
+            var wide = await page.EvaluateAsync<string[]>("""
+                () => {
+                    const width = document.documentElement.clientWidth;
+                    // Inside a box that scrolls sideways and itself fits the screen, such as the admin sections strip.
+                    const inScroller = e => {
+                        for (let a = e.parentElement; a && a !== document.body; a = a.parentElement) {
+                            if (['auto', 'scroll'].includes(getComputedStyle(a).overflowX) && a.getBoundingClientRect().right <= width + 1) return true;
+                        }
+                        return false;
+                    };
+                    return [...document.querySelectorAll('body *')]
+                    .filter(e => !e.closest('.table-scroll') && !inScroller(e) && e.getClientRects().length > 0)
+                    .filter(e => e.getBoundingClientRect().right > document.documentElement.clientWidth + 1)
+                    .slice(0, 3)
+                    .map(e => e.tagName + '.' + e.className);
+                }
+                """);
+            problems.AddRange(wide.Select(w => $"{path} at 360 px: {w} runs past the edge"));
+        }
+
+        Assert.True(problems.Count == 0, string.Join(Environment.NewLine, problems));
+    }
+
+    [Fact]
     public async Task The_journey_works_at_360_px_without_sideways_scrolling()
     {
         var site = await Browsers.SiteAsync(db);
