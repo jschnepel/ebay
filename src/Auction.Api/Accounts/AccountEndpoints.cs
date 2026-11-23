@@ -104,7 +104,7 @@ internal static class AccountEndpoints
         if (!await guard.TryAttemptAsync(key))
         {
             var known = typed is null ? null : await accounts.FindAsync(typed, http.RequestAborted);
-            await events.RecordAsync(AccountEvents.SignInFailed, known?.Id.Value, recorded, "too_many_attempts", null, http.RequestAborted);
+            await events.RecordAsync(AccountEvents.SignInFailed, known?.Id.Value, recorded, "too_many_attempts", null, CancellationToken.None);
             http.Response.Headers.RetryAfter = "60";
             return Problems.Of(StatusCodes.Status429TooManyRequests, "too_many_attempts", "Too many sign-in attempts for this account; try again later.");
         }
@@ -118,7 +118,7 @@ internal static class AccountEndpoints
             }
 
             await events.RecordAsync(
-                AccountEvents.SignInFailed, account?.Id.Value, recorded, FailureCause(account, body.Password, recorded is not null), null, http.RequestAborted);
+                AccountEvents.SignInFailed, account?.Id.Value, recorded, FailureCause(account, body.Password, recorded is not null), null, CancellationToken.None);
 
             // The same answer whether the email is unknown or the password is wrong.
             return Problems.Of(StatusCodes.Status401Unauthorized, "sign_in_failed", "The email or password is incorrect.");
@@ -135,7 +135,7 @@ internal static class AccountEndpoints
         {
             await http.RequestServices.GetRequiredService<SessionStore>().RevokeAsync(session, http.RequestAborted);
             await http.RequestServices.GetRequiredService<AccountEvents>().RecordAsync(
-                AccountEvents.SignOut, http.User.UserIdOf()?.Value, null, null, session, http.RequestAborted);
+                AccountEvents.SignOut, http.User.UserIdOf()?.Value, null, null, session, CancellationToken.None);
         }
 
         await http.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
@@ -173,8 +173,8 @@ internal static class AccountEndpoints
     {
         var (session, ended) = await http.RequestServices.GetRequiredService<SessionStore>().StartAsync(account.Id, http.RequestAborted);
         var events = http.RequestServices.GetRequiredService<AccountEvents>();
-        await events.RecordAsync(eventType, account.Id.Value, email, null, session, http.RequestAborted);
-        await events.RecordManyAsync(AccountEvents.SessionReplaced, ended, account.Id.Value, null, http.RequestAborted);
+        await events.RecordAsync(eventType, account.Id.Value, email, null, session, CancellationToken.None);
+        await events.RecordManyAsync(AccountEvents.SessionReplaced, ended, account.Id.Value, null, CancellationToken.None);
         await http.SignInAsync(
             CookieAuthenticationDefaults.AuthenticationScheme, Principal.For(account, session), new AuthenticationProperties { IsPersistent = true });
         await Live.SignOuts.TellAsync(http.RequestServices, ended, http.RequestAborted);

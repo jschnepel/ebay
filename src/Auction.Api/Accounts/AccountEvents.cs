@@ -5,7 +5,8 @@ namespace Auction.Api.Accounts;
 /// <summary>
 /// Writes account activity to <c>auction.account_events</c> for the admin event log: sign-ups, sign-ins, failed
 /// sign-ins and why, sign-outs, and sessions ended by a newer sign-in or a disable. The database stamps the time;
-/// no password, IP or user agent is passed in.
+/// no password, IP or user agent is passed in. Callers pass CancellationToken.None: a client that hangs up mid-request
+/// mustn't be able to keep its own failed sign-in out of the log.
 /// </summary>
 internal sealed class AccountEvents(NpgsqlDataSource dataSource)
 {
