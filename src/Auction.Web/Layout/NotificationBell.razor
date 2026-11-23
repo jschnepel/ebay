@@ -5,11 +5,16 @@
 
 @* The bell opens the latest notices over the page you're on; the full history stays on /notifications. *@
 <div class="bell" @onkeydown="OnKeyDown">
-    <MudBadge Content="@Notices.Unread" Visible="@(Notices.Unread > 0)" Color="Color.Error" Overlap="true" Class="mr-2">
+    @* The count sits on the icon's top-right corner, inside the bar; the button's label says it for screen readers. *@
+    <span class="bell-anchor">
         <MudIconButton Icon="@Icons.Material.Filled.Notifications" Color="Color.Inherit" OnClick="ToggleAsync"
                        aria-label="@($"Notifications, {Notices.Unread} unread")" aria-expanded="@(_open ? "true" : "false")"
                        aria-haspopup="dialog" data-testid="bell" />
-    </MudBadge>
+        @if (Notices.Unread > 0)
+        {
+            <span class="bell-count" aria-hidden="true" data-testid="unread-badge">@(Notices.Unread > 99 ? "99+" : Notices.Unread.ToString(System.Globalization.CultureInfo.InvariantCulture))</span>
+        }
+    </span>
 
     @if (_open)
     {

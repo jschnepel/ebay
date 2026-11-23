@@ -183,6 +183,9 @@ h2.mud-typography { font-size: 1.25rem; font-weight: 600; color: var(--ink); }
 
 /* The notification bell's dropdown: the latest notices over the page, newest first, unread ones in bold. */
 .bell { position: relative; display: flex; align-items: center; }
+.bell-anchor { position: relative; display: inline-flex; margin-right: 0.5rem; }
+.bell-count { position: absolute; top: 3px; right: 5px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--alert); color: #fff;
+    font-size: 11px; font-weight: 700; line-height: 18px; text-align: center; font-variant-numeric: tabular-nums; pointer-events: none; box-shadow: 0 0 0 2px var(--ink); }
 .bell-backdrop { position: fixed; inset: 0; z-index: 1300; }
 .bell-panel { position: absolute; top: calc(100% + 0.5rem); right: 0.5rem; z-index: 1301; width: 22rem; max-height: min(32rem, 75vh);
     display: flex; flex-direction: column; background: var(--surface); color: var(--ink); border: 1px solid var(--line);

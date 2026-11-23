@@ -71,6 +71,39 @@ public sealed class SessionAndBellTests(MigratedDatabase db, Browsers browsers)
     }
 
     [Fact]
+    public async Task The_unread_badge_shows_its_number_on_the_bells_corner_inside_the_bar()
+    {
+        if (Environment.GetEnvironmentVariable(Browsers.BaseUrlVariable) is { Length: > 0 })
+        {
+            return; // The notices are written straight to the test database.
+        }
+
+        var page = await browsers.NewPageAsync(await Browsers.SiteAsync(db));
+        var email = await page.SignUpAsync("Badge reader");
+        var user = await db.ScalarAsync<Guid>(MigratedDatabase.Migrator, "SELECT id FROM users WHERE normalized_email = upper($1)", email);
+        foreach (var _ in new[] { 1, 2 })
+        {
+            await db.ExecuteAsync(MigratedDatabase.Migrator, "INSERT INTO notifications (user_id, kind) VALUES ($1, 'outbid')", user);
+        }
+
+        await page.ReloadAsync();
+        await Assertions.Expect(page.GetByTestId("unread-count")).ToHaveTextAsync("2");
+
+        await Assertions.Expect(page.GetByTestId("unread-badge")).ToHaveTextAsync("2");
+        var box = await page.EvaluateAsync<double[]>("""
+            () => {
+                const badge = document.querySelector('[data-testid=unread-badge]').getBoundingClientRect();
+                const icon = document.querySelector('[data-testid=bell] svg').getBoundingClientRect();
+                const bar = document.querySelector('.appbar').getBoundingClientRect();
+                return [badge.top - bar.top, bar.bottom - badge.bottom, badge.left - icon.left, icon.right - badge.left, icon.bottom - badge.top];
+            }
+            """);
+        Assert.True(box[0] >= 0 && box[1] >= 0, $"The badge runs outside the bar: {string.Join(", ", box)}");
+        // It sits on the icon's top-right corner: it starts inside the icon and overlaps it.
+        Assert.True(box[2] > 0 && box[3] > 0 && box[4] > 0, $"The badge doesn't overlap the bell's corner: {string.Join(", ", box)}");
+    }
+
+    [Fact]
     public async Task The_bell_dropdown_marks_everything_read_links_to_the_full_list_and_closes_with_escape()
     {
         var site = await Browsers.SiteAsync(db);
