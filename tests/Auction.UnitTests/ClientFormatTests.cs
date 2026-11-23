@@ -68,6 +68,33 @@ public sealed class ClientFormatTests
         Assert.Equal(expected, Format.Placed(leads, proxy, cents, price));
     }
 
+    [Fact]
+    public void A_date_names_its_month_so_it_reads_the_same_everywhere()
+    {
+        var local = new DateTime(2026, 11, 3, 8, 4, 0, DateTimeKind.Local);
+
+        Assert.Equal("3 Nov 2026, 08:04", Format.Time(new DateTimeOffset(local)));
+    }
+
+    [Fact]
+    public void A_recent_time_says_today_and_an_older_one_gives_its_date()
+    {
+        var now = DateTimeOffset.Now;
+        var noon = new DateTimeOffset(now.Year, now.Month, now.Day, 12, 0, 5, now.Offset);
+        var lastYear = new DateTimeOffset(new DateTime(now.Year - 1, 3, 9, 17, 30, 0, DateTimeKind.Local));
+
+        Assert.Equal("Today 12:00:05", Format.Recent(noon));
+        Assert.Equal($"9 Mar {now.Year - 1}, 17:30", Format.Recent(lastYear));
+    }
+
+    [Fact]
+    public void The_time_zone_is_given_as_its_distance_from_utc()
+    {
+        Assert.Matches(@"^UTC[+\u2212]\d{2}:\d{2}$", Format.Zone(DateTimeOffset.Now));
+        Assert.Equal("UTC\u221207:00", Format.Zone(new DateTimeOffset(2026, 11, 23, 8, 0, 0, TimeSpan.FromHours(-7))));
+        Assert.Equal("UTC+05:30", Format.Zone(new DateTimeOffset(2026, 11, 23, 8, 0, 0, new TimeSpan(5, 30, 0))));
+    }
+
     [Theory]
     [InlineData(0, "live auctions")]
     [InlineData(1, "live auction")]

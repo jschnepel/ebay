@@ -13,8 +13,16 @@ public static class Format
     public static string Price(AuctionSummary auction) =>
         auction.CurrentPriceCents is { } price ? Dollars(price) : $"{Dollars(auction.OpeningPriceCents)} (opening)";
 
+    /// <summary>A date and time in the person's own time zone, with the month named so the order can't be misread.</summary>
     public static string Time(DateTimeOffset instant) =>
-        instant.ToLocalTime().ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
+        instant.ToLocalTime().ToString("d MMM yyyy, HH:mm", CultureInfo.InvariantCulture);
+
+    /// <summary>The time zone those times are in, as its distance from UTC ("UTC−07:00").</summary>
+    public static string Zone(DateTimeOffset instant)
+    {
+        var offset = instant.Offset;
+        return $"UTC{(offset < TimeSpan.Zero ? "\u2212" : "+")}{offset.Duration():hh\\:mm}";
+    }
 
     /// <summary>An account's kind in the words the admin area uses.</summary>
     public static string Kind(string kind) => kind switch
@@ -32,8 +40,8 @@ public static class Format
     {
         var local = instant.ToLocalTime();
         return local.Date == DateTimeOffset.Now.Date
-            ? local.ToString("HH:mm:ss", CultureInfo.InvariantCulture)
-            : local.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
+            ? local.ToString("'Today' HH:mm:ss", CultureInfo.InvariantCulture)
+            : Time(instant);
     }
 
     /// <summary>How a bid was made. A bid beaten at once has no amount: it stays private.</summary>

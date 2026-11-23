@@ -54,6 +54,7 @@
                 </MudAlert>
             }
             @Body
+            <footer class="site-foot muted" data-testid="time-zone">Times are shown in your time zone, @Format.Zone(DateTimeOffset.Now).</footer>
         </MudContainer>
     </MudMainContent>
 </MudLayout>
