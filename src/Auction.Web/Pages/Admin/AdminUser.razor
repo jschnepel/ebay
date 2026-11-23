@@ -25,7 +25,7 @@ else
             <MudText Typo="Typo.h4" HtmlTag="h1">@user.DisplayName</MudText>
             <p class="muted page-sub">
                 <span data-testid="user-email">@user.Email</span><br />
-                Joined @Format.Time(user.CreatedAt), last signed in @(user.LastSignInAt is { } at ? Format.Recent(at) : "never").
+                Joined @Format.Time(user.CreatedAt), @(user.LastSignInAt is { } at ? $"last signed in {Format.Recent(at)}" : "never signed in").
                 <span class="id">@user.Id</span>
             </p>
         </div>
