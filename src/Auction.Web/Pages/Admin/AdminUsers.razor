@@ -14,13 +14,8 @@
 else
 {
     <div class="searchbar is-two" role="search">
-        <MudTextField @bind-Value="_query" Label="Display name or account id" Variant="Variant.Outlined" Margin="Margin.Dense" Immediate="true" OnKeyDown="SearchOnEnterAsync" />
+        <MudTextField @bind-Value="_query" Label="Name, email or id" Variant="Variant.Outlined" Margin="Margin.Dense" Immediate="true" OnKeyDown="SearchOnEnterAsync" />
         <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SearchAsync">Search</MudButton>
-    </div>
-
-    <div class="reason-bar">
-        <MudTextField @bind-Value="_reason" Label="Reason (kept in the audit log)" Variant="Variant.Outlined" Margin="Margin.Dense"
-                      Immediate="true" MaxLength="500" HelperText="Every enable or disable needs one." />
     </div>
 
     @if (_message is not null)
@@ -55,11 +50,16 @@ else
                             {
                                 <span class="muted">You</span>
                             }
+                            else if (user.Disabled)
+                            {
+                                <ReasonPopover Title="@($"Enable {user.DisplayName}?")" Action="Enable" TriggerVariant="Variant.Outlined"
+                                               OnConfirm="reason => ToggleAsync(user, reason)" />
+                            }
                             else
                             {
-                                <MudButton Size="Size.Small" Variant="@(user.Disabled ? Variant.Outlined : Variant.Text)" Color="@(user.Disabled ? Color.Primary : Color.Error)" OnClick="() => ToggleAsync(user)" Disabled="_busy">
-                                    @(user.Disabled ? "Enable" : "Disable")
-                                </MudButton>
+                                <ReasonPopover Title="@($"Disable {user.DisplayName}?")" Action="Disable" Tone="Color.Error"
+                                               Helper="They're signed out at once. Kept in the event log."
+                                               OnConfirm="reason => ToggleAsync(user, reason)" />
                             }
                         </td>
                     </tr>
@@ -75,12 +75,10 @@ else
 
 @code {
     private string _query = "";
-    private string _reason = "";
     private List<UserSummary>? _items;
     private string? _next;
     private string? _message;
     private bool _failed;
-    private bool _busy;
     private bool _forbidden;
     private bool _loadFailed;
 
@@ -123,17 +121,9 @@ else
         _next = page.Value.NextCursor;
     }
 
-    private async Task ToggleAsync(UserSummary user)
+    private async Task ToggleAsync(UserSummary user, string reason)
     {
-        if (string.IsNullOrWhiteSpace(_reason))
-        {
-            (_failed, _message) = (true, "Give a reason first; it goes in the audit log.");
-            return;
-        }
-
-        _busy = true;
-        var result = await Api.SetUserDisabledAsync(user.Id, !user.Disabled, _reason);
-        _busy = false;
+        var result = await Api.SetUserDisabledAsync(user.Id, !user.Disabled, reason);
         var done = user.Disabled ? "Enabled" : "Disabled";
         (_failed, _message) = result.Succeeded ? (false, $"{done} {user.DisplayName}.") : (true, result.Message);
         await SearchAsync();
