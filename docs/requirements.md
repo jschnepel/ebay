@@ -299,7 +299,7 @@ Every row needs a test. Rows marked **control** are the known-good cases that ma
 | User (non-admin) | Switch between the Buy and Sell areas | — | allowed without signing in again (control) |
 | Admin | Disable / enable | a user account (not their own) | 200, audited |
 | Admin | Disable | their own account | 409 (prevents locking the admin out) |
-| Admin | See bidder and seller identities | admin lists, auction history, audit log | display name, email and account ID. Only admins see emails; bidders and sellers see each other as anonymous labels |
+| Admin | See bidder and seller identities | admin lists, user pages, event log | display name and account ID everywhere; email as well in the user list, a user's page and the event log. Only admins see emails, and an auction's public bid history shows anonymous labels to everyone |
 | Admin | Start / stop a simulator profile | bounded profiles (smoke and realistic under `DEMO_MODE`) | 202 (control) / 409 for hot-burst under `DEMO_MODE` |
 | Disabled user | Any authenticated request | — | 401 |
 | User | Read notifications | own notifications | 200 (control) |
