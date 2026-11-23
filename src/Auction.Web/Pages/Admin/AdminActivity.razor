@@ -3,8 +3,11 @@
 @inject AuctionApi Api
 @inject Session Session
 
-<PageTitle>Admin activity</PageTitle>
-<MudText Typo="Typo.h4" HtmlTag="h1" Class="mb-4">Activity</MudText>
+<PageTitle>Admin overview</PageTitle>
+<div class="page-head">
+    <MudText Typo="Typo.h4" HtmlTag="h1">Overview</MudText>
+    <p class="muted page-sub">The whole site at a glance. Everything here refreshes every second.</p>
+</div>
 
 @if (_forbidden)
 {
@@ -12,53 +15,83 @@
 }
 else
 {
-    <div class="admin-grid">
-        <section class="panel">
-            <MudText Typo="Typo.h6" HtmlTag="h2">Right now</MudText>
-            @if (_activity is { } activity)
-            {
-                <div class="figures">
-                    <dl class="figure"><dd data-testid="active-auctions">@activity.ActiveAuctions</dd><dt>@Format.Noun(activity.ActiveAuctions, "live auction", "live auctions")</dt></dl>
-                    <dl class="figure"><dd>@activity.BidsLastFiveMinutes</dd><dt>@Format.Noun(activity.BidsLastFiveMinutes, "bid", "bids") in the last 5 min, automatic ones included</dt></dl>
-                    <dl class="figure"><dd>@activity.OnlineUsers</dd><dt>@Format.Noun(activity.OnlineUsers, "person", "people") signed in</dt></dl>
-                </div>
-                <MudText Typo="Typo.subtitle2" HtmlTag="h3" Class="mb-1">Latest bids</MudText>
-                @if (activity.RecentBids.Count == 0)
+    @* The headline figures, read left to right: how busy the site is, then how well it's coping. *@
+    <section class="readout" aria-label="Right now">
+        <dl class="readout-cell">
+            <dt>Live auctions</dt>
+            <dd class="readout-value" data-testid="active-auctions">@(_activity?.ActiveAuctions.ToString("N0") ?? "–")</dd>
+        </dl>
+        <dl class="readout-cell">
+            <dt>Bids, last 5 min</dt>
+            <dd class="readout-value">@(_activity?.BidsLastFiveMinutes.ToString("N0") ?? "–")</dd>
+            <dd class="readout-note">automatic ones included</dd>
+        </dl>
+        <dl class="readout-cell">
+            <dt>Signed in</dt>
+            <dd class="readout-value">@(_activity?.OnlineUsers.ToString("N0") ?? "–")</dd>
+            <dd class="readout-note">@Format.Noun(_activity?.OnlineUsers ?? 0, "person", "people")</dd>
+        </dl>
+        <dl class="readout-cell">
+            <dt>Bid response, 95th pct.</dt>
+            <dd class="readout-value">@(_kpis?.Bid.P95Ms?.ToString("N0") ?? "–")@if (_kpis?.Bid.P95Ms is not null)
+                {<span class="readout-unit">ms</span>}</dd>
+            <dd class="readout-note">@(_kpis is { } k ? $"median {Ms(k.Bid.P50Ms)}" : "")</dd>
+        </dl>
+        <dl class="readout-cell is-market">
+            <dt>Live marketplace</dt>
+            <dd class="readout-value is-word"><span class="@($"beacon {MarketClass}")" aria-hidden="true"></span>@MarketWord</dd>
+            <dd class="readout-note">@MarketNote</dd>
+        </dl>
+    </section>
+
+    <div class="console-grid">
+        <div class="console-main">
+            <section class="panel dash-panel">
+                <header class="dash-head">
+                    <MudText Typo="Typo.h6" HtmlTag="h2">Latest bids</MudText>
+                    <span class="muted dash-meta">newest first, as they're accepted</span>
+                </header>
+                @if (_activity is { } activity)
                 {
-                    <p class="muted">No bids yet. Start a simulator run to see some.</p>
+                    @if (activity.RecentBids.Count == 0)
+                    {
+                        <div class="empty is-inset">
+                            <p class="empty-title">No bids yet</p>
+                            <p class="muted">They appear here the moment they're accepted. Start a load run to see some.</p>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="table-scroll is-wide"><MudSimpleTable Dense="true" Elevation="0">
+                            <thead><tr><th>Item</th><th class="num">Amount</th><th>How</th><th class="num">When</th></tr></thead>
+                            <tbody>
+                                @foreach (var bid in activity.RecentBids)
+                                {
+                                    <tr data-testid="recent-bid">
+                                        <td><MudLink Href="@($"auctions/{bid.AuctionId}")">@bid.Title</MudLink></td>
+                                        <td class="num">@if (bid.AmountCents is { } cents)
+                                            {@Format.Dollars(cents)}
+                                            else
+                                            {<span class="muted">private</span>}</td>
+                                        <td>@Format.How(bid.Source, bid.AmountCents)</td>
+                                        <td class="num muted">@Format.Recent(bid.AcceptedAt)</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </MudSimpleTable></div>
+                    }
                 }
                 else
                 {
-                <div class="table-scroll is-wide"><MudSimpleTable Dense="true" Elevation="0">
-                    <thead><tr><th>Item</th><th class="num">Amount</th><th>How</th><th class="num">When</th></tr></thead>
-                    <tbody>
-                        @foreach (var bid in activity.RecentBids)
-                        {
-                            <tr data-testid="recent-bid">
-                                <td><MudLink Href="@($"auctions/{bid.AuctionId}")">@bid.Title</MudLink></td>
-                                <td class="num">@if (bid.AmountCents is { } cents)
-                                    {@Format.Dollars(cents)}
-                                    else
-                                    {<span class="muted">private</span>}</td>
-                                <td>@Format.How(bid.Source, bid.AmountCents)</td>
-                                <td class="num">@Format.Recent(bid.AcceptedAt)</td>
-                            </tr>
-                        }
-                    </tbody>
-                </MudSimpleTable></div>
+                    <PageState State="ViewState.Loading" LoadingText="Loading activity…" />
                 }
-            }
-            else
-            {
-                <PageState State="ViewState.Loading" LoadingText="Loading activity…" />
-            }
-        </section>
+            </section>
 
-        <div>
-            <SimulatorPanel View="_simulator" Changed="RefreshAsync" />
-            <DemoResetPanel State="_demo" Changed="RefreshAsync" />
-            <section class="panel">
-                <MudText Typo="Typo.h6" HtmlTag="h2">Response times, last 5 minutes</MudText>
+            <section class="panel dash-panel">
+                <header class="dash-head">
+                    <MudText Typo="Typo.h6" HtmlTag="h2">Response times</MudText>
+                    <span class="muted dash-meta">last 5 minutes</span>
+                </header>
                 @if (_kpis is { } kpis)
                 {
                     <div class="table-scroll"><MudSimpleTable Dense="true" Elevation="0">
@@ -70,7 +103,7 @@ else
                                     <th scope="row">@name</th>
                                     <td class="num">@Ms(summary.P50Ms)</td>
                                     <td class="num">@Ms(summary.P95Ms)</td>
-                                    <td class="num">@summary.Count</td>
+                                    <td class="num muted">@summary.Count.ToString("N0")</td>
                                 </tr>
                             }
                         </tbody>
@@ -81,6 +114,11 @@ else
                     <PageState State="ViewState.Loading" LoadingText="Loading response times…" />
                 }
             </section>
+        </div>
+
+        <div class="console-side">
+            <SimulatorPanel View="_simulator" Changed="RefreshAsync" />
+            <DemoResetPanel State="_demo" Changed="RefreshAsync" />
         </div>
     </div>
 }
@@ -107,7 +145,38 @@ else
         }
     }
 
-    private static string Ms(long? value) => value is { } ms ? $"{ms} ms" : "none yet";
+    private static string Ms(long? value) => value is { } ms ? $"{ms:N0} ms" : "none yet";
+
+    // The live marketplace's state in a word, for the readout; the simulator panel has the detail.
+    private SimulatorLive? Market => _simulator?.Run?.Live;
+
+    private string MarketWord => _simulator switch
+    {
+        null => "–",
+        { Available: false } => "Offline",
+        _ => Market switch
+        {
+            null => "Off",
+            { State: "running" } => "Running",
+            _ => "Paused",
+        },
+    };
+
+    private string MarketClass => MarketWord switch
+    {
+        "Running" => "is-live",
+        "Paused" => "is-paused",
+        _ => "is-off",
+    };
+
+    private string MarketNote => (_simulator, Market) switch
+    {
+        (_, { State: "running" } live) => $"{live.ListingsLive} {Format.Noun(live.ListingsLive, "listing", "listings")}, {live.BidsAccepted:N0} {Format.Noun(live.BidsAccepted, "bid", "bids")}",
+        (_, { ResumesAt: { } resumesAt }) => $"resumes at {Format.Time(resumesAt)}",
+        (_, not null) => "while a load run uses its accounts",
+        ({ Available: false }, _) => "the simulator service isn't running",
+        _ => "",
+    };
 
     // Each panel draws as soon as its own answer arrives, so one slow call doesn't hold up the rest.
     private Task RefreshAsync() => Task.WhenAll(
