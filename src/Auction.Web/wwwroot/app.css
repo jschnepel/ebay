@@ -222,3 +222,22 @@ h2.mud-typography { font-size: 1.25rem; font-weight: 600; color: var(--ink); }
 .pager { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 0.5rem 0.75rem; margin-top: 0.75rem; font-size: 0.875rem; }
 .pager-size { display: flex; align-items: center; gap: 0.4rem; margin-right: auto; color: var(--muted); }
 .pager-size select { font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 0.2rem 0.4rem; }
+
+/* ===== Finish: the shared look, applied over the rules above. ===== */
+
+body { font-size: 0.9375rem; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+h1.mud-typography { font-size: 2.5rem; font-weight: 600; letter-spacing: -0.01em; margin-bottom: 1.25rem; }
+h2.mud-typography { font-size: 1.25rem; }
+
+/* The bar lines up with the page under it, and the wordmark carries a small brass lot tag. */
+.appbar.mud-appbar { box-shadow: 0 1px 0 rgba(255, 255, 255, 0.06); }
+.appbar .mud-toolbar { width: 100%; max-width: var(--page-max); margin: 0 auto; min-height: 56px; }
+.brand { display: inline-flex; align-items: center; gap: 0.55rem; font-size: 1.35rem; letter-spacing: 0.01em; }
+.brand::before { content: ""; display: inline-block; vertical-align: -0.12em; width: 0.7rem; height: 1rem; margin-right: 0.55rem; background: var(--brass); border-radius: 2px;
+    clip-path: polygon(0 18%, 50% 0, 100% 18%, 100% 100%, 0 100%); }
+.nav a { padding: 0 0.75rem; font-size: 0.9375rem; transition: color 120ms ease; }
+.nav a.active { border-bottom-color: var(--brass-bright); }
+.appbar [data-testid="signed-in-as"] { color: var(--on-ink-muted); font-size: 0.9rem; }
+/* The bar is 56px; the page starts below it with room to breathe. */
+.mud-layout .mud-main-content { padding-top: 56px; }
+.mud-main-content > .mud-container { padding-top: 2rem !important; padding-bottom: 3rem !important; }
