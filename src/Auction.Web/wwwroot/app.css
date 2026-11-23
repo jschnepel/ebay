@@ -305,3 +305,7 @@ h2.mud-typography { font-size: 1.25rem; }
 @media (max-width: 599.98px) { .form-row { grid-template-columns: minmax(0, 1fr); } }
 .form-section > *, .form-row > * { min-width: 0; }
 .form-actions { display: flex; gap: 0.5rem; padding-top: 1.25rem; margin-top: 0.75rem; border-top: 1px solid var(--line); }
+
+/* Sign-in: a little more air around the one card. */
+.auth-panel { margin-top: 3rem; box-shadow: var(--float); border: 0; }
+.auth-title { font-size: 2rem; }
