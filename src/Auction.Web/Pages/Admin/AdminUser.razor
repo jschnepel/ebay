@@ -122,6 +122,30 @@ else
             }
         </section>
     </div>
+
+    <section class="panel dash-panel user-activity" aria-label="Activity">
+        <header class="dash-head">
+            <MudText Typo="Typo.h6" HtmlTag="h2">Activity</MudText>
+            <span class="muted dash-meta">the last 7 days, newest first</span>
+            <a class="dash-link" href="@($"admin/events?range=7d&q={user.Id}")">Open in the event log</a>
+        </header>
+        @if (_activity is null)
+        {
+            <PageState State="ViewState.Loading" LoadingText="Loading activity…" />
+        }
+        else if (_activity.Count == 0)
+        {
+            <div class="empty is-inset"><p class="empty-title">Nothing in the last 7 days</p><p class="muted">Sign-ins, bids, listings and admin actions on this account show here.</p></div>
+        }
+        else
+        {
+            <EventList Events="_activity" />
+            @if (_activityNext is not null)
+            {
+                <div class="dash-foot"><MudButton Variant="Variant.Outlined" OnClick="MoreActivityAsync">Show more</MudButton></div>
+            }
+        }
+    </section>
 }
 
 @code {
@@ -129,6 +153,8 @@ else
     public Guid Id { get; set; }
 
     private UserProfile? _profile;
+    private List<LogEvent>? _activity;
+    private string? _activityNext;
     private Page<UserListing>? _listings;
     private Page<UserBidding>? _bidding;
     private Stack<string?> _listingCursors = new([null]);
@@ -193,7 +219,32 @@ else
         }
 
         (_profile, _error) = (profile.Value, null);
-        await Task.WhenAll(LoadListingsAsync(), LoadBiddingAsync());
+        await Task.WhenAll(LoadListingsAsync(), LoadBiddingAsync(), LoadActivityAsync());
+    }
+
+    // The account's own events, the last week (the log's longest range): the event log filtered to this user.
+    private EventFilter ActivityFilter
+    {
+        get
+        {
+            var now = DateTimeOffset.UtcNow;
+            return new(now.AddDays(-7), now, [], null, Id);
+        }
+    }
+
+    private async Task LoadActivityAsync()
+    {
+        var page = (await Api.AdminEventsAsync(ActivityFilter, null)).Value;
+        (_activity, _activityNext) = ([.. page?.Items ?? []], page?.NextCursor);
+    }
+
+    private async Task MoreActivityAsync()
+    {
+        if ((await Api.AdminEventsAsync(ActivityFilter, _activityNext)).Value is { } page)
+        {
+            _activity!.AddRange(page.Items);
+            _activityNext = page.NextCursor;
+        }
     }
 
     private async Task LoadListingsAsync() => _listings = (await Api.AdminUserListingsAsync(Id, _listingCursors.Peek(), _listingSize)).Value ?? new([], null);
@@ -247,5 +298,6 @@ else
         var done = user.Disabled ? "Enabled" : "Disabled";
         (_failed, _message) = result.Succeeded ? (false, $"{done} {user.DisplayName}.") : (true, result.Message);
         _profile = (await Api.AdminUserAsync(Id)).Value ?? _profile;
+        await LoadActivityAsync();
     }
 }

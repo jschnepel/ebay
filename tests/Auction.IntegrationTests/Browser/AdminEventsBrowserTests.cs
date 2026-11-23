@@ -100,4 +100,29 @@ public sealed partial class AdminEventsBrowserTests(MigratedDatabase db, Browser
         await admin.WaitForURLAsync(new Regex("/admin/events"));
         await Assertions.Expect(admin.GetByRole(AriaRole.Heading, new() { Name = "Event log", Level = 1 })).ToBeVisibleAsync();
     }
+
+    [Fact]
+    public async Task A_users_page_shows_their_activity()
+    {
+        if (Environment.GetEnvironmentVariable(Browsers.BaseUrlVariable) is { Length: > 0 })
+        {
+            return;
+        }
+
+        var api = await db.ApiAsync();
+        var name = $"Active {Guid.NewGuid():N}"[..14];
+        var user = await api.SignUpAsync(name);
+        using (var signOut = await user.Http.PostAsJsonAsync("/api/v1/account/sign-out", new { }, TestContext.Current.CancellationToken))
+        {
+            Assert.Equal(System.Net.HttpStatusCode.NoContent, signOut.StatusCode);
+        }
+
+        var admin = await browsers.NewPageAsync(await Browsers.SiteAsync(db));
+        await admin.SignUpAsync("Watching admin", role: "Admin");
+        await admin.GotoAsync($"/admin/users/{user.Id}");
+
+        var activity = admin.GetByRole(AriaRole.Region, new() { Name = "Activity" });
+        await Assertions.Expect(activity.GetByTestId("event-row").Filter(new() { HasText = $"{name} signed out" })).ToHaveCountAsync(1);
+        await Assertions.Expect(activity.GetByTestId("event-row").Filter(new() { HasText = $"{name} created an account" })).ToHaveCountAsync(1);
+    }
 }
