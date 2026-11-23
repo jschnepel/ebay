@@ -22,7 +22,7 @@ flowchart LR
     web["Blazor WASM + MudBlazor UI"]
     api["ASP.NET Core API<br/>auth + sessions, REST, SignalR hub,<br/>outbox relay, serves the WASM app"]
     engine["Auction engine<br/>gRPC service + close worker<br/>(single writer)"]
-    pg[("PostgreSQL 18<br/>auctions, bids (append-only), idempotency,<br/>outbox, notifications, admin audit,<br/>Identity, sessions, sign-in regions,<br/>auction images")]
+    pg[("PostgreSQL 18<br/>auctions, bids (append-only), idempotency,<br/>outbox, notifications, admin audit,<br/>Identity, sessions, account events, sign-in regions,<br/>auction images")]
     redis[("Redis 8<br/>cache, ending-soon index, presence,<br/>rate limits, session cache,<br/>SignalR backplane")]
     sim["CLI simulator<br/>(virtual users)"]
     verifier["Verifier / oracle<br/>(separate tool)"]
@@ -41,7 +41,7 @@ flowchart LR
   api -->|"ADM-02 start/stop a bounded profile<br/>(internal network, admin only)"| sim
   api ==>|"BOUNDARY: gRPC auction.v1 (.proto), deadline on every call,<br/>request_id = Idempotency-Key, actor from the principal"| engine
   engine -->|"engine role: one locked transaction per command<br/>(bids, auction, image links, idempotency, outbox,<br/>notifications, audit)"| pg
-  api -->|"api role: reads, Identity, sessions, sign-in regions,<br/>image blobs, outbox read + published_at, own notifications"| pg
+  api -->|"api role: reads, Identity, sessions, account events, sign-in regions,<br/>image blobs, outbox read + published_at, own notifications"| pg
   verifier -->|"read-only role after a run<br/>(SEC-05 verifier role)"| pg
   api <-->|"cache, counters, session cache, backplane<br/>(never decides a bid)"| redis
   api -.->|"OTLP traces, metrics, logs"| otel
@@ -142,7 +142,9 @@ Everything under `/api/v1`, JSON only, documented at `/openapi/v1.json`. Errors 
 | `DELETE /auctions/{id}` | The owner deletes a draft (a published auction can only be cancelled) |
 | `GET /admin/activity`, `/admin/health`, `/admin/kpis` | Admin only: live activity, component health with the live-update backlog, latency KPIs |
 | `GET /admin/auctions?q&status`, `POST /admin/auctions/{id}/suspend`, `/resume`, `/cancel` | Admin only: published auctions (never drafts) searched by title, seller name or id; moderation through the engine with a required reason |
-| `GET /admin/users?q`, `POST /admin/users/{id}/disable`, `/enable` | Admin only: accounts by display name or id; disabling ends the account's session on its next request |
+| `GET /admin/users/{id}`, `/admin/users/{id}/listings`, `/admin/users/{id}/bidding` | Admin only: one user's profile and counts, their published auctions, and the auctions they've bid on with their standing, newest first |
+| `GET /admin/events?from&to&category&q&user`, `GET /admin/events/histogram` | Admin only: the event log, merged newest first from account events, the admin audit, demo resets, listings and bids, cursor-paged by time and a unique key; and its counts per category per time bucket |
+| `GET /admin/users?q&kind&state`, `POST /admin/users/{id}/disable`, `/enable` | Admin only: accounts by display name or id; disabling ends the account's session on its next request |
 | `GET /me/notifications`, `POST /me/notifications/{id}/read` | The signed-in user's own notifications, newest first, with the unread count |
 | `POST /images`, `GET /images/{id}` | Upload an image as base64 inside JSON (type from its own bytes, at most 5 MiB, the request at most 8 MiB); serve it with its validated type, an ETag, and `public, immutable` once published or `private, no-store` while a draft's (other viewers get 404) |
 | `POST /auctions/{id}/images`, `DELETE /auctions/{id}/images/{imageId}`, `PUT /auctions/{id}/images`, `POST /auctions/{id}/images/{imageId}/cover` | The seller's draft images through the engine: attach, remove, reorder, choose the cover |
@@ -199,11 +201,14 @@ All tables live in the `auction` schema, owned by the `migrator` role. Money is 
 | `outbox_events` | Change events with the writing transaction's `xid8`, for the relay | The `api` role may only set `published_at` | engine; relay in the API |
 | `notifications` | Outbid and closing notices per user | The `api` role may only set `read_at` | engine; read state by the API |
 | `admin_audit` | Every admin action with its reason | | engine |
+| `account_events` | Sign-ups, sign-ins, failed sign-ins and their cause, sign-outs and ended sessions, with the account and the email typed; never a password, IP or user agent | Append-only: a trigger refuses UPDATE and DELETE, even for the owner; the `api` role can't set the id or the time | API |
 | `user_limits` | Per-user draft and publish counters, locked `FOR UPDATE` | | engine |
 | `users` | Accounts: display name, email, kind (self-registered, visitor admin, seeded, simulator, admin), password hash | Email unique ignoring letter case; every kind but the two visitors create (self-registered and visitor admin, demo only) must have a password hash. Only the `api` role can read it, so no other role sees an email | api (insert only) |
 | `demo_resets` | Demo resets (ADM-04): requested (by an admin's display name, cleared when done) or scheduled, and when each completed | At most one waits at a time (a partial unique index); the `api` role may only insert a request and read | migrator (the demo-clock) |
 
 Session tables arrive with step 12 and image tables with step 13; each comes with its own grants and tests.
+
+**The event log reads where events already live.** Only account activity gets a table of its own (`account_events`, written by the API). Bids, listings and admin actions are read from `bids`, `auctions`, `outbox_events` (for a seller's cancellation), `admin_audit` and `demo_resets` and merged in one bounded `UNION ALL`, so the engine and the bid path write nothing extra. Each source is cut to the requested range and the page's cursor (a time and a unique key such as `b:<auction>:<seq>`), so a busy week never loads whole. The time indexes on `bids` and `outbox_events` are BRIN: rows arrive in time order inside the engine's locked transaction, and BRIN stays accurate for almost no write cost.
 
 ## Engineering rules
 
