@@ -1,0 +1,14 @@
+@* A listing's cover at thumbnail size for a table row, or a neutral block when it has no photo. *@
+@if (Auction.CoverImageId is { } image)
+{
+    <img class="thumb" src="@($"api/v1/images/{image}")" alt="" loading="lazy" />
+}
+else
+{
+    <span class="thumb is-empty" aria-hidden="true"></span>
+}
+
+@code {
+    [Parameter, EditorRequired]
+    public AuctionSummary Auction { get; set; } = null!;
+}

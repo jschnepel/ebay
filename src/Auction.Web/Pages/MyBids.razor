@@ -33,16 +33,27 @@ else
 {
     <div class="table-scroll">
     <MudSimpleTable Dense="true">
-        <thead><tr><th>Item</th><th>Price</th><th>You</th><th>Status</th><th>Ends</th></tr></thead>
+        <thead><tr><th>Item</th><th class="num">Price</th><th>You</th><th>Status</th><th>Time</th></tr></thead>
         <tbody>
             @foreach (var auction in _list.Items)
             {
                 <tr data-testid="my-bid-row">
-                    <td><MudLink Href="@($"auctions/{auction.Id}")">@auction.Title</MudLink></td>
-                    <td>@Format.Price(auction)</td>
-                    <td>@Format.Standing(auction)</td>
+                    <td>
+                        <div class="row-item">
+                            <Thumb Auction="auction" />
+                            <MudLink Href="@($"auctions/{auction.Id}")">@auction.Title</MudLink>
+                        </div>
+                    </td>
+                    <td class="num">@Format.Price(auction)</td>
+                    <td>
+                        <span class="@($"tag {StandingTone(auction)}")">@Format.Standing(auction)</span>
+                        @if (auction.Status == "active" && !auction.YouLead)
+                        {
+                            <MudLink Class="ml-2" Href="@($"auctions/{auction.Id}")">Bid again</MudLink>
+                        }
+                    </td>
                     <td>@Format.Status(auction.Status)</td>
-                    <td>@Format.Time(auction.EndsAt)</td>
+                    <td><LotClock Auction="auction" /><div class="muted sub num">@Format.Time(auction.EndsAt)</div></td>
                 </tr>
             }
         </tbody>
@@ -55,6 +66,13 @@ else
 }
 
 @code {
+    private static string StandingTone(BiddingSummary auction) => Format.Standing(auction) switch
+    {
+        "Leading" or "Won" => "is-live",
+        "Outbid" => "is-warn",
+        _ => "",
+    };
+
     private LiveList<BiddingSummary> _list = null!;
     private bool _signedOut;
 

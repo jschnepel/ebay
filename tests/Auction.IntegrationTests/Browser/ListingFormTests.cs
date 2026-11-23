@@ -82,6 +82,45 @@ public sealed class ListingFormTests(MigratedDatabase db, Browsers browsers)
         await Assertions.Expect(page.GetByTestId("gallery-main")).ToBeVisibleAsync();
     }
 
+    [Fact]
+    public async Task The_sellers_list_shows_each_listing_at_a_glance_and_asks_before_cancelling()
+    {
+        var page = await browsers.NewPageAsync(await Browsers.SiteAsync(db));
+        var title = $"At a glance {Guid.NewGuid():N}"[..20];
+        await page.SignUpAsync("Glancing seller");
+        await page.GotoAsync("/sell");
+        await Assertions.Expect(page.GetByText("up to 10 drafts")).ToBeVisibleAsync();
+
+        await page.GotoAsync("/sell/new");
+        await page.GetByLabel("Title").FillAsync(title);
+        await page.GetByLabel("Opening price ($)").FillAsync("5.00");
+        await page.GetByLabel("Reserve ($)").FillAsync("6.00");
+        await page.GetByRole(AriaRole.Button, new() { Name = "Save draft" }).ClickAsync();
+        await Assertions.Expect(page.GetByTestId("draft-saved")).ToBeVisibleAsync();
+        await page.GetByLabel("Add an image").SetInputFilesAsync(new FilePayload { Name = "photo.png", MimeType = "image/png", Buffer = TestImages.Png() });
+        await Assertions.Expect(page.GetByTestId("draft-image")).ToHaveCountAsync(1);
+        await page.GotoAsync("/sell");
+        var row = page.GetByTestId("my-auction-row").Filter(new() { HasText = title });
+        await row.GetByRole(AriaRole.Button, new() { Name = "Publish" }).ClickAsync();
+        await page.GetByRole(AriaRole.Dialog).GetByRole(AriaRole.Button, new() { Name = "Publish listing" }).ClickAsync();
+
+        // Its photo, how long is left and when it ends, without opening it.
+        await Assertions.Expect(row.Locator("img.thumb")).ToBeVisibleAsync();
+        await Assertions.Expect(row).ToContainTextAsync("left");
+        await Assertions.Expect(row).ToContainTextAsync("Active");
+
+        // Cancelling can't be undone, so it names the listing and asks; keeping it changes nothing.
+        await row.GetByRole(AriaRole.Button, new() { Name = "Cancel listing" }).ClickAsync();
+        var confirm = page.GetByRole(AriaRole.Dialog);
+        await Assertions.Expect(confirm).ToContainTextAsync(title);
+        await confirm.GetByRole(AriaRole.Button, new() { Name = "Keep listing" }).ClickAsync();
+        await Assertions.Expect(row).ToContainTextAsync("Active");
+
+        await row.GetByRole(AriaRole.Button, new() { Name = "Cancel listing" }).ClickAsync();
+        await page.GetByRole(AriaRole.Dialog).GetByRole(AriaRole.Button, new() { Name = "Cancel listing" }).ClickAsync();
+        await Assertions.Expect(row).ToContainTextAsync("Cancelled");
+    }
+
     // A field with everything shown around it: its label, hint and error.
     private static ILocator Field(IPage page, string label) =>
         page.Locator(".mud-input-control").Filter(new() { Has = page.GetByLabel(label, new() { Exact = true }) });

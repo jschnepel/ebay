@@ -40,6 +40,7 @@ internal static partial class BrowserUser
         var row = page.GetByTestId("my-auction-row").Filter(new() { HasText = title });
         await Assertions.Expect(row).ToContainTextAsync("Draft");
         await row.GetByRole(AriaRole.Button, new() { Name = "Publish" }).ClickAsync();
+        await page.GetByRole(AriaRole.Dialog).GetByRole(AriaRole.Button, new() { Name = "Publish listing" }).ClickAsync();
         await Assertions.Expect(page.GetByTestId("sell-result")).ToContainTextAsync("Published");
         await Assertions.Expect(row).ToContainTextAsync("Active");
 

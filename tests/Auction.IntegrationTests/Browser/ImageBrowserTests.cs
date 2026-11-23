@@ -31,6 +31,7 @@ public sealed class ImageBrowserTests(MigratedDatabase db, Browsers browsers)
 
         await seller.GotoAsync("/sell");
         await row.GetByRole(AriaRole.Button, new() { Name = "Publish" }).ClickAsync();
+        await seller.GetByRole(AriaRole.Dialog).GetByRole(AriaRole.Button, new() { Name = "Publish listing" }).ClickAsync();
         await Assertions.Expect(row).ToContainTextAsync("Active");
         await row.GetByRole(AriaRole.Link, new() { Name = title }).ClickAsync();
 
@@ -84,6 +85,7 @@ public sealed class ImageBrowserTests(MigratedDatabase db, Browsers browsers)
 
         await seller.GotoAsync("/sell");
         await row.GetByRole(AriaRole.Button, new() { Name = "Publish" }).ClickAsync();
+        await seller.GetByRole(AriaRole.Dialog).GetByRole(AriaRole.Button, new() { Name = "Publish listing" }).ClickAsync();
         await Assertions.Expect(row).ToContainTextAsync("Active");
 
         var buyer = await browsers.NewPageAsync(site);

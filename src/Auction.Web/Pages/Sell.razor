@@ -2,6 +2,7 @@
 @implements IAsyncDisposable
 @inject AuctionApi Api
 @inject Session Session
+@inject IDialogService Dialogs
 @inject LiveUpdates Live
 @inject ViewRefresher Refresher
 
@@ -34,23 +35,28 @@ else
     {
         <div class="empty">
             <p class="empty-title">Nothing listed yet</p>
-            <p class="muted">A listing starts as a private draft. Add photos, set the price and timing, then publish it.</p>
+            <p class="muted">A listing starts as a private draft. Add photos, set the price and timing, then publish it. You can keep up to 10 drafts and publish 20 listings a day.</p>
         </div>
     }
     else
     {
         <div class="table-scroll">
     <MudSimpleTable Dense="true">
-            <thead><tr><th>Item</th><th>Price</th><th>Bids</th><th>Status</th><th>Ends</th><th>Actions</th></tr></thead>
+            <thead><tr><th>Item</th><th class="num">Price</th><th class="num">Bids</th><th>Status</th><th>Time</th><th>Actions</th></tr></thead>
             <tbody>
                 @foreach (var auction in _list.Items)
                 {
                     <tr data-testid="my-auction-row">
-                        <td><MudLink Href="@($"auctions/{auction.Id}")">@auction.Title</MudLink></td>
-                        <td>@Format.Price(auction)</td>
-                        <td>@auction.BidCount</td>
-                        <td>@Format.Status(auction.Status)@(Format.Outcome(auction) is { } outcome ? $", {outcome.ToLowerInvariant()}" : "")</td>
-                        <td>@Format.Time(auction.EndsAt)</td>
+                        <td>
+                            <div class="row-item">
+                                <Thumb Auction="auction" />
+                                <MudLink Href="@($"auctions/{auction.Id}")">@auction.Title</MudLink>
+                            </div>
+                        </td>
+                        <td class="num">@Format.Price(auction)</td>
+                        <td class="num">@auction.BidCount</td>
+                        <td><span class="@($"tag {Format.StatusTone(auction.Status)}")">@Format.Status(auction.Status)</span>@(Format.Outcome(auction) is { } outcome ? $" {outcome}" : "")</td>
+                        <td><LotClock Auction="auction" /><div class="muted sub num">@Format.Time(auction.EndsAt)</div></td>
                         <td>
                             @if (auction.Status == "draft")
                             {
@@ -60,7 +66,11 @@ else
                             }
                             else if (auction.BidCount == 0 && auction.Status is "active" or "scheduled")
                             {
-                                <MudButton Size="Size.Small" Color="Color.Error" OnClick="() => CancelAsync(auction)" Disabled="_busy">Cancel</MudButton>
+                                <MudButton Size="Size.Small" Color="Color.Error" OnClick="() => CancelAsync(auction)" Disabled="_busy">Cancel listing</MudButton>
+                            }
+                            else if (auction.Status is "active" or "scheduled")
+                            {
+                                <span class="muted sub">Has bids, so it can't be cancelled</span>
                             }
                         </td>
                     </tr>
@@ -126,14 +136,33 @@ else
         await Refresher.DisposeAsync();
     }
 
-    private Task PublishAsync(AuctionSummary auction) =>
-        RunAsync(auction.Id, "publish", key => Api.PublishAsync(auction.Id, key), $"Published \"{auction.Title}\".");
+    // Each of these can't be taken back, so it names the listing and asks first.
+    private async Task PublishAsync(AuctionSummary auction)
+    {
+        if (await ConfirmAsync($"Publish \"{auction.Title}\"?", "Bidders will see it and can bid. Its terms and photos can't be changed once it's published, and it can only be cancelled before the first bid.", "Publish listing", "Keep as draft"))
+        {
+            await RunAsync(auction.Id, "publish", key => Api.PublishAsync(auction.Id, key), $"Published \"{auction.Title}\".");
+        }
+    }
 
-    private Task DeleteAsync(AuctionSummary auction) =>
-        RunAsync(auction.Id, "delete", key => Api.DeleteDraftAsync(auction.Id, key), $"Deleted the draft \"{auction.Title}\".");
+    private async Task DeleteAsync(AuctionSummary auction)
+    {
+        if (await ConfirmAsync($"Delete the draft \"{auction.Title}\"?", "The draft and its photos are removed. This can't be undone.", "Delete draft", "Keep draft"))
+        {
+            await RunAsync(auction.Id, "delete", key => Api.DeleteDraftAsync(auction.Id, key), $"Deleted the draft \"{auction.Title}\".");
+        }
+    }
 
-    private Task CancelAsync(AuctionSummary auction) =>
-        RunAsync(auction.Id, "cancel", key => Api.CancelAsync(auction.Id, key), $"Cancelled \"{auction.Title}\".");
+    private async Task CancelAsync(AuctionSummary auction)
+    {
+        if (await ConfirmAsync($"Cancel \"{auction.Title}\"?", "It stops taking bids and can't be reopened. A listing can only be cancelled before its first bid.", "Cancel listing", "Keep listing"))
+        {
+            await RunAsync(auction.Id, "cancel", key => Api.CancelAsync(auction.Id, key), $"Cancelled \"{auction.Title}\".");
+        }
+    }
+
+    private async Task<bool> ConfirmAsync(string title, string message, string yes, string no) =>
+        await Dialogs.ShowMessageBoxAsync(title, message, yesText: yes, cancelText: no) is true;
 
     private async Task RunAsync(Guid id, string action, Func<string, Task<ApiResult<CommandResponse>>> call, string done)
     {

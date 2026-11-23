@@ -215,6 +215,7 @@ public sealed class UiQualityTests(MigratedDatabase db, Browsers browsers)
         await Assertions.Expect(stranger.GetByTestId("state-error")).ToContainTextAsync("doesn't exist"); // control
 
         await row.GetByRole(AriaRole.Button, new() { Name = "Delete" }).ClickAsync();
+        await second.GetByRole(AriaRole.Dialog).GetByRole(AriaRole.Button, new() { Name = "Delete draft" }).ClickAsync();
         await Assertions.Expect(second.GetByTestId("sell-result")).ToContainTextAsync("Deleted");
         await Assertions.Expect(row).ToHaveCountAsync(0);
     }
