@@ -1,0 +1,99 @@
+@* A listing's photos (up to four): one shown large, a thumbnail for each, and a larger view on demand. *@
+@if (Images.Count > 0)
+{
+    var image = Images[_at];
+    <div class="photo-gallery">
+        <div class="gallery-stage">
+            <button type="button" class="gallery-main" data-testid="gallery-main" aria-label="@($"Photo {_at + 1} of {Images.Count}: show larger")"
+                    @onclick="() => _larger = true" @onkeydown="OnKey">
+                <img src="@Source(image)" alt="@Alt(_at)" />
+            </button>
+            @if (Images.Count > 1)
+            {
+                <button type="button" class="gallery-step is-previous" aria-label="Previous photo" @onclick="() => Step(-1)"><span aria-hidden="true">‹</span></button>
+                <button type="button" class="gallery-step is-next" aria-label="Next photo" @onclick="() => Step(1)"><span aria-hidden="true">›</span></button>
+                <span class="gallery-count num" data-testid="gallery-count">@(_at + 1) of @Images.Count</span>
+            }
+        </div>
+        @if (Images.Count > 1)
+        {
+            <ul class="gallery-thumbs" aria-label="Photos">
+                @for (var i = 0; i < Images.Count; i++)
+                {
+                    var index = i;
+                    <li>
+                        <button type="button" class="@(index == _at ? "is-on" : null)" data-testid="gallery-thumb" aria-current="@(index == _at ? "true" : null)"
+                                aria-label="@($"Show photo {index + 1} of {Images.Count}")" @onclick="() => _at = index">
+                            <img src="@Source(Images[index])" alt="" />
+                        </button>
+                    </li>
+                }
+            </ul>
+        }
+    </div>
+
+    @if (_larger)
+    {
+        <div class="gallery-larger" role="dialog" aria-modal="true" aria-label="Photos" tabindex="-1" @ref="_dialog" @onkeydown="OnKey" @onclick="() => _larger = false">
+            <button type="button" class="gallery-close" aria-label="Close">×</button>
+            <img src="@Source(image)" alt="@Alt(_at)" @onclick:stopPropagation="true" />
+            @if (Images.Count > 1)
+            {
+                <button type="button" class="gallery-step is-previous" aria-label="Previous photo" @onclick="() => Step(-1)" @onclick:stopPropagation="true"><span aria-hidden="true">‹</span></button>
+                <button type="button" class="gallery-step is-next" aria-label="Next photo" @onclick="() => Step(1)" @onclick:stopPropagation="true"><span aria-hidden="true">›</span></button>
+                <span class="gallery-count num">@(_at + 1) of @Images.Count</span>
+            }
+        </div>
+    }
+}
+
+@code {
+    [Parameter, EditorRequired]
+    public IReadOnlyList<Guid> Images { get; set; } = [];
+
+    /// <summary>The listing's title, for each photo's description.</summary>
+    [Parameter, EditorRequired]
+    public string Title { get; set; } = "";
+
+    private int _at;
+    private bool _larger;
+    private bool _focusLarger;
+    private ElementReference _dialog;
+
+    protected override void OnParametersSet() => _at = Math.Clamp(_at, 0, Math.Max(0, Images.Count - 1));
+
+    private static string Source(Guid image) => $"api/v1/images/{image}";
+
+    private string Alt(int index) => Images.Count == 1 ? Title : $"{Title}, photo {index + 1} of {Images.Count}";
+
+    private void Step(int by) => _at = (_at + by + Images.Count) % Images.Count;
+
+    private void OnKey(KeyboardEventArgs key)
+    {
+        switch (key.Key)
+        {
+            case "ArrowLeft" when Images.Count > 1:
+                Step(-1);
+                break;
+            case "ArrowRight" when Images.Count > 1:
+                Step(1);
+                break;
+            case "Escape":
+                _larger = false;
+                break;
+        }
+    }
+
+    // The larger view takes the keyboard while it is open, so Escape and the arrows reach it.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_larger != _focusLarger)
+        {
+            _focusLarger = _larger;
+            if (_larger)
+            {
+                await _dialog.FocusAsync();
+            }
+        }
+    }
+}

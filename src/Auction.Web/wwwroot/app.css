@@ -113,8 +113,17 @@ h2.mud-typography { font-size: 1.25rem; font-weight: 600; color: var(--ink); }
 .meter.is-thick { height: 6px; border-radius: 3px; overflow: hidden; }
 
 /* The auction page: the story on the left, the ticket on the right. */
-.lot-page { display: grid; grid-template-columns: minmax(0, 1fr) minmax(18rem, 24rem); gap: 2rem; align-items: start; }
-@media (max-width: 959.98px) { .lot-page { grid-template-columns: minmax(0, 1fr); } }
+.lot-page { display: grid; grid-template-columns: minmax(0, 1fr) minmax(18rem, 24rem); column-gap: 2rem; align-items: start;
+    grid-template-areas: "title ticket" "media ticket" "body ticket"; grid-template-rows: auto auto 1fr; }
+.lot-title { grid-area: title; }
+.lot-media { grid-area: media; min-width: 0; }
+.lot-body { grid-area: body; min-width: 0; }
+.lot-page > .ticket { grid-area: ticket; }
+/* On a narrow screen the price and bidding come straight after the photo, before the description. */
+@media (max-width: 959.98px) {
+    .lot-page { grid-template-columns: minmax(0, 1fr); grid-template-areas: "title" "media" "ticket" "body"; grid-template-rows: none; }
+    .lot-page > .ticket { margin: 1rem 0 0.5rem; }
+}
 .lot-page h1 { margin: 0 0 0.75rem; overflow-wrap: anywhere; }
 .lot-page .lot-cover { border-radius: var(--radius); max-height: 26rem; }
 .lot-description { max-width: 68ch; line-height: 1.6; margin: 1rem 0 1.5rem; white-space: pre-line; }
@@ -130,9 +139,28 @@ h2.mud-typography { font-size: 1.25rem; font-weight: 600; color: var(--ink); }
 .facts { display: grid; grid-template-columns: max-content 1fr; gap: 0.4rem 1.5rem; margin: 0 0 1.5rem; font-size: 0.9375rem; }
 .facts dt { color: var(--muted); }
 .facts dd { margin: 0; }
-.gallery { display: flex; gap: 0.5rem; overflow-x: auto; margin: 0.5rem 0 0; }
-.gallery img { height: 26rem; max-width: 100%; object-fit: contain; border-radius: var(--radius); background: var(--cover); }
-@media (max-width: 599.98px) { .gallery img { height: 16rem; } }
+/* Photos: one large, a thumbnail each, a larger view over the page. */
+.photo-gallery { display: grid; gap: 0.5rem; }
+.gallery-stage { position: relative; }
+.gallery-main { display: block; width: 100%; padding: 0; border: 0; background: var(--cover); border-radius: var(--radius-lg); overflow: hidden; cursor: zoom-in; }
+.gallery-main img { display: block; width: 100%; height: 26rem; object-fit: contain; }
+@media (max-width: 599.98px) { .gallery-main img { height: 16rem; } }
+.gallery-main:focus-visible, .gallery-thumbs button:focus-visible, .gallery-step:focus-visible, .gallery-close:focus-visible { outline: 3px solid var(--brass-bright); outline-offset: 2px; }
+.gallery-step { position: absolute; top: 50%; transform: translateY(-50%); width: 2.75rem; height: 2.75rem; border: 0; border-radius: 50%;
+    background: rgba(16, 48, 59, 0.78); color: #fff; font-size: 1.75rem; line-height: 1; cursor: pointer; display: grid; place-items: center; }
+.gallery-step.is-previous { left: 0.5rem; }
+.gallery-step.is-next { right: 0.5rem; }
+.gallery-step:hover { background: var(--ink); }
+.gallery-count { position: absolute; right: 0.5rem; bottom: 0.5rem; padding: 0.15rem 0.6rem; border-radius: 999px; background: rgba(16, 48, 59, 0.78); color: #fff; font-size: 0.8125rem; }
+.gallery-thumbs { display: flex; gap: 0.5rem; list-style: none; margin: 0; padding: 0; overflow-x: auto; }
+.gallery-thumbs button { display: block; width: 4.5rem; height: 3.5rem; padding: 0; border: 2px solid transparent; border-radius: var(--radius); overflow: hidden; background: var(--cover); cursor: pointer; }
+.gallery-thumbs button.is-on { border-color: var(--ink); }
+.gallery-thumbs img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.gallery-larger { position: fixed; inset: 0; z-index: 2000; background: rgba(8, 24, 30, 0.92); display: grid; place-items: center; padding: 3.5rem 1rem 2.5rem; cursor: zoom-out; }
+.gallery-larger:focus { outline: none; }
+.gallery-larger img { max-width: 100%; max-height: 100%; object-fit: contain; cursor: default; }
+.gallery-larger .gallery-count { bottom: 0.75rem; right: 50%; transform: translateX(50%); }
+.gallery-close { position: absolute; top: 0.5rem; right: 0.5rem; width: 2.75rem; height: 2.75rem; border: 0; border-radius: 50%; background: rgba(255, 255, 255, 0.14); color: #fff; font-size: 1.75rem; line-height: 1; cursor: pointer; }
 
 /* Admin. */
 .dot { width: 0.6rem; height: 0.6rem; border-radius: 50%; background: var(--muted); flex: none; }
@@ -265,7 +293,7 @@ h2.mud-typography { font-size: 1.25rem; }
 /* The auction page's one bold element: the price board, white figures on ink with the brass clock bar. */
 .lot-page { gap: 2.5rem; }
 .lot-page h1.mud-typography { font-size: 2.25rem; }
-.gallery img, .lot-page .lot-cover { border-radius: var(--radius-lg); }
+.lot-page .lot-cover { border-radius: var(--radius-lg); }
 .ticket { padding: 0; gap: 0; border: 0; border-radius: var(--radius-lg); box-shadow: var(--float); overflow: hidden; }
 .ticket > * { margin: 0 1.25rem; }
 .ticket > :last-child { margin-bottom: 1.25rem; }
