@@ -64,6 +64,17 @@ public sealed class JourneyTests(MigratedDatabase db, Browsers browsers)
     }
 
     [Fact]
+    public async Task The_sign_in_page_has_an_email_field_and_no_password_field()
+    {
+        var visitor = await browsers.NewPageAsync(await Browsers.SiteAsync(db));
+
+        await visitor.GotoAsync("/sign-in");
+
+        await Assertions.Expect(visitor.GetByLabel("Email", new() { Exact = true })).ToBeVisibleAsync();
+        await Assertions.Expect(visitor.Locator("input[type=password]")).ToHaveCountAsync(0);
+    }
+
+    [Fact]
     public async Task A_visitor_who_is_not_signed_in_is_asked_to_sign_in_to_bid_or_sell()
     {
         var site = await Browsers.SiteAsync(db);

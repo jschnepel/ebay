@@ -159,11 +159,8 @@ public sealed class BrowserTests(StackUnderTest stack)
     private async Task<IPage> SignedInAdminAsync()
     {
         var admin = await stack.NewPageAsync();
-        await admin.GotoAsync("/sign-in");
-        await admin.GetByLabel("Email", new() { Exact = true }).FillAsync(StackUnderTest.AdminEmail);
-        await admin.GetByLabel("Password (built-in demo accounts only)").FillAsync(StackUnderTest.AdminPassword);
-        await admin.GetByRole(AriaRole.Button, new() { Name = "Sign in", Exact = true }).ClickAsync();
-        await Assertions.Expect(admin.GetByTestId("signed-in-as")).ToHaveTextAsync("Admin");
+        // The page signs in by email alone, so the browser uses an admin account a visitor creates.
+        await admin.SignUpAsync("Stack admin", role: "Admin");
         await Assertions.Expect(admin.GetByRole(AriaRole.Link, new() { Name = "Sell" })).ToHaveCountAsync(0);
         return admin;
     }

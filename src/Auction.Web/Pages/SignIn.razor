@@ -34,9 +34,8 @@
     else
     {
         <h1 id="auth-heading" class="auth-title">Sign in</h1>
-        <p class="muted auth-lede">An account you created signs in with its email alone. The built-in demo accounts also need their password.</p>
+        <p class="muted auth-lede">Enter the email of an account you created. There's no password in the demo.</p>
         <MudTextField @bind-Value="_signInEmail" Label="Email" InputType="InputType.Email" Immediate="true" Variant="Variant.Outlined" Margin="Margin.Dense" />
-        <MudTextField @bind-Value="_password" Label="Password (built-in demo accounts only)" HelperText="Leave empty for an account you created." InputType="InputType.Password" Immediate="true" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mt-3" />
         <MudButton Class="mt-4" Variant="Variant.Filled" Color="Color.Primary" FullWidth="true" OnClick="SignInAsync" Disabled="_busy">Sign in</MudButton>
         <div class="auth-switch">
             <span class="muted">New here?</span>
@@ -65,7 +64,6 @@
     private string _signUpEmail = "";
     private string _role = "user";
     private string _signInEmail = "";
-    private string _password = "";
     private string? _error;
     private bool _busy;
 
@@ -85,7 +83,8 @@
         }
     }
 
-    private Task SignInAsync() => RunAsync(() => Api.SignInAsync(_signInEmail, _password));
+    // The page signs in by email alone; the built-in accounts' passwords are for the API (the simulator uses them).
+    private Task SignInAsync() => RunAsync(() => Api.SignInAsync(_signInEmail, null));
 
     private Task SignInExistingAsync()
     {

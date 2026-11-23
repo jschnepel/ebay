@@ -12,8 +12,6 @@ namespace Auction.IntegrationTests.Browser;
 [Collection(Auction.IntegrationTests.Browser.BrowserJourneys.Name)]
 public sealed class AdminBrowserTests(MigratedDatabase db, Browsers browsers)
 {
-    private const string Password = "admin-browser-password";
-
     [Fact]
     public async Task A_visitor_creating_an_admin_account_lands_in_the_admin_area_without_buy_or_sell()
     {
@@ -83,10 +81,7 @@ public sealed class AdminBrowserTests(MigratedDatabase db, Browsers browsers)
         var id = await seller.PublishedAsync(ApiCalls.Terms(title: title));
 
         var admin = await browsers.NewPageAsync(site);
-        await admin.GotoAsync("/sign-in");
-        await admin.GetByLabel("Email", new() { Exact = true }).FillAsync(await db.InsertPasswordAccountAsync("admin", Password));
-        await admin.GetByLabel("Password (built-in demo accounts only)").FillAsync(Password);
-        await admin.GetByRole(AriaRole.Button, new() { Name = "Sign in", Exact = true }).ClickAsync();
+        await admin.SignUpAsync("Watching admin", role: "Admin");
         await Assertions.Expect(admin.GetByRole(AriaRole.Link, new() { Name = "Sell" })).ToHaveCountAsync(0);
         await admin.GotoAsync("/admin");
         await Assertions.Expect(admin.GetByTestId("kpi-row")).ToHaveCountAsync(4);
@@ -144,10 +139,7 @@ public sealed class AdminBrowserTests(MigratedDatabase db, Browsers browsers)
         await using var _ = host;
 
         var admin = await browsers.NewPageAsync(site);
-        await admin.GotoAsync("/sign-in");
-        await admin.GetByLabel("Email", new() { Exact = true }).FillAsync(await db.InsertPasswordAccountAsync("admin", Password));
-        await admin.GetByLabel("Password (built-in demo accounts only)").FillAsync(Password);
-        await admin.GetByRole(AriaRole.Button, new() { Name = "Sign in", Exact = true }).ClickAsync();
+        await admin.SignUpAsync("Watching admin", role: "Admin");
         await Assertions.Expect(admin.GetByRole(AriaRole.Link, new() { Name = "Sell" })).ToHaveCountAsync(0);
         await admin.GotoAsync("/admin");
         await Assertions.Expect(admin.GetByTestId("simulator-state")).ToHaveTextAsync("Idle.");
