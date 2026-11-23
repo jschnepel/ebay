@@ -5,11 +5,6 @@ public sealed record ApiResult<T>(T? Value, Problem? Problem)
 {
     public bool Succeeded => Problem is null;
 
-    /// <summary>The problem's title with any field errors, for an error message.</summary>
-    public string Message => Problem switch
-    {
-        null => "",
-        { Errors: { Count: > 0 } errors } => $"{Problem.Title} {string.Join("; ", errors.Select(e => $"{e.Key}: {string.Join(", ", e.Value)}"))}",
-        _ => Problem.Title ?? "The request failed.",
-    };
+    /// <summary>What a person sees for the problem: the API's title, or plain sentences for field errors.</summary>
+    public string Message => Problem is null ? "" : ProblemText.For(Problem);
 }
