@@ -96,9 +96,15 @@ public sealed class AdminBrowserTests(MigratedDatabase db, Browsers browsers)
         await admin.GotoAsync("/admin/auctions");
         await admin.GetByLabel("Title, seller name or id").FillAsync(title);
         await admin.GetByRole(AriaRole.Button, new() { Name = "Search" }).ClickAsync();
-        await admin.GetByLabel("Reason (sent to the seller and bidders, kept in the audit log)").FillAsync("Checking the photos");
+        // The reason is asked for beside the row it is about, and says who will see it.
+        await Assertions.Expect(admin.GetByLabel("Reason")).ToHaveCountAsync(0);
         await admin.GetByTestId("moderated-auction").Filter(new() { HasText = title }).GetByRole(AriaRole.Button, new() { Name = "Suspend" }).ClickAsync();
-        await Assertions.Expect(admin.GetByTestId("moderation-result")).ToContainTextAsync("Done");
+        var asked = admin.GetByRole(AriaRole.Dialog);
+        await Assertions.Expect(asked).ToContainTextAsync($"Suspend \"{title}\"?");
+        await Assertions.Expect(asked).ToContainTextAsync("seller and bidders");
+        await asked.GetByLabel("Reason").FillAsync("Checking the photos");
+        await asked.GetByRole(AriaRole.Button, new() { Name = "Suspend" }).ClickAsync();
+        await Assertions.Expect(admin.GetByTestId("moderation-result")).ToContainTextAsync($"Suspended \"{title}\"");
 
         await Assertions.Expect(watcher.GetByTestId("status")).ToHaveTextAsync("Suspended", new() { Timeout = 2_000 });
 

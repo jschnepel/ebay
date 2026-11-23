@@ -26,11 +26,6 @@ else
         <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SearchAsync">Search</MudButton>
     </div>
 
-    <div class="reason-bar">
-        <MudTextField @bind-Value="_reason" Label="Reason (sent to the seller and bidders, kept in the audit log)" Variant="Variant.Outlined" Margin="Margin.Dense"
-                      Immediate="true" MaxLength="500" HelperText="Every suspend, resume or cancel needs one." />
-    </div>
-
     @if (_message is not null)
     {
         <MudAlert Class="mb-3" Severity="@(_failed ? Severity.Error : Severity.Success)" data-testid="moderation-result"><MessageText Text="@_message" /></MudAlert>
@@ -47,14 +42,14 @@ else
     else
     {
         <div class="panel table-panel table-scroll is-wide"><MudSimpleTable Dense="true" Elevation="0">
-            <thead><tr><th>Item</th><th class="num">Price</th><th class="num">Bids</th><th>Status</th><th>Ends</th><th><span class="sr-only">Actions</span></th></tr></thead>
+            <thead><tr><th>Item</th><th class="num">Price</th><th class="num">Bids</th><th>Status</th><th>Time</th><th><span class="sr-only">Actions</span></th></tr></thead>
             <tbody>
                 @foreach (var auction in _items)
                 {
                     <tr data-testid="moderated-auction">
                         <td>
                             <MudLink Href="@($"auctions/{auction.Id}")" Class="cell-title">@auction.Title</MudLink>
-                            <div class="muted cell-sub">by @auction.SellerName</div>
+                            <div class="muted cell-sub">by <a href="@($"admin/users/{auction.SellerId}")">@auction.SellerName</a></div>
                         </td>
                         <td class="num">@(auction.CurrentPriceCents is { } cents ? Format.Dollars(cents) : "no bids")</td>
                         <td class="num">@auction.BidCount</td>
@@ -63,15 +58,21 @@ else
                         <td class="actions">
                             @if (auction.Status == "active")
                             {
-                                <MudButton Size="Size.Small" Variant="Variant.Outlined" OnClick="@(() => ModerateAsync(auction, Suspend))" Disabled="_busy">Suspend</MudButton>
+                                <ReasonPopover Title="@($"Suspend \"{auction.Title}\"?")" Action="Suspend" TriggerVariant="Variant.Outlined" Disabled="_busy"
+                                               Helper="Bidding stops until it's resumed; the end time doesn't move. The seller and bidders are sent the reason."
+                                               OnConfirm="reason => ModerateAsync(auction, Suspend, reason)" />
                             }
                             @if (auction.Status == "suspended")
                             {
-                                <MudButton Size="Size.Small" Variant="Variant.Outlined" OnClick="@(() => ModerateAsync(auction, Resume))" Disabled="_busy">Resume</MudButton>
+                                <ReasonPopover Title="@($"Resume \"{auction.Title}\"?")" Action="Resume" TriggerVariant="Variant.Outlined" Disabled="_busy"
+                                               Helper="Bidding reopens until its original end time. The seller and bidders are sent the reason."
+                                               OnConfirm="reason => ModerateAsync(auction, Resume, reason)" />
                             }
                             @if (auction.Status is "scheduled" or "active" or "suspended")
                             {
-                                <MudButton Size="Size.Small" Color="Color.Error" OnClick="@(() => ModerateAsync(auction, Cancel))" Disabled="_busy">Cancel</MudButton>
+                                <ReasonPopover Title="@($"Cancel \"{auction.Title}\"?")" Action="Cancel auction" Tone="Color.Error" Disabled="_busy"
+                                               Helper="It ends with no sale and can't be reopened; its bids stay on record. The seller and bidders are sent the reason."
+                                               OnConfirm="reason => ModerateAsync(auction, Cancel, reason)" />
                             }
                         </td>
                     </tr>
@@ -88,7 +89,6 @@ else
 @code {
     private string _query = "";
     private string _status = "";
-    private string _reason = "";
     private List<ModeratedAuction>? _items;
     private string? _next;
     private string? _message;
@@ -134,14 +134,15 @@ else
         _next = page.Value.NextCursor;
     }
 
-    private async Task ModerateAsync(ModeratedAuction auction, string action)
+    private static string Done(string action) => action switch
     {
-        if (string.IsNullOrWhiteSpace(_reason))
-        {
-            (_failed, _message) = (true, "Give a reason first; the seller and bidders see it.");
-            return;
-        }
+        Suspend => "Suspended",
+        Resume => "Resumed",
+        _ => "Cancelled",
+    };
 
+    private async Task ModerateAsync(ModeratedAuction auction, string action, string reason)
+    {
         if (!_keys.TryGetValue((auction.Id, action), out var key))
         {
             key = Guid.NewGuid().ToString();
@@ -149,14 +150,14 @@ else
         }
 
         _busy = true;
-        var result = await Api.ModerateAsync(auction.Id, action, _reason, key);
+        var result = await Api.ModerateAsync(auction.Id, action, reason, key);
         _busy = false;
         if (result.Succeeded || result.Problem!.Status is not (0 or 503))
         {
             _keys.Remove((auction.Id, action));
         }
 
-        (_failed, _message) = result.Succeeded ? (false, $"Done: {action} \"{auction.Title}\".") : (true, result.Message);
+        (_failed, _message) = result.Succeeded ? (false, $"{Done(action)} \"{auction.Title}\".") : (true, result.Message);
         await SearchAsync();
     }
 }

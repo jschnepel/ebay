@@ -126,9 +126,10 @@ public sealed class BrowserTests(StackUnderTest stack)
         await admin.GotoAsync("/admin/auctions");
         await admin.GetByLabel("Title, seller name or id").FillAsync(title);
         await admin.GetByRole(AriaRole.Button, new() { Name = "Search" }).ClickAsync();
-        await admin.GetByLabel("Reason (sent to the seller and bidders, kept in the audit log)").FillAsync(reason);
         await admin.GetByTestId("moderated-auction").Filter(new() { HasText = title }).GetByRole(AriaRole.Button, new() { Name = "Suspend" }).ClickAsync();
-        await Assertions.Expect(admin.GetByTestId("moderation-result")).ToContainTextAsync("Done");
+        await admin.GetByRole(AriaRole.Dialog).GetByLabel("Reason").FillAsync(reason);
+        await admin.GetByRole(AriaRole.Dialog).GetByRole(AriaRole.Button, new() { Name = "Suspend" }).ClickAsync();
+        await Assertions.Expect(admin.GetByTestId("moderation-result")).ToContainTextAsync("Suspended");
 
         await Assertions.Expect(watcher.GetByTestId("status")).ToHaveTextAsync("Suspended", WithinBound);
 
