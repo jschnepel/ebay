@@ -42,6 +42,10 @@ else
         <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="() => ShowAsync(search: _search)">Search</MudButton>
     </div>
 
+    <section class="panel dash-panel events-chart" aria-label="Events over time">
+        <EventChart Histogram="_histogram" RangeLabel="@RangeLabel" OnZoom="ZoomAsync" />
+    </section>
+
     @if (_message is not null)
     {
         <MudAlert Class="mb-3" Severity="Severity.Error"><MessageText Text="@_message" /></MudAlert>
@@ -99,9 +103,19 @@ else
     private DateTimeOffset _from;
     private DateTimeOffset _to;
     private List<LogEvent>? _events;
+    private EventHistogram? _histogram;
     private string? _next;
     private string? _message;
     private bool _forbidden;
+
+    private string RangeLabel => Range switch
+    {
+        "15m" => "the last 15 minutes",
+        "24h" => "the last 24 hours",
+        "7d" => "the last 7 days",
+        "custom" => $"{Format.Recent(_from)} to {Format.Recent(_to)}",
+        _ => "the last hour",
+    };
 
     private EventFilter Filter => new(_from, _to, _categories, string.IsNullOrWhiteSpace(_search) ? null : _search.Trim(), null);
 
@@ -132,7 +146,11 @@ else
 
     private async Task LoadAsync()
     {
-        var page = await Api.AdminEventsAsync(Filter, null);
+        var filter = Filter;
+        var events = Api.AdminEventsAsync(filter, null);
+        var histogram = Api.AdminEventHistogramAsync(filter);
+        var page = await events;
+        _histogram = (await histogram).Value;
         if (!page.Succeeded)
         {
             (_message, _events) = (page.Message, []);
@@ -159,6 +177,9 @@ else
         var categories = _categories.Contains(category) ? _categories.Where(c => c != category) : _categories.Append(category);
         return ShowAsync(categories: [.. categories]);
     }
+
+    private Task ZoomAsync((DateTimeOffset From, DateTimeOffset To) span) =>
+        ShowAsync(range: "custom", from: span.From, to: span.To);
 
     // A new view is a new address; the page reloads its data from it.
     private Task ShowAsync(string? range = null, string[]? categories = null, string? search = null, DateTimeOffset? from = null, DateTimeOffset? to = null)

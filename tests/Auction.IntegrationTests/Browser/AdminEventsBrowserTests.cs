@@ -77,6 +77,19 @@ public sealed partial class AdminEventsBrowserTests(MigratedDatabase db, Browser
     }
 
     [Fact]
+    public async Task The_event_log_draws_a_chart_of_events_over_time()
+    {
+        var admin = await browsers.NewPageAsync(await Browsers.SiteAsync(db));
+        await admin.SignUpAsync("Charting admin", role: "Admin");
+
+        await admin.GotoAsync("/admin/events?range=15m");
+
+        var chart = admin.GetByRole(AriaRole.Img, new() { NameRegex = new Regex("^Events over the last 15 minutes") });
+        await Assertions.Expect(chart).ToBeVisibleAsync();
+        await Assertions.Expect(admin.GetByTestId("chart-bar")).ToHaveCountAsync(30);
+    }
+
+    [Fact]
     public async Task The_old_audit_address_opens_the_event_log()
     {
         var admin = await browsers.NewPageAsync(await Browsers.SiteAsync(db));

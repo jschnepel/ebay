@@ -133,6 +133,9 @@ public sealed class AuctionApi(HttpClient http, Func<TimeSpan, Task>? wait = nul
     public Task<ApiResult<Page<LogEvent>>> AdminEventsAsync(EventFilter filter, string? cursor, int pageSize = 50) =>
         SendAsync<Page<LogEvent>>(HttpMethod.Get, WithCursor($"admin/events?{EventQuery(filter)}&pageSize={pageSize}", cursor));
 
+    public Task<ApiResult<EventHistogram>> AdminEventHistogramAsync(EventFilter filter) =>
+        SendAsync<EventHistogram>(HttpMethod.Get, $"admin/events/histogram?{EventQuery(filter)}");
+
     public Task<ApiResult<SimulatorView>> AdminSimulatorAsync() => SendAsync<SimulatorView>(HttpMethod.Get, "admin/simulator");
 
     public Task<ApiResult<SimulatorRun>> StartSimulatorAsync(string profile) =>

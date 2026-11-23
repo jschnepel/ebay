@@ -1,0 +1,91 @@
+@* Events over time: one bar per bucket, stacked by category in a fixed order, with a legend that names each and counts it. *@
+@if (Histogram is { } chart)
+{
+    var max = Math.Max(1, chart.Buckets.Max(b => b.Counts.Values.Sum()));
+    var total = chart.Buckets.Sum(b => b.Counts.Values.Sum());
+    var width = chart.Buckets.Count * Step;
+    <figure class="event-chart">
+        <ul class="chart-legend" aria-label="Categories in the chart">
+            @foreach (var category in Order)
+            {
+                <li><span class="swatch @($"is-{category}")" aria-hidden="true"></span>@EventList.CategoryWord(category) <span class="num muted">@chart.Buckets.Sum(b => b.Counts.GetValueOrDefault(category)).ToString("N0")</span></li>
+            }
+        </ul>
+        <div class="chart-plot">
+            <span class="chart-max num muted" aria-hidden="true">@max.ToString("N0")</span>
+            <svg viewBox="@($"0 0 {width} {Height}")" preserveAspectRatio="none" role="img"
+                 aria-label="@($"Events over {RangeLabel}: {total:N0} in total, at most {max:N0} in one {Bucket(chart.BucketSeconds)}.")">
+                <line class="chart-base" x1="0" y1="@Height" x2="@width" y2="@Height" />
+                @for (var i = 0; i < chart.Buckets.Count; i++)
+                {
+                    var bucket = chart.Buckets[i];
+                    var x = i * Step;
+                    var y = (double)Height;
+                    <g class="chart-bar" data-testid="chart-bar" @onclick="() => ZoomAsync(bucket, chart.BucketSeconds)">
+                        <title>@Tooltip(bucket, chart.BucketSeconds)</title>
+                        <rect class="chart-hit" x="@x" y="0" width="@Step" height="@Height" />
+                        @foreach (var category in Order)
+                        {
+                            var count = bucket.Counts.GetValueOrDefault(category);
+                            if (count == 0)
+                            {
+                                continue;
+                            }
+
+                            var h = Math.Max(1.5, count * (Height - 4.0) / max);
+                            y -= h;
+                            <rect class="@($"is-{category}")" x="@(x + 1)" y="@Fixed(y)" width="@(Step - 2)" height="@Fixed(Math.Max(0.5, h - Gap))" rx="1" />
+                        }
+                    </g>
+                }
+            </svg>
+        </div>
+        <figcaption class="chart-axis num muted" aria-hidden="true">
+            <span>@Format.Recent(chart.Buckets[0].Start)</span>
+            <span>@Format.Recent(chart.Buckets[^1].Start.AddSeconds(chart.BucketSeconds))</span>
+        </figcaption>
+    </figure>
+}
+
+@code {
+    private const int Step = 12;
+    private const int Height = 120;
+    private const double Gap = 2;
+
+    // The same order everywhere, so a category keeps its colour whatever else is shown.
+    private static readonly string[] Order = ["account", "admin", "listing", "bid"];
+
+    [Parameter]
+    public EventHistogram? Histogram { get; set; }
+
+    /// <summary>The range in words, for the chart's description, such as "the last 15 minutes".</summary>
+    [Parameter]
+    public string RangeLabel { get; set; } = "";
+
+    /// <summary>A bar was clicked: show just its stretch of time.</summary>
+    [Parameter]
+    public EventCallback<(DateTimeOffset From, DateTimeOffset To)> OnZoom { get; set; }
+
+    private static string Fixed(double value) => value.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+
+    private static string Bucket(int seconds) => seconds switch
+    {
+        < 60 => $"{seconds} seconds",
+        60 => "minute",
+        < 3600 => $"{seconds / 60} minutes",
+        3600 => "hour",
+        _ => $"{seconds / 3600} hours",
+    };
+
+    private static string Tooltip(EventBucket bucket, int seconds)
+    {
+        var total = bucket.Counts.Values.Sum();
+        var parts = Order.Where(c => bucket.Counts.GetValueOrDefault(c) > 0)
+            .Select(c => $"{bucket.Counts[c]:N0} {EventList.CategoryWord(c).ToLowerInvariant()}");
+        var span = $"{Format.Recent(bucket.Start)} to {Format.Recent(bucket.Start.AddSeconds(seconds))}";
+        return total == 0 ? $"{span}: no events" : $"{span}: {total:N0} events ({string.Join(", ", parts)})";
+    }
+
+    private Task ZoomAsync(EventBucket bucket, int seconds) =>
+        bucket.Counts.Values.Sum() == 0 ? Task.CompletedTask : OnZoom.InvokeAsync((bucket.Start, bucket.Start.AddSeconds(seconds)));
+}

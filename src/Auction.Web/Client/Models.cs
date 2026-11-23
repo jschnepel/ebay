@@ -156,6 +156,10 @@ public sealed record LogEvent(
     string Key, DateTimeOffset At, string Category, string Type, string Level, EventParty? Actor, EventParty? Target,
     IReadOnlyDictionary<string, string?> Detail);
 
+public sealed record EventBucket(DateTimeOffset Start, IReadOnlyDictionary<string, long> Counts);
+
+public sealed record EventHistogram(int BucketSeconds, IReadOnlyList<EventBucket> Buckets);
+
 /// <summary>What the event log shows: a fixed window of time, any of the categories (all when empty), a search and one user.</summary>
 public sealed record EventFilter(DateTimeOffset From, DateTimeOffset To, IReadOnlyList<string> Categories, string? Search, Guid? User);
 

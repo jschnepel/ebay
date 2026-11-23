@@ -452,3 +452,22 @@ a.cell-title:hover { text-decoration: underline; }
     .event-toggle { grid-column: 2; grid-row: 2; }
     .event-detail { padding-left: 0.75rem; }
 }
+
+/* ===== The event log's chart: events over time, stacked by category, a legend that counts each. ===== */
+.events-chart { padding: 0.75rem 1rem 0.5rem; }
+.event-chart { margin: 0; }
+.chart-legend { display: flex; flex-wrap: wrap; gap: 0.25rem 1.25rem; margin: 0 0 0.5rem; padding: 0; list-style: none; font-size: 0.875rem; color: var(--ink); }
+.chart-legend li { display: inline-flex; align-items: center; gap: 0.4rem; }
+.swatch { width: 0.7rem; height: 0.7rem; border-radius: 3px; }
+.swatch.is-account, .chart-bar rect.is-account { background: var(--cat-account); fill: var(--cat-account); }
+.swatch.is-admin, .chart-bar rect.is-admin { background: var(--cat-admin); fill: var(--cat-admin); }
+.swatch.is-listing, .chart-bar rect.is-listing { background: var(--cat-listing); fill: var(--cat-listing); }
+.swatch.is-bid, .chart-bar rect.is-bid { background: var(--cat-bid); fill: var(--cat-bid); }
+.chart-plot { position: relative; }
+.chart-plot svg { display: block; width: 100%; height: 8rem; }
+.chart-max { position: absolute; top: 0; left: 0; font-size: 0.75rem; }
+.chart-base { stroke: var(--line); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.chart-bar { cursor: pointer; }
+.chart-bar .chart-hit { fill: transparent; }
+.chart-bar:hover .chart-hit { fill: var(--sunk); }
+.chart-axis { display: flex; justify-content: space-between; margin-top: 0.25rem; font-size: 0.75rem; }
