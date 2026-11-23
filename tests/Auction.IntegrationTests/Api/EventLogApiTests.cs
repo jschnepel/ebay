@@ -226,6 +226,24 @@ public sealed class EventLogApiTests(MigratedDatabase db)
     }
 
     [Fact]
+    public async Task A_search_takes_percent_and_underscore_literally()
+    {
+        var api = await db.ApiAsync();
+        var admin = await api.SignUpAsync("Wildcard admin", role: "admin");
+        var marker = Guid.NewGuid().ToString("N")[..8];
+        var plain = await api.SignUpAsync($"Plain {marker}");
+        var percent = await api.SignUpAsync($"100% {marker}");
+
+        var hits = await AllAsync(admin.Http, $"&category=account&q={Uri.EscapeDataString($"0% {marker}")}");
+        var all = await AllAsync(admin.Http, $"&category=account&q={Uri.EscapeDataString($"_ {marker}")}");
+
+        Assert.Contains(hits, e => e.ActorId == percent.Id);
+        Assert.DoesNotContain(hits, e => e.ActorId == plain.Id);
+        // "_" is a character to find, not "any one character": no name here has an underscore before the marker.
+        Assert.Empty(all);
+    }
+
+    [Fact]
     public async Task The_range_is_checked_and_the_log_is_for_admins_only()
     {
         var api = await db.ApiAsync();
@@ -246,6 +264,21 @@ public sealed class EventLogApiTests(MigratedDatabase db)
         using (var unknown = await admin.Http.GetAsync("/api/v1/admin/events?category=weather", TestContext.Current.CancellationToken))
         {
             await unknown.AssertProblemAsync(HttpStatusCode.BadRequest, "invalid_category");
+        }
+
+        // Dates at either end of what a date can hold are refused, for the list and the chart alike.
+        foreach (var route in new[] { "/api/v1/admin/events", "/api/v1/admin/events/histogram" })
+        {
+            foreach (var range in new[] { "to=0001-01-01T00:00:00Z", "from=9999-12-31T00:00:00Z&to=9999-12-31T23:59:59Z" })
+            {
+                using var extreme = await admin.Http.GetAsync($"{route}?{range}", TestContext.Current.CancellationToken);
+                await extreme.AssertProblemAsync(HttpStatusCode.BadRequest, "invalid_range");
+            }
+        }
+
+        using (var longSearch = await admin.Http.GetAsync($"/api/v1/admin/events?q={new string('a', 101)}", TestContext.Current.CancellationToken))
+        {
+            await longSearch.AssertProblemAsync(HttpStatusCode.BadRequest, "invalid_search");
         }
 
         Assert.Equal(HttpStatusCode.NotFound, await user.Http.StatusOfGetAsync("/api/v1/admin/events"));

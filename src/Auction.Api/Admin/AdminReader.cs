@@ -42,7 +42,7 @@ internal sealed class AdminReader(NpgsqlDataSource dataSource)
         FROM auction.auctions a JOIN auction.users u ON u.id = a.seller_id
         WHERE a.status <> 'draft'
           AND ($4::text IS NULL OR a.status = $4)
-          AND ($5::text IS NULL OR a.title ILIKE '%' || $5 || '%' OR u.display_name ILIKE '%' || $5 || '%' OR a.seller_id::text = $5 OR a.id::text = $5)
+          AND ($5::text IS NULL OR strpos(lower(a.title), lower($5)) > 0 OR strpos(lower(u.display_name), lower($5)) > 0 OR a.seller_id::text = $5 OR a.id::text = $5)
           AND ($1::timestamptz IS NULL OR (a.ends_at, a.id) > ($1::timestamptz, $2::uuid))
         ORDER BY a.ends_at, a.id
         LIMIT $3
@@ -55,7 +55,7 @@ internal sealed class AdminReader(NpgsqlDataSource dataSource)
                (SELECT count(*) FROM auction.auctions a WHERE a.seller_id = u.id AND a.status <> 'draft'),
                (SELECT count(*) FROM auction.bids b WHERE b.bidder_id = u.id)
         FROM auction.users u
-        WHERE ($4::text IS NULL OR u.display_name ILIKE '%' || $4 || '%' OR u.email ILIKE '%' || $4 || '%' OR u.id::text = $4)
+        WHERE ($4::text IS NULL OR strpos(lower(u.display_name), lower($4)) > 0 OR strpos(lower(u.email), lower($4)) > 0 OR u.id::text = $4)
           AND ($5::text IS NULL OR u.kind = $5)
           AND ($6::text IS NULL OR (u.disabled_at IS NOT NULL) = ($6 = 'disabled'))
           AND ($1::timestamptz IS NULL OR (u.created_at, u.id) > ($1::timestamptz, $2::uuid))
@@ -67,7 +67,7 @@ internal sealed class AdminReader(NpgsqlDataSource dataSource)
     private const string AuditSql = """
         SELECT a.id, a.at, a.admin_id, u.display_name, a.action, a.target_type, a.target_id, a.reason
         FROM auction.admin_audit a JOIN auction.users u ON u.id = a.admin_id
-        WHERE ($3::text IS NULL OR a.admin_id::text = $3 OR a.target_id::text = $3 OR a.action = $3 OR u.display_name ILIKE '%' || $3 || '%')
+        WHERE ($3::text IS NULL OR a.admin_id::text = $3 OR a.target_id::text = $3 OR a.action = $3 OR strpos(lower(u.display_name), lower($3)) > 0)
           AND ($1::bigint IS NULL OR a.id < $1)
         ORDER BY a.id DESC
         LIMIT $2

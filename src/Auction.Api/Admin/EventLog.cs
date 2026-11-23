@@ -117,8 +117,8 @@ internal sealed class EventLog(NpgsqlDataSource dataSource)
         ($3::timestamptz IS NULL OR (at, key) < ($3::timestamptz, $4::text))
           AND ($6::text[] IS NULL OR category = ANY ($6::text[]))
           AND ($7::text IS NULL
-               OR actor_name ILIKE '%' || $7 || '%' OR actor_email ILIKE '%' || $7 || '%'
-               OR target_name ILIKE '%' || $7 || '%' OR target_email ILIKE '%' || $7 || '%' OR title ILIKE '%' || $7 || '%'
+               OR strpos(lower(actor_name), lower($7)) > 0 OR strpos(lower(actor_email), lower($7)) > 0
+               OR strpos(lower(target_name), lower($7)) > 0 OR strpos(lower(target_email), lower($7)) > 0 OR strpos(lower(title), lower($7)) > 0
                OR actor_id::text = $7 OR target_id::text = $7 OR type = $7)
         """;
 

@@ -37,6 +37,8 @@ internal static class AdminEndpoints
     public const int ReasonMaxLength = 500;
 
     private static readonly TimeSpan MaxEventRange = TimeSpan.FromDays(7);
+    private static readonly DateTimeOffset EarliestEvent = new(2000, 1, 1, 0, 0, 0, TimeSpan.Zero);
+    private const int MaxSearchLength = 100;
 
     public static RouteGroupBuilder MapAdmin(this RouteGroupBuilder api)
     {
@@ -128,8 +130,13 @@ internal static class AdminEndpoints
             return problem;
         }
 
+        if (!TrySearch(search.Q, out var q, out problem))
+        {
+            return problem;
+        }
+
         var status = string.IsNullOrWhiteSpace(search.Status) ? null : search.Status;
-        return TypedResults.Ok(await reader.AuctionsAsync(search.Q, status, after, size, cancellationToken));
+        return TypedResults.Ok(await reader.AuctionsAsync(q, status, after, size, cancellationToken));
     }
 
     private static async Task<IResult> UsersAsync(
@@ -145,7 +152,9 @@ internal static class AdminEndpoints
             return Problems.BadRequest("invalid_state", "state must be enabled or disabled.");
         }
 
-        return TypedResults.Ok(await reader.UsersAsync(request.Q, request.Kind, request.State, after, size, cancellationToken));
+        return TrySearch(request.Q, out var q, out problem)
+            ? TypedResults.Ok(await reader.UsersAsync(q, request.Kind, request.State, after, size, cancellationToken))
+            : problem;
     }
 
     private static async Task<IResult> UserAsync(Guid id, AdminUserReader users, CancellationToken cancellationToken) =>
@@ -178,7 +187,9 @@ internal static class AdminEndpoints
             return Problems.BadRequest("invalid_cursor", "The cursor is not one this API returned.");
         }
 
-        return TypedResults.Ok(await reader.AuditAsync(q, before, size, cancellationToken));
+        return TrySearch(q, out var search, out var refused)
+            ? TypedResults.Ok(await reader.AuditAsync(search, before, size, cancellationToken))
+            : refused;
     }
 
     private static async Task<IResult> EventsAsync(
@@ -201,14 +212,41 @@ internal static class AdminEndpoints
     private static async Task<IResult> HistogramAsync([AsParameters] EventRequest request, EventLog log, CancellationToken cancellationToken) =>
         TryEventQuery(request, out var query, out var problem) ? TypedResults.Ok(await log.HistogramAsync(query, cancellationToken)) : problem;
 
+    // A search is a short piece of text; every list that takes one reads rows to match it.
+    private static bool TrySearch(string? text, out string? search, out IResult problem)
+    {
+        search = string.IsNullOrWhiteSpace(text) ? null : text.Trim();
+        problem = Results.Empty;
+        if (search is { Length: > MaxSearchLength })
+        {
+            problem = Problems.BadRequest("invalid_search", $"q can be at most {MaxSearchLength} characters.");
+            return false;
+        }
+
+        return true;
+    }
+
     // The log reads a bounded window: up to a week, ending now unless said otherwise, an hour long by default.
+    // Dates far from now are refused before any arithmetic on them, which the ends of the calendar would overflow.
     private static bool TryEventQuery(EventRequest request, out EventQuery query, out IResult problem)
     {
-        var end = request.To ?? DateTimeOffset.UtcNow;
+        var now = DateTimeOffset.UtcNow;
+        query = new EventQuery(now, now, [], null, null);
+        if (!TrySearch(request.Q, out var search, out problem))
+        {
+            return false;
+        }
+
+        if (request.From < EarliestEvent || request.To < EarliestEvent || request.From > now.AddDays(1) || request.To > now.AddDays(1))
+        {
+            problem = Problems.BadRequest("invalid_range", "from and to must be dates between 2000 and now.");
+            return false;
+        }
+
+        var end = request.To ?? now;
         var start = request.From ?? end.AddHours(-1);
         var categories = (request.Category ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Distinct().ToArray();
-        query = new EventQuery(start, end, categories, string.IsNullOrWhiteSpace(request.Q) ? null : request.Q.Trim(), request.User);
-        problem = Results.Empty;
+        query = new EventQuery(start, end, categories, search, request.User);
         if (start >= end || end - start > MaxEventRange)
         {
             problem = Problems.BadRequest("invalid_range", "from must be before to, and at most 7 days earlier.");

@@ -57,6 +57,21 @@ public sealed class AdminUserApiTests(MigratedDatabase db)
     }
 
     [Fact]
+    public async Task The_users_search_takes_wildcards_literally_and_has_a_length_limit()
+    {
+        var api = await db.ApiWithAsync(new Dictionary<string, string> { ["Api:MaxPageSize"] = "50" });
+        var admin = await api.SignUpAsync("Search admin", role: "admin");
+        var marker = Guid.NewGuid().ToString("N")[..8];
+        await api.SignUpAsync($"Plain {marker}");
+
+        var wildcard = await admin.Http.GetJsonAsync($"/api/v1/admin/users?pageSize=50&q={Uri.EscapeDataString($"_ {marker}")}");
+        using var tooLong = await admin.Http.GetAsync(new Uri($"/api/v1/admin/users?q={new string('a', 101)}", UriKind.Relative), TestContext.Current.CancellationToken);
+
+        Assert.Equal(0, wildcard.GetProperty("items").GetArrayLength());
+        await tooLong.AssertProblemAsync(HttpStatusCode.BadRequest, "invalid_search");
+    }
+
+    [Fact]
     public async Task A_users_page_counts_their_listings_sales_and_bids()
     {
         var api = await db.ApiAsync();
