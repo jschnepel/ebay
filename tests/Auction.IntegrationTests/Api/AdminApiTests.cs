@@ -277,6 +277,16 @@ public sealed class AdminApiTests(MigratedDatabase db)
         Assert.StartsWith("This auction has ended.", (await cleared.JsonAsync()).GetProperty("title").GetString(), StringComparison.Ordinal);
         await unknown.AssertProblemAsync(HttpStatusCode.NotFound, "not_found");
         await random.AssertProblemAsync(HttpStatusCode.NotFound, "not_found");
+
+        // An id stamped with a time past the last one a date can hold is just an unknown id.
+        using var endOfTime = await anonymous.GetAsync(new Uri("/api/v1/auctions/ffffffff-ffff-7000-8000-000000000000", UriKind.Relative), Ct);
+        await endOfTime.AssertProblemAsync(HttpStatusCode.NotFound, "not_found");
+
+        // A hidden draft older than the reset still doesn't exist to anyone but its seller.
+        var draft = await db.InsertDraftAsync();
+        await db.ExecuteAsync(MigratedDatabase.Migrator, "UPDATE demo_resets SET completed_at = clock_timestamp() + interval '1 hour'");
+        using var hidden = await anonymous.GetAsync(new Uri($"/api/v1/auctions/{draft}", UriKind.Relative), Ct);
+        await hidden.AssertProblemAsync(HttpStatusCode.NotFound, "not_found");
         await db.ExecuteAsync(MigratedDatabase.Migrator, "DELETE FROM demo_resets");
     }
 

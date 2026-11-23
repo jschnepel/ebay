@@ -197,7 +197,14 @@ internal sealed class AuctionReader(NpgsqlDataSource dataSource, Caching.Auction
             return false;
         }
 
-        var made = DateTimeOffset.FromUnixTimeMilliseconds(Convert.ToInt64(id.ToString("N")[..12], 16));
+        // The id's first 48 bits are a time in milliseconds, which can be later than any date.
+        var milliseconds = Convert.ToInt64(id.ToString("N")[..12], 16);
+        if (milliseconds > DateTimeOffset.MaxValue.ToUnixTimeMilliseconds())
+        {
+            return false;
+        }
+
+        var made = DateTimeOffset.FromUnixTimeMilliseconds(milliseconds);
         await using var command = dataSource.CreateCommand(ClearedSql);
         command.Parameters.Add(Param(id));
         command.Parameters.Add(Param(made));
