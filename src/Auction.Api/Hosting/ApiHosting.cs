@@ -39,6 +39,7 @@ internal static class ApiHosting
             ?? throw new InvalidOperationException("ConnectionStrings:Api is not set.")));
         builder.Services.AddSingleton<AccountStore>();
         builder.Services.AddSingleton<SessionStore>();
+        builder.Services.AddSingleton<AccountEvents>();
         builder.Services.AddSingleton<NotificationStore>();
         builder.Services.AddSingleton<Caching.RedisJobs>();
         builder.Services.AddSingleton<Caching.SharedCounters>();

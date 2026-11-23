@@ -87,7 +87,7 @@ internal static class AccountEndpoints
                 StatusCodes.Status409Conflict, "email_taken", "An account with this email already exists. Sign in with it instead.");
         }
 
-        await IssueCookieAsync(http, account);
+        await IssueCookieAsync(http, account, AccountEvents.SignUp, email);
         return TypedResults.Created("/api/v1/account/me", ToResponse(account));
     }
 
@@ -96,13 +96,14 @@ internal static class AccountEndpoints
     {
         var key = AccountStore.Normalize(body.Email ?? "");
         var guard = http.RequestServices.GetRequiredService<SignInGuard>();
+        var typed = TypedEmail(body.Email);
         if (!await guard.TryAttemptAsync(key))
         {
             http.Response.Headers.RetryAfter = "60";
             return Problems.Of(StatusCodes.Status429TooManyRequests, "too_many_attempts", "Too many sign-in attempts for this account; try again later.");
         }
 
-        var account = string.IsNullOrWhiteSpace(body.Email) ? null : await accounts.FindAsync(body.Email, http.RequestAborted);
+        var account = typed is null ? null : await accounts.FindAsync(typed, http.RequestAborted);
         if (account is null || account.Disabled || !MaySignIn(account, body.Password, hasher, options))
         {
             if (!string.IsNullOrEmpty(body.Password))
@@ -115,7 +116,7 @@ internal static class AccountEndpoints
         }
 
         await guard.SucceededAsync(key);
-        await IssueCookieAsync(http, account);
+        await IssueCookieAsync(http, account, AccountEvents.SignIn, typed);
         return TypedResults.Ok(ToResponse(account));
     }
 
@@ -124,6 +125,8 @@ internal static class AccountEndpoints
         if (http.User.SessionOf() is { } session)
         {
             await http.RequestServices.GetRequiredService<SessionStore>().RevokeAsync(session, http.RequestAborted);
+            await http.RequestServices.GetRequiredService<AccountEvents>().RecordAsync(
+                AccountEvents.SignOut, http.User.UserIdOf()?.Value, null, null, session, http.RequestAborted);
         }
 
         await http.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
@@ -140,11 +143,18 @@ internal static class AccountEndpoints
             ? options.DemoMode && AccountKinds.IsVisitor(account.Kind)
             : !string.IsNullOrEmpty(password) && hasher.VerifyHashedPassword(account, hash, password) != PasswordVerificationResult.Failed;
 
+    // The email as typed, trimmed and cut to the column's length, for the event log.
+    private static string? TypedEmail(string? email) =>
+        email?.Trim() is { Length: > 0 } trimmed ? trimmed[..Math.Min(trimmed.Length, EmailMaxLength)] : null;
+
     // One active session per account (AUTH-02): this sign-in ends every other one, and any page still open on
-    // an ended session is told at once.
-    private static async Task IssueCookieAsync(HttpContext http, Account account)
+    // an ended session is told at once. The event log gets the sign-in and each session it replaced.
+    private static async Task IssueCookieAsync(HttpContext http, Account account, string eventType, string? email)
     {
         var (session, ended) = await http.RequestServices.GetRequiredService<SessionStore>().StartAsync(account.Id, http.RequestAborted);
+        var events = http.RequestServices.GetRequiredService<AccountEvents>();
+        await events.RecordAsync(eventType, account.Id.Value, email, null, session, http.RequestAborted);
+        await events.RecordManyAsync(AccountEvents.SessionReplaced, ended, account.Id.Value, null, http.RequestAborted);
         await http.SignInAsync(
             CookieAuthenticationDefaults.AuthenticationScheme, Principal.For(account, session), new AuthenticationProperties { IsPersistent = true });
         await Live.SignOuts.TellAsync(http.RequestServices, ended, http.RequestAborted);
