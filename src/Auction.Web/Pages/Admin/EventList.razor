@@ -1,0 +1,87 @@
+@* Event log rows, newest first: when, how serious, what kind, and one sentence; a row opens to show who, to whom and the rest. *@
+<ol class="event-list">
+    @foreach (var e in Events)
+    {
+        var open = _open == e.Key;
+        var detailId = $"event-{e.Key.Replace(':', '-')}";
+        <li class="@($"event-row{(e.Level == "warning" ? " is-warning" : "")}{(open ? " is-open" : "")}")" data-testid="event-row">
+            <div class="event-line">
+                <time class="num muted event-time" datetime="@e.At.ToString("O")">@Format.Recent(e.At)</time>
+                <span class="@($"event-category is-{e.Category}")" data-testid="event-category">@CategoryWord(e.Category)</span>
+                <span class="event-summary">@EventText.Summary(e)</span>
+                @if (e.Level == "warning")
+                {
+                    <span class="tag is-warn">Warning</span>
+                }
+                <button type="button" class="event-toggle" aria-expanded="@(open ? "true" : "false")" aria-controls="@detailId" @onclick="() => ToggleAsync(e.Key)">
+                    <span class="sr-only">Details</span><span aria-hidden="true">@(open ? "▴" : "▾")</span>
+                </button>
+            </div>
+            @if (open)
+            {
+                <dl class="event-detail" id="@detailId">
+                    @if (e.Actor is { } actor)
+                    {
+                        <dt>By</dt><dd><Party Of="actor" /></dd>
+                    }
+                    @if (e.Target is { } target)
+                    {
+                        <dt>To</dt><dd><Party Of="target" /></dd>
+                    }
+                    @foreach (var (key, value) in e.Detail.Where(d => d.Value is not null && d.Key is not "sessionId"))
+                    {
+                        <dt>@DetailWord(key)</dt><dd>@DetailValue(key, value!)</dd>
+                    }
+                    <dt>When</dt><dd class="num">@e.At.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss.fff zzz", System.Globalization.CultureInfo.InvariantCulture)</dd>
+                    <dt>Event</dt><dd class="id">@e.Key</dd>
+                </dl>
+            }
+        </li>
+    }
+</ol>
+
+@code {
+    private string? _open;
+
+    [Parameter, EditorRequired]
+    public IReadOnlyList<LogEvent> Events { get; set; } = [];
+
+    /// <summary>Told when a row opens or closes, so live mode can hold still while someone reads.</summary>
+    [Parameter]
+    public EventCallback<bool> OnReading { get; set; }
+
+    public static string CategoryWord(string category) => category switch
+    {
+        "account" => "Account",
+        "admin" => "Admin",
+        "listing" => "Listing",
+        "bid" => "Bid",
+        _ => category,
+    };
+
+    private static string DetailWord(string key) => key switch
+    {
+        "reason" => "Reason",
+        "cause" => "Cause",
+        "amountCents" => "Amount",
+        "source" => "Placed",
+        "outcome" => "Outcome",
+        "finalPriceCents" => "Final price",
+        "sellerName" => "Seller",
+        _ => key,
+    };
+
+    private static string DetailValue(string key, string value) => key switch
+    {
+        "amountCents" or "finalPriceCents" when long.TryParse(value, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var cents) =>
+            Format.Dollars(cents),
+        "source" => value == "proxy" ? "automatically, by their maximum" : "by the bidder",
+        _ => value.Replace('_', ' '),
+    };
+
+    private async Task ToggleAsync(string key)
+    {
+        _open = _open == key ? null : key;
+        await OnReading.InvokeAsync(_open is not null);
+    }
+}

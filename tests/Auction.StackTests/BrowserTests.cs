@@ -132,12 +132,13 @@ public sealed class BrowserTests(StackUnderTest stack)
 
         await Assertions.Expect(watcher.GetByTestId("status")).ToHaveTextAsync("Suspended", WithinBound);
 
-        await admin.GetByRole(AriaRole.Link, new() { Name = "Audit log" }).ClickAsync();
-        await admin.GetByLabel("Admin name, admin or target id, or action").FillAsync(auction.ToString());
+        await admin.GetByRole(AriaRole.Link, new() { Name = "Event log" }).ClickAsync();
+        await admin.GetByRole(AriaRole.Group, new() { Name = "Categories" }).GetByRole(AriaRole.Button, new() { Name = "Admin" }).ClickAsync();
+        await admin.GetByLabel("Search people, items, ids or actions").FillAsync(auction.ToString());
         await admin.GetByRole(AriaRole.Button, new() { Name = "Search" }).ClickAsync();
-        await Assertions.Expect(admin.GetByTestId("audit-row")).ToHaveCountAsync(1);
-        await Assertions.Expect(admin.GetByTestId("audit-row")).ToContainTextAsync("suspend");
-        await Assertions.Expect(admin.GetByTestId("audit-row")).ToContainTextAsync(reason);
+        await Assertions.Expect(admin.GetByTestId("event-row")).ToHaveCountAsync(1);
+        await Assertions.Expect(admin.GetByTestId("event-row")).ToContainTextAsync("suspended");
+        await Assertions.Expect(admin.GetByTestId("event-row")).ToContainTextAsync(reason);
     }
 
     [Fact]

@@ -1,0 +1,25 @@
+@* Someone or something in an event: a user or an auction links to its page; an email no account uses is shown as typed. *@
+@switch (Of)
+{
+    case { Kind: "user", Id: { } user }:
+        <a href="@($"admin/users/{user}")">@Of.Name</a>
+        @if (Of.Email is { } email)
+        {
+            <span class="muted"> @email</span>
+        }
+        break;
+    case { Kind: "auction", Id: { } auction }:
+        <a href="@($"auctions/{auction}")">@Of.Name</a>
+        break;
+    case { Kind: "email" }:
+        <span>@Of.Name</span><span class="muted"> (no account)</span>
+        break;
+    default:
+        <span>@Of.Name</span>
+        break;
+}
+
+@code {
+    [Parameter, EditorRequired]
+    public EventParty Of { get; set; } = null!;
+}

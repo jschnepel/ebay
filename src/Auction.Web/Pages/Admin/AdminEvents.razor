@@ -1,0 +1,179 @@
+@page "/admin/events"
+@inject AuctionApi Api
+@inject Session Session
+@inject NavigationManager Navigation
+
+<PageTitle>Event log</PageTitle>
+<div class="page-head events-head">
+    <div>
+        <MudText Typo="Typo.h4" HtmlTag="h1">Event log</MudText>
+        <p class="muted page-sub">Everything that happens on the site: accounts, admin actions, listings and bids. Entries can't be changed or removed.</p>
+    </div>
+</div>
+
+@if (_forbidden)
+{
+    <PageState State="ViewState.Forbidden" ForbiddenText="Page not found." />
+}
+else
+{
+    <div class="events-filters">
+        <div class="segmented" role="group" aria-label="Time range">
+            @foreach (var (value, label, _) in Ranges)
+            {
+                <button type="button" class="@(value == Range ? "is-on" : null)" aria-pressed="@(value == Range ? "true" : "false")" @onclick="() => ShowAsync(range: value)">@label</button>
+            }
+            @if (Range == "custom")
+            {
+                <button type="button" class="is-on" aria-pressed="true" disabled>@Format.Recent(_from) to @Format.Recent(_to)</button>
+            }
+        </div>
+        <div class="segmented" role="group" aria-label="Categories">
+            @foreach (var (value, label) in CategoryChoices)
+            {
+                var on = _categories.Contains(value);
+                <button type="button" class="@(on ? "is-on" : null)" aria-pressed="@(on ? "true" : "false")" @onclick="() => ToggleCategoryAsync(value)">@label</button>
+            }
+        </div>
+    </div>
+
+    <div class="searchbar is-two" role="search">
+        <MudTextField @bind-Value="_search" Label="Search people, items, ids or actions" Variant="Variant.Outlined" Margin="Margin.Dense" Immediate="true" OnKeyDown="SearchOnEnterAsync" />
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="() => ShowAsync(search: _search)">Search</MudButton>
+    </div>
+
+    @if (_message is not null)
+    {
+        <MudAlert Class="mb-3" Severity="Severity.Error"><MessageText Text="@_message" /></MudAlert>
+    }
+
+    @if (_events is null)
+    {
+        <PageState State="ViewState.Loading" LoadingText="Loading events…" />
+    }
+    else if (_events.Count == 0 && _message is null)
+    {
+        <div class="empty" data-testid="events-empty"><p class="empty-title">No events match</p><p class="muted">Try a longer time range, another category, or a name, email, title or id.</p></div>
+    }
+    else
+    {
+        <section class="panel events-panel" aria-label="Events">
+            <EventList Events="_events" />
+        </section>
+        @if (_next is not null)
+        {
+            <MudButton Class="mt-3" Variant="Variant.Outlined" OnClick="MoreAsync">Show more</MudButton>
+        }
+    }
+}
+
+@code {
+    private static readonly (string Value, string Label, TimeSpan Span)[] Ranges =
+    [
+        ("15m", "15 min", TimeSpan.FromMinutes(15)),
+        ("1h", "1 h", TimeSpan.FromHours(1)),
+        ("24h", "24 h", TimeSpan.FromDays(1)),
+        ("7d", "7 days", TimeSpan.FromDays(7)),
+    ];
+
+    private static readonly (string Value, string Label)[] CategoryChoices = [("account", "Accounts"), ("admin", "Admin"), ("listing", "Listings"), ("bid", "Bids")];
+
+    // The view lives in the address, so it survives a reload and can be shared.
+    [SupplyParameterFromQuery(Name = "range")]
+    public string? Range { get; set; }
+
+    [SupplyParameterFromQuery(Name = "category")]
+    public string? Category { get; set; }
+
+    [SupplyParameterFromQuery(Name = "q")]
+    public string? Q { get; set; }
+
+    [SupplyParameterFromQuery(Name = "from")]
+    public string? From { get; set; }
+
+    [SupplyParameterFromQuery(Name = "to")]
+    public string? To { get; set; }
+
+    private List<string> _categories = [];
+    private string _search = "";
+    private DateTimeOffset _from;
+    private DateTimeOffset _to;
+    private List<LogEvent>? _events;
+    private string? _next;
+    private string? _message;
+    private bool _forbidden;
+
+    private EventFilter Filter => new(_from, _to, _categories, string.IsNullOrWhiteSpace(_search) ? null : _search.Trim(), null);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await Session.LoadAsync();
+        _forbidden = Session.Account?.IsAdmin != true;
+        if (_forbidden)
+        {
+            return;
+        }
+
+        _categories = [.. (Category ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries).Where(c => CategoryChoices.Any(x => x.Value == c))];
+        _search = Q ?? "";
+        if (Range == "custom" && DateTimeOffset.TryParse(From, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var from)
+            && DateTimeOffset.TryParse(To, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var to) && from < to)
+        {
+            (_from, _to) = (from, to);
+        }
+        else
+        {
+            Range = Ranges.Any(r => r.Value == Range) ? Range : "1h";
+            (_to, _from) = (DateTimeOffset.UtcNow, DateTimeOffset.UtcNow - Ranges.First(r => r.Value == Range).Span);
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        var page = await Api.AdminEventsAsync(Filter, null);
+        if (!page.Succeeded)
+        {
+            (_message, _events) = (page.Message, []);
+            return;
+        }
+
+        (_message, _events, _next) = (null, [.. page.Value!.Items], page.Value.NextCursor);
+    }
+
+    private async Task MoreAsync()
+    {
+        var page = await Api.AdminEventsAsync(Filter, _next);
+        if (page.Succeeded)
+        {
+            _events!.AddRange(page.Value!.Items);
+            _next = page.Value.NextCursor;
+        }
+    }
+
+    private Task SearchOnEnterAsync(KeyboardEventArgs key) => key.Key == "Enter" ? ShowAsync(search: _search) : Task.CompletedTask;
+
+    private Task ToggleCategoryAsync(string category)
+    {
+        var categories = _categories.Contains(category) ? _categories.Where(c => c != category) : _categories.Append(category);
+        return ShowAsync(categories: [.. categories]);
+    }
+
+    // A new view is a new address; the page reloads its data from it.
+    private Task ShowAsync(string? range = null, string[]? categories = null, string? search = null, DateTimeOffset? from = null, DateTimeOffset? to = null)
+    {
+        range ??= Range ?? "1h";
+        var parameters = new Dictionary<string, object?>
+        {
+            ["range"] = range,
+            ["category"] = string.Join(',', categories ?? [.. _categories]) is { Length: > 0 } c ? c : null,
+            ["q"] = (search ?? _search) is { Length: > 0 } q ? q.Trim() : null,
+            ["from"] = range == "custom" ? (from ?? _from).ToString("O", System.Globalization.CultureInfo.InvariantCulture) : null,
+            ["to"] = range == "custom" ? (to ?? _to).ToString("O", System.Globalization.CultureInfo.InvariantCulture) : null,
+        };
+        Navigation.NavigateTo(Navigation.GetUriWithQueryParameters(parameters), replace: true);
+        return Task.CompletedTask;
+    }
+
+}

@@ -116,8 +116,6 @@ public sealed record LatencySummary(int Count, long? P50Ms, long? P95Ms);
 
 public sealed record AdminKpis(int WindowSeconds, LatencySummary ApiRequest, LatencySummary Bid, LatencySummary EngineCall, LatencySummary PublishLag);
 
-public sealed record AuditEntry(long Id, DateTimeOffset At, Guid AdminId, string AdminName, string Action, string TargetType, Guid TargetId, string Reason);
-
 public sealed record SimulatorOutcome(
     Guid RunId, string Profile, DateTimeOffset StartedAt, DateTimeOffset FinishedAt, bool StoppedEarly, bool Passed, int Accepted, string? Error);
 
@@ -149,6 +147,17 @@ public sealed record UserListing(Guid AuctionId, string Title, string Status, lo
 
 public sealed record UserBidding(
     Guid AuctionId, string Title, string Status, long? TheirHighestCents, long? CurrentPriceCents, string Standing, DateTimeOffset LastBidAt);
+
+/// <summary>Someone or something an event involves: a user, an auction, an unknown email, or a thing without a page.</summary>
+public sealed record EventParty(string Kind, Guid? Id, string Name, string? Email);
+
+/// <summary>One row of the admin event log; <see cref="Key"/> is unique and stable.</summary>
+public sealed record LogEvent(
+    string Key, DateTimeOffset At, string Category, string Type, string Level, EventParty? Actor, EventParty? Target,
+    IReadOnlyDictionary<string, string?> Detail);
+
+/// <summary>What the event log shows: a fixed window of time, any of the categories (all when empty), a search and one user.</summary>
+public sealed record EventFilter(DateTimeOffset From, DateTimeOffset To, IReadOnlyList<string> Categories, string? Search, Guid? User);
 
 public sealed record NotificationView(long Id, Guid? AuctionId, string? AuctionTitle, string Kind, string? Reason, DateTimeOffset CreatedAt, bool Read);
 

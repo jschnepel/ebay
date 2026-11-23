@@ -130,8 +130,8 @@ public sealed class AuctionApi(HttpClient http, Func<TimeSpan, Task>? wait = nul
     public Task<ApiResult<Page<UserBidding>>> AdminUserBiddingAsync(Guid id, string? cursor, int pageSize) =>
         SendAsync<Page<UserBidding>>(HttpMethod.Get, WithCursor($"admin/users/{id}/bidding?pageSize={pageSize}", cursor));
 
-    public Task<ApiResult<Page<AuditEntry>>> AdminAuditAsync(string? query, string? cursor) =>
-        SendAsync<Page<AuditEntry>>(HttpMethod.Get, WithCursor($"admin/audit?q={Uri.EscapeDataString(query ?? "")}", cursor));
+    public Task<ApiResult<Page<LogEvent>>> AdminEventsAsync(EventFilter filter, string? cursor, int pageSize = 50) =>
+        SendAsync<Page<LogEvent>>(HttpMethod.Get, WithCursor($"admin/events?{EventQuery(filter)}&pageSize={pageSize}", cursor));
 
     public Task<ApiResult<SimulatorView>> AdminSimulatorAsync() => SendAsync<SimulatorView>(HttpMethod.Get, "admin/simulator");
 
@@ -190,6 +190,15 @@ public sealed class AuctionApi(HttpClient http, Func<TimeSpan, Task>? wait = nul
                 ? new ApiResult<T>(default, null)
                 : new ApiResult<T>(await response.Content.ReadFromJsonAsync<T>(Json), null);
         }
+    }
+
+    private static string EventQuery(EventFilter filter)
+    {
+        var query = $"from={Uri.EscapeDataString(filter.From.ToString("O", System.Globalization.CultureInfo.InvariantCulture))}"
+            + $"&to={Uri.EscapeDataString(filter.To.ToString("O", System.Globalization.CultureInfo.InvariantCulture))}"
+            + $"&category={Uri.EscapeDataString(string.Join(',', filter.Categories))}"
+            + $"&q={Uri.EscapeDataString(filter.Search ?? "")}";
+        return filter.User is { } user ? $"{query}&user={user}" : query;
     }
 
     // A sent request can't be sent again, so each attempt builds its own.
