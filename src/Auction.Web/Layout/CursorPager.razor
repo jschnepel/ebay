@@ -1,0 +1,55 @@
+@* Paging under a cursor-paged list: rows per page on the left, the page number and its two buttons on the right. *@
+<nav class="pager" aria-label="@Label">
+    <label class="pager-size">
+        Rows per page
+        <select @onchange="ChangeSizeAsync" aria-label="Rows per page">
+            @foreach (var size in Sizes)
+            {
+                <option value="@size" selected="@(size == PageSize)">@size</option>
+            }
+        </select>
+    </label>
+    <span class="muted" data-testid="@PageTestId">Page @Page</span>
+    <MudButton Variant="Variant.Outlined" Size="Size.Small" Disabled="@(Page == 1)" OnClick="OnPrevious">@PreviousText</MudButton>
+    <MudButton Variant="Variant.Outlined" Size="Size.Small" Disabled="@(!HasNext)" OnClick="OnNext">@NextText</MudButton>
+</nav>
+
+@code {
+    [Parameter, EditorRequired]
+    public string Label { get; set; } = "";
+
+    [Parameter]
+    public int Page { get; set; } = 1;
+
+    [Parameter]
+    public int PageSize { get; set; }
+
+    [Parameter]
+    public int[] Sizes { get; set; } = [10, 25, 50];
+
+    [Parameter]
+    public bool HasNext { get; set; }
+
+    [Parameter]
+    public string PreviousText { get; set; } = "Previous";
+
+    [Parameter]
+    public string NextText { get; set; } = "Next";
+
+    [Parameter]
+    public string? PageTestId { get; set; }
+
+    [Parameter]
+    public EventCallback OnPrevious { get; set; }
+
+    [Parameter]
+    public EventCallback OnNext { get; set; }
+
+    [Parameter]
+    public EventCallback<int> OnPageSize { get; set; }
+
+    private Task ChangeSizeAsync(ChangeEventArgs change) =>
+        int.TryParse(change.Value?.ToString(), System.Globalization.CultureInfo.InvariantCulture, out var size) && Sizes.Contains(size)
+            ? OnPageSize.InvokeAsync(size)
+            : Task.CompletedTask;
+}

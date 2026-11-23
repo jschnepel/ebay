@@ -79,20 +79,9 @@ else
                 @* Hidden while one default-sized page holds the whole history; kept once the size has been changed. *@
                 @if (_bidCursors.Count > 1 || _bidNext is not null || _bidPageSize != BidPageSizes[0])
                 {
-                    <nav class="pager" aria-label="Bid history pages">
-                        <label class="pager-size">
-                            Rows per page
-                            <select @onchange="ChangeBidPageSizeAsync" aria-label="Rows per page">
-                                @foreach (var size in BidPageSizes)
-                                {
-                                    <option value="@size" selected="@(size == _bidPageSize)">@size</option>
-                                }
-                            </select>
-                        </label>
-                        <span class="muted" data-testid="bid-page">Page @_bidCursors.Count</span>
-                        <MudButton Variant="Variant.Outlined" Size="Size.Small" Disabled="@(_bidCursors.Count == 1)" OnClick="NewerBidsAsync">Newer</MudButton>
-                        <MudButton Variant="Variant.Outlined" Size="Size.Small" Disabled="@(_bidNext is null)" OnClick="OlderBidsAsync">Older</MudButton>
-                    </nav>
+                    <CursorPager Label="Bid history pages" Page="_bidCursors.Count" PageSize="_bidPageSize" Sizes="BidPageSizes" HasNext="_bidNext is not null"
+                                 PreviousText="Newer" NextText="Older" PageTestId="bid-page"
+                                 OnPrevious="NewerBidsAsync" OnNext="OlderBidsAsync" OnPageSize="ChangeBidPageSizeAsync" />
                 }
             }
         </div>
@@ -278,13 +267,10 @@ else
         }
     }
 
-    private async Task ChangeBidPageSizeAsync(ChangeEventArgs change)
+    private async Task ChangeBidPageSizeAsync(int size)
     {
-        if (int.TryParse(change.Value?.ToString(), System.Globalization.CultureInfo.InvariantCulture, out var size) && BidPageSizes.Contains(size))
-        {
-            (_bidPageSize, _bidCursors) = (size, new([null]));
-            await ShowBidsAsync();
-        }
+        (_bidPageSize, _bidCursors) = (size, new([null]));
+        await ShowBidsAsync();
     }
 
     // Another page of the same auction's history, without reloading the auction.
