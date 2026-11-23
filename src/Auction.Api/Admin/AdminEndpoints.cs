@@ -53,6 +53,13 @@ internal static class AdminEndpoints
         admin.MapPost("/auctions/{id:guid}/cancel", (Guid id, ReasonRequest body, HttpContext http, EngineGateway engine) =>
             ModerateAsync(id, body, http, engine, Moderation.Cancel));
         admin.MapGet("/users", UsersAsync).Produces<Page<UserSummary>>().ProducesProblem(StatusCodes.Status400BadRequest);
+        admin.MapGet("/users/{id:guid}", UserAsync).Produces<UserProfile>();
+        admin.MapGet("/users/{id:guid}/listings", (Guid id, int? pageSize, string? cursor, AdminUserReader users, ApiOptions options, CancellationToken cancellationToken) =>
+            UserPageAsync(pageSize, cursor, options, (after, size) => users.ListingsAsync(id, after, size, cancellationToken)))
+            .Produces<Page<UserListing>>().ProducesProblem(StatusCodes.Status400BadRequest);
+        admin.MapGet("/users/{id:guid}/bidding", (Guid id, int? pageSize, string? cursor, AdminUserReader users, ApiOptions options, CancellationToken cancellationToken) =>
+            UserPageAsync(pageSize, cursor, options, (after, size) => users.BiddingAsync(id, after, size, cancellationToken)))
+            .Produces<Page<UserBidding>>().ProducesProblem(StatusCodes.Status400BadRequest);
         admin.MapPost("/users/{id:guid}/disable", (Guid id, ReasonRequest body, HttpContext http) => SetDisabledAsync(id, body, http, disabled: true));
         admin.MapPost("/users/{id:guid}/enable", (Guid id, ReasonRequest body, HttpContext http) => SetDisabledAsync(id, body, http, disabled: false));
         admin.MapGet("/audit", AuditAsync).Produces<Page<AuditEntry>>().ProducesProblem(StatusCodes.Status400BadRequest);
@@ -139,6 +146,23 @@ internal static class AdminEndpoints
         }
 
         return TypedResults.Ok(await reader.UsersAsync(request.Q, request.Kind, request.State, after, size, cancellationToken));
+    }
+
+    private static async Task<IResult> UserAsync(Guid id, AdminUserReader users, CancellationToken cancellationToken) =>
+        await users.ProfileAsync(id, cancellationToken) is { } profile
+            ? TypedResults.Ok(profile)
+            : Problems.Of(StatusCodes.Status404NotFound, "not_found", "No such user.");
+
+    // A user's listings or bidding, newest first, a page at a time.
+    private static async Task<IResult> UserPageAsync<T>(
+        int? pageSize, string? cursor, ApiOptions options, Func<(DateTimeOffset At, Guid Id)?, int, Task<Page<T>>> read)
+    {
+        if (!Paging.TryParse(pageSize, cursor, options, out var size, out var before, out var problem))
+        {
+            return problem;
+        }
+
+        return TypedResults.Ok(await read(before, size));
     }
 
     private static async Task<IResult> AuditAsync(

@@ -64,6 +64,7 @@ internal static class ApiHosting
         builder.Services.AddSingleton<AdminKpis>();
         builder.Services.AddSingleton<AdminReader>();
         builder.Services.AddSingleton<EventLog>();
+        builder.Services.AddSingleton<AdminUserReader>();
         builder.Services.AddSingleton<RedisHealth>();
         builder.Services.AddHttpClient<SimulatorControl>(SimulatorControl.Configure);
         builder.Services.AddSingleton<DemoResets>();

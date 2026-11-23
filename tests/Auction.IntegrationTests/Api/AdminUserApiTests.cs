@@ -5,7 +5,7 @@ using Auction.IntegrationTests.Database;
 
 namespace Auction.IntegrationTests.Api;
 
-/// <summary>The admin Users screen: who each account is, how active, and filters by kind and state.</summary>
+/// <summary>The admin Users screen and each user's page: who they are, what they've listed and what they've bid on.</summary>
 public sealed class AdminUserApiTests(MigratedDatabase db)
 {
     [Fact]
@@ -54,6 +54,88 @@ public sealed class AdminUserApiTests(MigratedDatabase db)
         Assert.Equal(user.Id, Assert.Single(byEmail).GetProperty("id").GetGuid());
 
         Assert.Equal(HttpStatusCode.BadRequest, await admin.Http.StatusOfGetAsync("/api/v1/admin/users?state=sleeping"));
+    }
+
+    [Fact]
+    public async Task A_users_page_counts_their_listings_sales_and_bids()
+    {
+        var api = await db.ApiAsync();
+        var admin = await api.SignUpAsync("Profile admin", role: "admin");
+        var seller = await api.SignUpAsync("Profiled seller");
+        var buyer = await api.SignUpAsync("Profiled buyer");
+        var sold = await seller.PublishedAsync(ApiCalls.Terms(title: "Sold lot"));
+        await seller.PublishedAsync(ApiCalls.Terms(title: "Unsold lot"));
+        using (var bid = await buyer.Http.BidAsync(sold, 2500))
+        {
+            Assert.Equal(HttpStatusCode.Created, bid.StatusCode);
+        }
+
+        await db.ExecuteAsync(MigratedDatabase.Migrator, "UPDATE auctions SET status = 'closed', outcome = 'sold', closed_at = clock_timestamp() WHERE id = $1", sold);
+
+        var sellerProfile = await admin.Http.GetJsonAsync($"/api/v1/admin/users/{seller.Id}");
+        var buyerProfile = await admin.Http.GetJsonAsync($"/api/v1/admin/users/{buyer.Id}");
+
+        Assert.Equal(("Profiled seller", seller.Email, 2L, 1L), (sellerProfile.GetProperty("displayName").GetString(), sellerProfile.GetProperty("email").GetString(), sellerProfile.GetProperty("listings").GetInt64(), sellerProfile.GetProperty("sold").GetInt64()));
+        Assert.Equal((1L, 1L, 1L), (buyerProfile.GetProperty("bids").GetInt64(), buyerProfile.GetProperty("auctionsBidOn").GetInt64(), buyerProfile.GetProperty("won").GetInt64()));
+    }
+
+    [Fact]
+    public async Task A_users_listings_leave_out_drafts()
+    {
+        var api = await db.ApiAsync();
+        var admin = await api.SignUpAsync("Listings admin", role: "admin");
+        var seller = await api.SignUpAsync("Listing seller");
+        var published = await seller.PublishedAsync(ApiCalls.Terms(title: "Shown lot"));
+        await seller.Http.CreateDraftAsync(ApiCalls.Terms(title: "Hidden draft"));
+
+        var listings = await AllAsync(admin.Http, null, $"/api/v1/admin/users/{seller.Id}/listings");
+
+        var only = Assert.Single(listings);
+        Assert.Equal((published, "Shown lot", "active"), (only.GetProperty("auctionId").GetGuid(), only.GetProperty("title").GetString(), only.GetProperty("status").GetString()));
+    }
+
+    [Fact]
+    public async Task A_users_bidding_shows_their_standing()
+    {
+        var api = await db.ApiAsync();
+        var admin = await api.SignUpAsync("Bidding admin", role: "admin");
+        var seller = await api.SignUpAsync("Bidding seller");
+        var buyer = await api.SignUpAsync("Bidding buyer");
+        var rival = await api.SignUpAsync("Bidding rival");
+        var id = await seller.PublishedAsync(ApiCalls.Terms(title: "Contested lot", bidEntry: "fixed_increment"));
+        using (var bid = await buyer.Http.BidAsync(id, 1000))
+        {
+            Assert.Equal(HttpStatusCode.Created, bid.StatusCode);
+        }
+
+        var leading = Assert.Single(await AllAsync(admin.Http, null, $"/api/v1/admin/users/{buyer.Id}/bidding"));
+        Assert.Equal(("Contested lot", "leading", 1000L), (leading.GetProperty("title").GetString(), leading.GetProperty("standing").GetString(), leading.GetProperty("theirHighestCents").GetInt64()));
+
+        using (var bid = await rival.Http.BidAsync(id, 1100))
+        {
+            Assert.Equal(HttpStatusCode.Created, bid.StatusCode);
+        }
+
+        var outbid = Assert.Single(await AllAsync(admin.Http, null, $"/api/v1/admin/users/{buyer.Id}/bidding"));
+        Assert.Equal(("outbid", 1100L), (outbid.GetProperty("standing").GetString(), outbid.GetProperty("currentPriceCents").GetInt64()));
+    }
+
+    [Fact]
+    public async Task An_unknown_user_is_404_and_non_admins_get_404_for_every_user_route()
+    {
+        var api = await db.ApiAsync();
+        var admin = await api.SignUpAsync("Unknown admin", role: "admin");
+        var user = await api.SignUpAsync("Curious user");
+
+        using (var unknown = await admin.Http.GetAsync($"/api/v1/admin/users/{Guid.NewGuid()}", TestContext.Current.CancellationToken))
+        {
+            await unknown.AssertProblemAsync(HttpStatusCode.NotFound, "not_found");
+        }
+
+        foreach (var path in new[] { "", "/listings", "/bidding" })
+        {
+            Assert.Equal(HttpStatusCode.NotFound, await user.Http.StatusOfGetAsync($"/api/v1/admin/users/{user.Id}{path}"));
+        }
     }
 
     private static async Task<JsonElement> RowAsync(HttpClient admin, Guid id) =>
