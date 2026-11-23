@@ -98,6 +98,8 @@ else
         </div>
 
         <aside class="ticket" aria-label="Bidding">
+            @* The price board: the live price, the clock and the state, set apart from the bidding controls below. *@
+            <div class="board">
             <div>
                 <div class="price-label">@PriceLabel(auction)</div>
                 <LotPrice Auction="auction" TestId="current-price" />
@@ -119,6 +121,7 @@ else
                     <dd class="@(met ? "leading" : "")">@(met ? "Met" : "Not met yet")</dd>
                 }
             </dl>
+            </div>
 
             @if (auction.YouLead)
             {

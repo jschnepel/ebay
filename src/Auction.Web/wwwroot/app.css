@@ -271,3 +271,25 @@ h2.mud-typography { font-size: 1.25rem; }
 .lot-body { padding: 0.9rem 1.1rem 1.1rem; }
 .lot .price { font-size: 1.9rem; }
 .lot-foot .clock.is-soon { background: var(--brass-tint); color: var(--brass-text); padding: 0.05rem 0.5rem; border-radius: 999px; }
+
+/* The auction page's one bold element: the price board, white figures on ink with the brass clock bar. */
+.lot-page { gap: 2.5rem; }
+.lot-page h1.mud-typography { font-size: 2.25rem; }
+.gallery img, .lot-page .lot-cover { border-radius: var(--radius-lg); }
+.ticket { padding: 0; gap: 0; border: 0; border-radius: var(--radius-lg); box-shadow: var(--float); overflow: hidden; }
+.ticket > * { margin: 0 1.25rem; }
+.ticket > :last-child { margin-bottom: 1.25rem; }
+.ticket > .mud-alert { margin-top: 1rem; }
+.ticket > div:not(.board) { margin-top: 1rem; }
+.board { margin: 0; display: flex; flex-direction: column; gap: 0.75rem; padding: 1.35rem 1.25rem 1.25rem; background: var(--ink); color: var(--on-ink); }
+.board .price-label, .board .ticket-facts dt, .board .muted, .board .price small { color: var(--on-ink-muted); }
+.board .price { color: var(--on-ink); font-size: 3rem; }
+.board .meter { background: rgba(255, 255, 255, 0.16); }
+.board .meter > span { background: var(--brass-bright); }
+.board .clock.is-soon { color: var(--brass-bright); }
+.board .leading { color: #8fd1a6; }
+.ticket .mud-button-filled { height: 3rem; font-size: 1rem; }
+.step-note { margin-top: 0.25rem; }
+.facts { padding: 1rem 1.25rem; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-lg); }
+.ticket > .mud-button-root, .ticket > .mud-typography { margin-top: 1rem; }
+.ticket > .board:last-child { margin: 0; }
