@@ -102,7 +102,8 @@ public sealed class AuctionCache(RedisJobs redis)
     /// <summary>
     /// Whether the viewer has bid on the auction, if it was looked up lately: every signed-in viewer of a busy
     /// auction asks on each refresh. Bids reach the database only through the API, which records each one here as
-    /// it is accepted, so a remembered "no" can be wrong only if that record was lost, and then for a minute.
+    /// it is accepted. A remembered "no" can be wrong only if that record was never made (Redis was unreachable,
+    /// or the engine accepted the bid but the API never heard back), and then for at most a minute.
     /// </summary>
     public async Task<bool?> HasBidAsync(Guid auction, Guid bidder)
     {
@@ -110,8 +111,14 @@ public sealed class AuctionCache(RedisJobs redis)
         return value.HasValue ? value == "1" : null;
     }
 
+    /// <summary>
+    /// A "yes" always replaces what is there. A "no" is stored only when nothing is, so one read just before a bid
+    /// can't overwrite the "yes" that bid recorded.
+    /// </summary>
     public Task RememberHasBidAsync(Guid auction, Guid bidder, bool hasBid) =>
-        redis.TryAsync(db => db.StringSetAsync(HasBidKey(auction, bidder), hasBid ? "1" : "0", hasBid ? TimeSpan.FromMinutes(10) : TimeSpan.FromMinutes(1)));
+        redis.TryAsync(db => hasBid
+            ? db.StringSetAsync(HasBidKey(auction, bidder), "1", TimeSpan.FromMinutes(10))
+            : db.StringSetAsync(HasBidKey(auction, bidder), "0", TimeSpan.FromMinutes(1), When.NotExists));
 
     private static string HasBidKey(Guid auction, Guid bidder) => $"has-bid:{auction:N}:{bidder:N}";
 
