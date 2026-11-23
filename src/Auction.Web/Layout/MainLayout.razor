@@ -54,7 +54,14 @@
                 </MudAlert>
             }
             @Body
-            <footer class="site-foot muted" data-testid="time-zone">Times are shown in your time zone, @Format.Zone(DateTimeOffset.Now).</footer>
+            <footer class="site-foot muted">
+                @* The bar has no room for the name on a phone, so who is signed in is also said here. *@
+                @if (Session.Account is { } signedIn)
+                {
+                    <span data-testid="signed-in-foot">Signed in as @signedIn.DisplayName. </span>
+                }
+                <span data-testid="time-zone">Times are shown in your time zone, @Format.Zone(DateTimeOffset.Now).</span>
+            </footer>
         </MudContainer>
     </MudMainContent>
 </MudLayout>

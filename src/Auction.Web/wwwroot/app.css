@@ -361,7 +361,9 @@ h2.mud-typography { font-size: 1.25rem; }
 @media (max-width: 959.98px) {
     .console { grid-template-columns: minmax(0, 1fr); gap: 1.25rem; }
     .console-rail { display: contents; }
-    .console-nav { order: 0; flex-direction: row; gap: 0.25rem; overflow-x: auto; scrollbar-width: none; }
+    /* Every section stays in view on a narrow screen: the links wrap instead of scrolling off the edge. */
+    .console-nav { order: 0; flex-direction: row; flex-wrap: wrap; gap: 0.25rem; }
+    .console-nav a { padding: 0.5rem 0.6rem; gap: 0.4rem; }
     .console-nav a { white-space: nowrap; }
     .console-body { order: 1; }
     .console-health { order: 2; }

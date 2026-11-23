@@ -122,6 +122,9 @@ public sealed class UiQualityTests(MigratedDatabase db, Browsers browsers)
             await page.GotoAsync(path);
             await Assertions.Expect(page.Locator("h1")).ToBeVisibleAsync();
             await Assertions.Expect(page.GetByTestId("state-loading")).ToHaveCountAsync(0);
+
+            // The bar has no room for the name at this width, so the page still says who is signed in.
+            await Assertions.Expect(page.GetByTestId("signed-in-foot")).ToContainTextAsync(page == buyer ? "Phone buyer" : "Phone seller");
             if (path == "/")
             {
                 await Assertions.Expect(page.GetByTestId("auction-row").First).ToBeVisibleAsync();
