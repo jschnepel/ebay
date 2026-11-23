@@ -81,6 +81,21 @@ public sealed class ClientProblemTextTests
         Assert.Equal("You're signed out. Sign in again to continue.", Shown(new() { Status = 401, Title = "Unauthorized" }));
     }
 
+    [Theory]
+    [InlineData(502, null)]
+    [InlineData(503, null)]
+    [InlineData(504, null)]
+    public void A_gateway_error_says_the_site_is_updating(int status, string? code)
+    {
+        Assert.Equal("The site is updating. Try again in a moment.", Shown(new() { Status = status, Code = code, Title = $"The request failed ({status})." }));
+    }
+
+    [Fact]
+    public void A_503_the_api_explains_keeps_its_own_words()
+    {
+        Assert.Equal("The simulator can't be reached.", Shown(new() { Status = 503, Code = "simulator_unavailable", Title = "The simulator can't be reached." }));
+    }
+
     [Fact]
     public void A_busy_engine_says_to_try_again_without_naming_a_header()
     {

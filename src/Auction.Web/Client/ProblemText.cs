@@ -1,9 +1,9 @@
 namespace Auction.Web.Client;
 
 /// <summary>
-/// The words a person sees for a refused request. The API's titles already read well, except for three
-/// cases: field errors, which it reports as a field name and a code; a 401, which means the session ended;
-/// and a busy engine, whose title is written for API clients.
+/// The words a person sees for a refused request. The API's titles already read well, except for field
+/// errors, which it reports as a field name and a code; a 401, which means the session ended; a busy engine,
+/// whose title is written for API clients; and a gateway error, which during a deploy means the site is restarting.
 /// </summary>
 internal static class ProblemText
 {
@@ -64,6 +64,7 @@ internal static class ProblemText
         { Errors: { Count: > 0 } errors } => string.Join('\n', errors.SelectMany(e => e.Value.Select(code => Sentence(e.Key, code)))),
         { Status: 401, Code: not "sign_in_failed" } => "You're signed out. Sign in again to continue.",
         { Code: "busy" } => "The auction service is busy. Try again in a moment.",
+        { Status: 502 or 504 } or { Status: 503, Code: null } => "The site is updating. Try again in a moment.",
         _ => problem.Title ?? "The request failed.",
     };
 

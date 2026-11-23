@@ -8,10 +8,15 @@ namespace Auction.Web.Client;
 /// Every call the client makes to the JSON API. Commands carry an Idempotency-Key chosen by the caller, so
 /// retrying a failed request with the same key never runs it twice.
 /// </summary>
-public sealed class AuctionApi(HttpClient http)
+public sealed class AuctionApi(HttpClient http, Func<TimeSpan, Task>? wait = null)
 {
     private const string Base = "api/v1/";
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+
+    // A deploy leaves the API unreachable for a few seconds; reads wait it out, writes leave the retry to the person.
+    private static readonly TimeSpan[] GatewayRetries = [TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(4)];
+
+    private readonly Func<TimeSpan, Task> _wait = wait ?? (delay => Task.Delay(delay));
 
     public async Task<Account?> MeAsync() => (await SendAsync<Account>(HttpMethod.Get, "account/me")).Value;
 
@@ -148,21 +153,16 @@ public sealed class AuctionApi(HttpClient http)
 
     private async Task<ApiResult<T>> SendAsync<T>(HttpMethod method, string path, object? body = null, string? key = null)
     {
-        using var request = new HttpRequestMessage(method, Base + path);
-        if (body is not null)
-        {
-            request.Content = JsonContent.Create(body, options: Json);
-        }
-
-        if (key is not null)
-        {
-            request.Headers.Add("Idempotency-Key", key);
-        }
-
         HttpResponseMessage response;
         try
         {
-            response = await http.SendAsync(request);
+            response = await SendOnceAsync(method, path, body, key);
+            for (var retry = 0; method == HttpMethod.Get && IsGatewayError(response.StatusCode) && retry < GatewayRetries.Length; retry++)
+            {
+                response.Dispose();
+                await _wait(GatewayRetries[retry]);
+                response = await SendOnceAsync(method, path, body, key);
+            }
         }
         catch (HttpRequestException)
         {
@@ -181,6 +181,26 @@ public sealed class AuctionApi(HttpClient http)
                 : new ApiResult<T>(await response.Content.ReadFromJsonAsync<T>(Json), null);
         }
     }
+
+    // A sent request can't be sent again, so each attempt builds its own.
+    private async Task<HttpResponseMessage> SendOnceAsync(HttpMethod method, string path, object? body, string? key)
+    {
+        using var request = new HttpRequestMessage(method, Base + path);
+        if (body is not null)
+        {
+            request.Content = JsonContent.Create(body, options: Json);
+        }
+
+        if (key is not null)
+        {
+            request.Headers.Add("Idempotency-Key", key);
+        }
+
+        return await http.SendAsync(request);
+    }
+
+    private static bool IsGatewayError(HttpStatusCode status) =>
+        status is HttpStatusCode.BadGateway or HttpStatusCode.ServiceUnavailable or HttpStatusCode.GatewayTimeout;
 
     private static async Task<Problem> ReadProblemAsync(HttpResponseMessage response)
     {
