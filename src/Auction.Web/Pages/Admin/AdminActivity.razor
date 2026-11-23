@@ -115,12 +115,14 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        // Taken before the first await: leaving the page while it loads disposes the source.
+        var stop = _stop.Token;
         await Session.LoadAsync();
         _forbidden = Session.Account?.IsAdmin != true;
         if (!_forbidden)
         {
             await RefreshAsync();
-            _ = PollAsync(_stop.Token);
+            _ = PollAsync(stop);
         }
     }
 
