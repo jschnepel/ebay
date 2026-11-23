@@ -19,8 +19,7 @@ public sealed class ImageBrowserTests(MigratedDatabase db, Browsers browsers)
         await seller.GetByLabel("Title").FillAsync(title);
         await seller.GetByLabel("Opening price ($)").FillAsync("5.00");
         await seller.GetByLabel("Reserve ($)").FillAsync("6.00");
-        await seller.GetByRole(AriaRole.Button, new() { Name = "Save draft" }).ClickAsync();
-        await seller.WaitForURLAsync("**/sell");
+        await seller.SaveDraftAsync();
         var row = seller.GetByTestId("my-auction-row").Filter(new() { HasText = title });
         await row.GetByRole(AriaRole.Link, new() { Name = "Edit" }).ClickAsync();
         foreach (var (name, type, image) in new[] { ("a.png", "image/png", TestImages.Png()), ("b.jpg", "image/jpeg", TestImages.Jpeg()), ("c.webp", "image/webp", TestImages.WebP()) })
@@ -75,8 +74,7 @@ public sealed class ImageBrowserTests(MigratedDatabase db, Browsers browsers)
         await seller.GetByLabel("Title").FillAsync(title);
         await seller.GetByLabel("Opening price ($)").FillAsync("5.00");
         await seller.GetByLabel("Reserve ($)").FillAsync("6.00");
-        await seller.GetByRole(AriaRole.Button, new() { Name = "Save draft" }).ClickAsync();
-        await seller.WaitForURLAsync("**/sell");
+        await seller.SaveDraftAsync();
         var row = seller.GetByTestId("my-auction-row").Filter(new() { HasText = title });
         await row.GetByRole(AriaRole.Link, new() { Name = "Edit" }).ClickAsync();
 

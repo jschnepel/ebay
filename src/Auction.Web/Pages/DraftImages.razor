@@ -1,9 +1,12 @@
 @inject AuctionApi Api
 
 @* A draft's images (UI-05): up to four, uploaded then attached, reordered, one chosen as the cover. *@
-<MudPaper Class="pa-4 mt-4" Outlined="true">
-    <MudText Typo="Typo.h6" HtmlTag="h2">Images</MudText>
-    <MudText Typo="Typo.body2" Class="mb-2">Up to four JPEG, PNG or WebP images, 5 MiB each. They're fixed once you publish.</MudText>
+<section class="panel form-panel mt-4" aria-label="Photos">
+    <MudText Typo="Typo.h6" HtmlTag="h2">Photos</MudText>
+    <p class="muted" data-testid="photo-rules">
+        Up to four JPEG, PNG or WebP images, 5 MiB each. The cover is the one shown in the directory: the first you add, unless you choose another.
+        They can't be changed once you publish.
+    </p>
 
     @if (_images is { Count: > 0 })
     {
@@ -13,7 +16,7 @@
                 var index = i;
                 var id = _images[i];
                 <div class="draft-image" data-testid="draft-image">
-                    <img src="@($"api/v1/images/{id}")" alt="@($"Image {index + 1}")" width="120" height="120" style="object-fit: cover" />
+                    <img src="@($"api/v1/images/{id}")" alt="@($"Photo {index + 1} of {_images.Count}")" width="120" height="120" style="object-fit: cover" />
                     <div>
                         @if (id == _cover)
                         {
@@ -36,15 +39,19 @@
 
     @if ((_images?.Count ?? 0) < 4)
     {
-        <label class="mud-typography mud-typography-body2" for="image-file">Add an image</label>
-        <InputFile id="image-file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" OnChange="UploadAsync" disabled="@_busy" />
+        @* The file control fills the zone, so a photo can be dropped on it or picked by clicking or from the keyboard. *@
+        <div class="@($"drop-zone{(_busy ? " is-busy" : "")}")">
+            <label for="image-file">Add an image</label>
+            <span class="muted">@(_busy ? "Uploading…" : $"Drop a photo here or choose one. {4 - (_images?.Count ?? 0)} of 4 left.")</span>
+            <InputFile id="image-file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" OnChange="UploadAsync" disabled="@_busy" />
+        </div>
     }
 
     @if (_error is not null)
     {
         <MudAlert Class="mt-2" Severity="Severity.Error" data-testid="image-error"><MessageText Text="@_error" /></MudAlert>
     }
-</MudPaper>
+</section>
 
 @code {
     private const long MaxBytes = 5 * 1024 * 1024;

@@ -3,6 +3,7 @@
 @inject AuctionApi Api
 @inject Session Session
 @inject NavigationManager Navigation
+@inject IDialogService Dialogs
 
 <PageTitle>@(Id is null ? "New listing" : "Edit draft")</PageTitle>
 <MudText Typo="Typo.h4" HtmlTag="h1" Class="mb-4">@(Id is null ? "New listing" : "Edit draft")</MudText>
@@ -18,32 +19,61 @@ else if (_loadError is not null)
 }
 else
 {
-    @* One form in four sections, in the order a seller thinks: the item, its price, how bidding works, and when. *@
+    @* One form in four sections, in the order a seller thinks: the item, its price, how bidding works, and when.
+       Each field says its rule underneath and shows its own error; the summary on top lists them all. *@
+    @if (_errors.Count > 0 || _error is not null)
+    {
+        <MudAlert Class="mb-4" Severity="Severity.Error" data-testid="draft-error">
+            @if (_errors.Count > 0)
+            {
+                <span>@(_errors.Count == 1 ? "One thing needs fixing:" : $"{_errors.Count} things need fixing:")</span>
+                <ul class="message-list">
+                    @foreach (var (_, sentence) in _errors)
+                    {
+                        <li>@sentence</li>
+                    }
+                </ul>
+            }
+            else
+            {
+                <MessageText Text="@_error" />
+            }
+        </MudAlert>
+    }
+    else if (_saved)
+    {
+        <MudAlert Class="mb-4" Severity="Severity.Success" data-testid="draft-saved">Draft saved. Add photos below, then publish when it's ready.</MudAlert>
+    }
+
     <section class="panel form-panel">
-        <p class="muted form-lede">Saving keeps a private draft; nobody else sees it until you publish it from the Sell page.</p>
+        <p class="muted form-lede">A draft is private until you publish it. The terms and photos can't be changed once you publish.</p>
 
         <fieldset class="form-section">
             <legend>The item</legend>
-            <MudTextField @bind-Value="_title" Label="Title" Immediate="true" MaxLength="120" Variant="Variant.Outlined" Margin="Margin.Dense" />
-            <MudTextField @bind-Value="_description" Label="Description" Immediate="true" Lines="4" MaxLength="4000" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            <MudTextField @bind-Value="_title" Label="Title" Immediate="true" MaxLength="120" Counter="120" Variant="Variant.Outlined" Margin="Margin.Dense"
+                          HelperText="3 to 120 characters." HelperTextOnFocus="false" Error="@Has("title")" ErrorText="@Of("title")" />
+            <MudTextField @bind-Value="_description" Label="Description (optional)" Immediate="true" Lines="4" MaxLength="4000" Counter="4000" Variant="Variant.Outlined" Margin="Margin.Dense"
+                          HelperText="Condition, what's included, how it's collected or posted." Error="@Has("description")" ErrorText="@Of("description")" />
         </fieldset>
 
         <fieldset class="form-section">
             <legend>Price</legend>
             <div class="form-row">
-                <MudTextField @bind-Value="_opening" Label="Opening price ($)" Immediate="true" Variant="Variant.Outlined" Margin="Margin.Dense" />
-                <MudTextField @bind-Value="_increment" Label="Bid increment ($)" Immediate="true" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                <MudTextField @bind-Value="_opening" Label="Opening price ($)" Immediate="true" Variant="Variant.Outlined" Margin="Margin.Dense" InputMode="@(InputMode.@decimal)"
+                              HelperText="$0.01 to $10,000,000. The first bid must be at least this." Error="@Has("openingPriceCents")" ErrorText="@Of("openingPriceCents")" />
+                <MudTextField @bind-Value="_increment" Label="Bid increment ($)" Immediate="true" Variant="Variant.Outlined" Margin="Margin.Dense" InputMode="@(InputMode.@decimal)"
+                              HelperText="How far each bid moves the price." Error="@Has("incrementCents")" ErrorText="@Of("incrementCents")" />
             </div>
             <div class="form-row">
-                <MudSelect T="string" @bind-Value="_floorType" Label="Price floor" Variant="Variant.Outlined" Margin="Margin.Dense">
+                <MudSelect T="string" @bind-Value="_floorType" Label="Price floor" Variant="Variant.Outlined" Margin="Margin.Dense" HelperText="@FloorHelp">
                     <MudSelectItem T="string" Value="@("reserve")">Hidden reserve</MudSelectItem>
                     <MudSelectItem T="string" Value="@("minimum_bid")">Minimum bid (the opening price)</MudSelectItem>
                     <MudSelectItem T="string" Value="@("absolute")">No reserve</MudSelectItem>
                 </MudSelect>
                 @if (_floorType == "reserve")
                 {
-                    <MudTextField @bind-Value="_reserve" Label="Reserve ($)" Immediate="true" Variant="Variant.Outlined" Margin="Margin.Dense"
-                                  HelperText="Hidden from bidders; they only see whether it's met." />
+                    <MudTextField @bind-Value="_reserve" Label="Reserve ($)" Immediate="true" Variant="Variant.Outlined" Margin="Margin.Dense" InputMode="@(InputMode.@decimal)"
+                                  HelperText="At least the opening price. Hidden from bidders; they only see whether it's met." Error="@Has("reserveCents")" ErrorText="@Of("reserveCents")" />
                 }
             </div>
         </fieldset>
@@ -51,7 +81,7 @@ else
         <fieldset class="form-section">
             <legend>Bidding</legend>
             <MudSelect T="string" @bind-Value="_bidEntry" Label="Bidding" Variant="Variant.Outlined" Margin="Margin.Dense"
-                       HelperText="@(_bidEntry == "proxy" ? "Bidders set a private maximum and the system bids for them, one step at a time." : "Bidders can only bid the next step: the current price plus your increment.")">
+                       HelperText="@(_bidEntry == "proxy" ? "Bidders set a private maximum and the system bids for them, one increment at a time." : "Bidders can only bid the next step: the current price plus your increment.")">
                 <MudSelectItem T="string" Value="@("proxy")">Proxy: bidders enter a private maximum</MudSelectItem>
                 <MudSelectItem T="string" Value="@("fixed_increment")">Fixed steps of one increment</MudSelectItem>
             </MudSelect>
@@ -60,21 +90,22 @@ else
         <fieldset class="form-section">
             <legend>Timing</legend>
             <div class="form-row">
-                <MudTextField @bind-Value="_startsAt" Label="Starts" InputType="InputType.DateTimeLocal" Immediate="true" Variant="Variant.Outlined" Margin="Margin.Dense" />
-                <MudTextField @bind-Value="_endsAt" Label="Ends" InputType="InputType.DateTimeLocal" Immediate="true" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                <MudTextField @bind-Value="_startsAt" Label="Starts" InputType="InputType.DateTimeLocal" Immediate="true" Variant="Variant.Outlined" Margin="Margin.Dense"
+                              HelperText="Your local time. A time already past means it starts when you publish." Error="@Has("startsAt")" ErrorText="@Of("startsAt")" />
+                <MudTextField @bind-Value="_endsAt" Label="Ends" InputType="InputType.DateTimeLocal" Immediate="true" Variant="Variant.Outlined" Margin="Margin.Dense"
+                              HelperText="From a minute to 14 days after it starts. It isn't extended by late bids." Error="@Has("endsAt")" ErrorText="@Of("endsAt")" />
             </div>
         </fieldset>
 
         <div class="form-actions">
             <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveAsync" Disabled="_busy">Save draft</MudButton>
-            <MudButton Href="sell">Back</MudButton>
+            @if (Id is not null)
+            {
+                <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="PublishAsync" Disabled="_busy">Publish</MudButton>
+            }
+            <MudButton Href="sell">Back to your listings</MudButton>
         </div>
     </section>
-
-    @if (_error is not null)
-    {
-        <MudAlert Class="mt-4" Severity="Severity.Error" data-testid="draft-error"><MessageText Text="@_error" /></MudAlert>
-    }
 
     @if (Id is { } draftId)
     {
@@ -82,7 +113,10 @@ else
     }
     else
     {
-        <p class="muted mt-4">Save the draft first, then add photos from Edit.</p>
+        <section class="panel form-panel mt-4" aria-label="Photos">
+            <MudText Typo="Typo.h6" HtmlTag="h2">Photos</MudText>
+            <p class="muted">Save the draft and this is where you add up to four photos, before you publish.</p>
+        </section>
     }
 }
 
@@ -99,19 +133,36 @@ else
     private string _bidEntry = "proxy";
     private string _startsAt = Format.LocalInput(DateTimeOffset.Now);
     private string _endsAt = Format.LocalInput(DateTimeOffset.Now.AddDays(1));
+
+    // What needs fixing, each against its field (the API's field names), in the order of the form.
+    private List<(string Field, string Sentence)> _errors = [];
     private string? _error;
     private string? _loadError;
     private bool _signedOut;
     private bool _busy;
+    private bool _saved;
+    private Guid? _loaded;
 
-    // Kept until a save succeeds, so retrying after a lost answer never creates a second draft.
+    // Kept until the action succeeds, so retrying after a lost answer never repeats it.
     private string _key = Guid.NewGuid().ToString();
+    private string _publishKey = Guid.NewGuid().ToString();
+
+    private string FloorHelp => _floorType switch
+    {
+        "reserve" => "It sells only if the price reaches your reserve.",
+        "minimum_bid" => "It sells to the highest bid at or above the opening price.",
+        _ => "It sells to the highest bid, shown to bidders as \"No reserve\".",
+    };
+
+    private bool Has(string field) => _errors.Exists(e => e.Field == field);
+
+    private string? Of(string field) => Has(field) ? string.Join(" ", _errors.Where(e => e.Field == field).Select(e => e.Sentence)) : null;
 
     protected override async Task OnParametersSetAsync()
     {
         await Session.LoadAsync();
         _signedOut = Session.Account is null;
-        if (_signedOut || Id is not { } id)
+        if (_signedOut || Id is not { } id || _loaded == id)
         {
             return;
         }
@@ -123,6 +174,7 @@ else
             return;
         }
 
+        _loaded = id;
         (_title, _description) = (draft.Title, draft.Description);
         (_opening, _increment, _reserve) = (Format.DollarsInput(draft.OpeningPriceCents), Format.DollarsInput(draft.IncrementCents), Format.DollarsInput(draft.ReserveCents));
         (_floorType, _bidEntry) = (draft.FloorType, draft.BidEntry);
@@ -131,9 +183,59 @@ else
 
     private async Task SaveAsync()
     {
-        if (Terms() is not { } terms)
+        if (await StoreAsync() is { } id)
+        {
+            _saved = true;
+            if (Id is null)
+            {
+                // The draft now exists: carry on in the same form, where its photos are added.
+                _loaded = id;
+                Navigation.NavigateTo($"sell/{id}/edit");
+            }
+        }
+    }
+
+    private async Task PublishAsync()
+    {
+        if (await StoreAsync() is not { } id)
         {
             return;
+        }
+
+        var confirmed = await Dialogs.ShowMessageBoxAsync(
+            "Publish this listing?",
+            "Bidders will see it and can bid. Its terms and photos can't be changed once it's published, and it can only be cancelled before the first bid.",
+            yesText: "Publish listing",
+            cancelText: "Keep as draft");
+        if (confirmed is not true)
+        {
+            return;
+        }
+
+        _busy = true;
+        var result = await Api.PublishAsync(id, _publishKey);
+        _busy = false;
+        if (result.Succeeded)
+        {
+            Navigation.NavigateTo($"auctions/{id}");
+            return;
+        }
+
+        if (result.Problem!.Status is not (0 or 503))
+        {
+            _publishKey = Guid.NewGuid().ToString();
+        }
+
+        Refused(result.Problem);
+    }
+
+    // Saves what's typed, as a new draft or over the saved one; null when something needs fixing first.
+    private async Task<Guid?> StoreAsync()
+    {
+        (_saved, _error) = (false, null);
+        if (Terms() is not { } terms)
+        {
+            return null;
         }
 
         _busy = true;
@@ -141,8 +243,8 @@ else
         _busy = false;
         if (result.Succeeded)
         {
-            Navigation.NavigateTo("sell");
-            return;
+            _key = Guid.NewGuid().ToString();
+            return result.Value!.AuctionId;
         }
 
         if (result.Problem!.Status is not (0 or 503))
@@ -150,18 +252,70 @@ else
             _key = Guid.NewGuid().ToString();
         }
 
-        _error = result.Message;
+        Refused(result.Problem);
+        return null;
     }
 
-    // Amounts must parse exactly; the server checks everything else.
+    // The API names the fields it refused; anything else is shown on its own.
+    private void Refused(Problem problem)
+    {
+        _errors = [.. ProblemText.ByField(problem).Select(e => (e.Field == "duration" ? "endsAt" : e.Field, e.Sentence))];
+        _error = _errors.Count == 0 ? ProblemText.For(problem) : null;
+    }
+
+    // Checked here so the seller hears at once and at the field; the server checks everything again.
     private DraftTerms? Terms()
     {
-        var opening = Format.ParseDollars(_opening);
-        var increment = Format.ParseDollars(_increment);
-        var reserve = _floorType == "reserve" ? Format.ParseDollars(_reserve) : null;
-        if (opening is null || increment is null || (_floorType == "reserve" && reserve is null))
+        _errors = [];
+        var title = _title.Trim();
+        if (title.Length == 0)
         {
-            _error = "Enter the amounts in dollars, like 12.50.";
+            _errors.Add(("title", "Enter a title."));
+        }
+        else if (title.Length < 3)
+        {
+            _errors.Add(("title", "The title needs at least 3 characters."));
+        }
+
+        var opening = Format.ParseDollars(_opening);
+        if (opening is null)
+        {
+            _errors.Add(("openingPriceCents", "Enter an opening price in dollars, like 12.50."));
+        }
+
+        var increment = Format.ParseDollars(_increment);
+        if (increment is null)
+        {
+            _errors.Add(("incrementCents", "Enter a bid increment in dollars, like 1.00."));
+        }
+
+        var reserve = _floorType == "reserve" ? Format.ParseDollars(_reserve) : null;
+        if (_floorType == "reserve" && reserve is null)
+        {
+            _errors.Add(("reserveCents", "Enter a reserve in dollars, or choose another price floor."));
+        }
+        else if (reserve < opening)
+        {
+            _errors.Add(("reserveCents", "The reserve can't be below the opening price."));
+        }
+
+        var (startsAt, endsAt) = (Format.ParseLocalInput(_startsAt), Format.ParseLocalInput(_endsAt));
+        if (startsAt is null)
+        {
+            _errors.Add(("startsAt", "Enter when the auction starts."));
+        }
+
+        if (endsAt is null)
+        {
+            _errors.Add(("endsAt", "Enter when the auction ends."));
+        }
+        else if (endsAt <= startsAt)
+        {
+            _errors.Add(("endsAt", "The auction must end after it starts."));
+        }
+
+        if (_errors.Count > 0)
+        {
             return null;
         }
 
@@ -174,8 +328,8 @@ else
             FloorType = _floorType,
             ReserveCents = reserve,
             BidEntry = _bidEntry,
-            StartsAt = Format.ParseLocalInput(_startsAt),
-            EndsAt = Format.ParseLocalInput(_endsAt),
+            StartsAt = startsAt,
+            EndsAt = endsAt,
         };
     }
 }

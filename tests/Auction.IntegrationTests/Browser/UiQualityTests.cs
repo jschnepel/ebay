@@ -197,8 +197,7 @@ public sealed class UiQualityTests(MigratedDatabase db, Browsers browsers)
         await first.GetByLabel("Title").FillAsync(title);
         await first.GetByLabel("Opening price ($)").FillAsync("5.00");
         await first.GetByLabel("Reserve ($)").FillAsync("6.00");
-        await first.GetByRole(AriaRole.Button, new() { Name = "Save draft" }).ClickAsync();
-        await first.WaitForURLAsync("**/sell");
+        await first.SaveDraftAsync();
         var draftLink = await first.GetByTestId("my-auction-row").Filter(new() { HasText = title }).GetByRole(AriaRole.Link, new() { Name = title }).GetAttributeAsync("href");
 
         var second = await browsers.NewPageAsync(site);

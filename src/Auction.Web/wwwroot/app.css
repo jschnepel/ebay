@@ -517,3 +517,12 @@ a.cell-title:hover { text-decoration: underline; }
 .user-activity { margin-top: 1.25rem; }
 .user-activity .dash-link { margin-left: auto; font-size: 0.875rem; }
 .dash-foot { padding: 0.75rem 1rem; border-top: 1px solid var(--line); }
+
+/* Photo upload: a zone to drop on, with the file control inside it for clicking and the keyboard. */
+.drop-zone { position: relative; display: grid; gap: 0.25rem; justify-items: start; padding: 1rem 1.25rem; border: 2px dashed var(--line-strong); border-radius: var(--radius); background: var(--sunk); }
+.drop-zone:hover, .drop-zone:focus-within { border-color: var(--ink); }
+.drop-zone.is-busy { opacity: 0.7; }
+.drop-zone label { font-weight: 600; color: var(--ink); }
+.drop-zone input[type="file"] { max-width: 100%; margin-top: 0.35rem; }
+.draft-image { display: grid; gap: 0.25rem; }
+.draft-image img { border-radius: var(--radius); }

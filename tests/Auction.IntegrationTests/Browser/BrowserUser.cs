@@ -35,8 +35,7 @@ internal static partial class BrowserUser
         await page.GetByLabel("Description").FillAsync("Listed from the browser test.");
         await page.GetByLabel("Opening price ($)").FillAsync(openingDollars);
         await page.GetByLabel("Reserve ($)").FillAsync(reserveDollars);
-        await page.GetByRole(AriaRole.Button, new() { Name = "Save draft" }).ClickAsync();
-        await page.WaitForURLAsync("**/sell");
+        await page.SaveDraftAsync();
 
         var row = page.GetByTestId("my-auction-row").Filter(new() { HasText = title });
         await Assertions.Expect(row).ToContainTextAsync("Draft");
@@ -47,6 +46,14 @@ internal static partial class BrowserUser
         await row.GetByRole(AriaRole.Link, new() { Name = title }).ClickAsync();
         await page.WaitForURLAsync(AuctionPath());
         return new Uri(page.Url).AbsolutePath;
+    }
+
+    /// <summary>Saves the listing form, which stays open on the saved draft, then goes to the seller's listings.</summary>
+    public static async Task SaveDraftAsync(this IPage page)
+    {
+        await page.GetByRole(AriaRole.Button, new() { Name = "Save draft" }).ClickAsync();
+        await Assertions.Expect(page.GetByTestId("draft-saved")).ToBeVisibleAsync();
+        await page.GotoAsync("/sell");
     }
 
     public static async Task BidAsync(this IPage page, string dollars)

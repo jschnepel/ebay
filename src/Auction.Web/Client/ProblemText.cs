@@ -69,6 +69,10 @@ internal static class ProblemText
         _ => problem.Title ?? "The request failed.",
     };
 
+    /// <summary>Each refused field with its sentence, for a form that shows errors where they belong.</summary>
+    public static IEnumerable<(string Field, string Sentence)> ByField(Problem problem) =>
+        (problem.Errors ?? []).SelectMany(e => e.Value.Select(code => (e.Key, Sentence(e.Key, code))));
+
     // A few errors carry their rule after the code ("required, 1 to 500 characters") or instead of one
     // ("one of smoke, realistic"); the first keeps its sentence, the second the API's words.
     private static string Sentence(string field, string code)
