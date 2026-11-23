@@ -179,7 +179,8 @@ public sealed class AuctionApi(HttpClient http, Func<TimeSpan, Task>? wait = nul
             for (var retry = 0; method == HttpMethod.Get && IsGatewayError(response.StatusCode) && retry < GatewayRetries.Length; retry++)
             {
                 response.Dispose();
-                await _wait(GatewayRetries[retry]);
+                // Spread by a quarter either way, so every open tab doesn't return at the same instant.
+                await _wait(GatewayRetries[retry] * (0.75 + (Random.Shared.NextDouble() * 0.5)));
                 response = await SendOnceAsync(method, path, body, key);
             }
         }

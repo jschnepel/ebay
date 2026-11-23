@@ -19,7 +19,11 @@ public sealed class ClientGatewayRetryTests
 
         Assert.NotNull(account);
         Assert.Equal(3, server.Requests);
-        Assert.Equal([TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2)], waits);
+        // Each wait is its step give or take a quarter, so many open tabs don't all come back at the same moment.
+        Assert.Equal(2, waits.Count);
+        Assert.InRange(waits[0], TimeSpan.FromSeconds(0.75), TimeSpan.FromSeconds(1.25));
+        Assert.InRange(waits[1], TimeSpan.FromSeconds(1.5), TimeSpan.FromSeconds(2.5));
+        Assert.NotEqual(TimeSpan.FromSeconds(1), waits[0]);
     }
 
     [Fact]
