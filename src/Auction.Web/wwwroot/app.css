@@ -293,7 +293,8 @@ h2.mud-typography { font-size: 1.25rem; }
 .lot-foot .clock.is-soon { background: var(--brass-tint); color: var(--brass-text); padding: 0.05rem 0.5rem; border-radius: 999px; }
 
 /* The auction page's one bold element: the price board, white figures on ink with the brass clock bar. */
-.lot-page { gap: 2.5rem; }
+.lot-page { column-gap: 2.5rem; row-gap: 0; }
+.lot-page-media { margin-bottom: 0.25rem; }
 .lot-page h1.mud-typography { font-size: 2.25rem; }
 .lot-page .lot-cover { border-radius: var(--radius-lg); }
 .ticket { padding: 0; gap: 0; border: 0; border-radius: var(--radius-lg); box-shadow: var(--float); overflow: hidden; }
