@@ -72,7 +72,8 @@ else
             </MudAlert>
         }
         <section class="panel events-panel" aria-label="Events">
-            <EventList Events="_events" OnReading="reading => _reading = reading" />
+            @* A new view starts with every row closed. *@
+            <EventList @key="_view" Events="_events" OnReading="reading => _reading = reading" />
         </section>
         @if (_next is not null)
         {
@@ -121,6 +122,7 @@ else
     private bool _live;
     private bool _reading;
     private bool _missed;
+    private int _view;
 
     // Live mode reaches back this far for events that were stamped before the newest shown one but committed after it,
     // and fetches at most this many pages a tick before saying there's more.
@@ -165,7 +167,8 @@ else
 
     private async Task LoadAsync()
     {
-        _missed = false;
+        // A new view: no row is open, so live mode isn't holding for one.
+        (_view, _reading, _missed) = (_view + 1, false, false);
         var filter = Filter;
         var events = Api.AdminEventsAsync(filter, null);
         var histogram = Api.AdminEventHistogramAsync(filter);

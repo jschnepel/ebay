@@ -77,6 +77,36 @@ public sealed partial class AdminEventsBrowserTests(MigratedDatabase db, Browser
     }
 
     [Fact]
+    public async Task Live_mode_keeps_going_after_the_open_row_leaves_the_view()
+    {
+        if (Environment.GetEnvironmentVariable(Browsers.BaseUrlVariable) is { Length: > 0 })
+        {
+            return; // The new accounts are made through the in-process API.
+        }
+
+        var token = $"Stream{Guid.NewGuid():N}"[..14];
+        var api = await db.ApiAsync();
+        await api.SignUpAsync($"{token} one");
+        var admin = await browsers.NewPageAsync(await Browsers.SiteAsync(db));
+        await admin.SignUpAsync("Live reader", role: "Admin");
+        await admin.GotoAsync("/admin/events?category=account");
+        await admin.GetByRole(AriaRole.Button, new() { Name = "Live" }).ClickAsync();
+
+        // Open a row, then search so that row leaves the view while others stay.
+        var reading = admin.GetByTestId("event-row").Filter(new() { HasText = "Live reader created an account" });
+        await reading.GetByRole(AriaRole.Button, new() { Name = "Details" }).ClickAsync();
+        await admin.GetByLabel("Search people, items, ids or actions").FillAsync(token);
+        await admin.GetByRole(AriaRole.Button, new() { Name = "Search" }).ClickAsync();
+        await Assertions.Expect(admin.GetByTestId("event-row").Filter(new() { HasText = $"{token} one created an account" })).ToHaveCountAsync(1);
+        await Assertions.Expect(reading).ToHaveCountAsync(0);
+
+        await api.SignUpAsync($"{token} two");
+
+        await Assertions.Expect(admin.GetByTestId("event-row").Filter(new() { HasText = $"{token} two created an account" }))
+            .ToHaveCountAsync(1, new() { Timeout = 12_000 });
+    }
+
+    [Fact]
     public async Task The_event_log_draws_a_chart_of_events_over_time()
     {
         var admin = await browsers.NewPageAsync(await Browsers.SiteAsync(db));
