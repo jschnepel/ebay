@@ -247,9 +247,22 @@ else
         }
     }
 
-    private async Task LoadListingsAsync() => _listings = (await Api.AdminUserListingsAsync(Id, _listingCursors.Peek(), _listingSize)).Value ?? new([], null);
+    private async Task LoadListingsAsync() =>
+        _listings = Loaded(await Api.AdminUserListingsAsync(Id, _listingCursors.Peek(), _listingSize), _listings);
 
-    private async Task LoadBiddingAsync() => _bidding = (await Api.AdminUserBiddingAsync(Id, _biddingCursors.Peek(), _biddingSize)).Value ?? new([], null);
+    private async Task LoadBiddingAsync() =>
+        _bidding = Loaded(await Api.AdminUserBiddingAsync(Id, _biddingCursors.Peek(), _biddingSize), _bidding);
+
+    // A failed request leaves what was shown and says so; it must not read as "nothing listed" or "no bids".
+    private Page<T> Loaded<T>(ApiResult<Page<T>> result, Page<T>? shown)
+    {
+        if (!result.Succeeded)
+        {
+            (_failed, _message) = (true, result.Message);
+        }
+
+        return result.Value ?? shown ?? new([], null);
+    }
 
     private Task MoveListingsAsync(int step)
     {

@@ -202,6 +202,25 @@ public sealed partial class AdminUsersBrowserTests(MigratedDatabase db, Browsers
     }
 
     [Fact]
+    public async Task A_users_page_says_when_their_listings_couldnt_be_loaded()
+    {
+        if (Environment.GetEnvironmentVariable(Browsers.BaseUrlVariable) is { Length: > 0 })
+        {
+            return; // The user is made through the in-process API.
+        }
+
+        var user = await (await db.ApiAsync()).SignUpAsync("Half loaded");
+        var admin = await browsers.NewPageAsync(await Browsers.SiteAsync(db));
+        await admin.SignUpAsync("Half seeing", role: "Admin");
+        await admin.RouteAsync("**/admin/users/*/listings*", route => route.FulfillAsync(new() { Status = 500 }));
+
+        await admin.GotoAsync($"/admin/users/{user.Id}");
+
+        // A failed request is an error on the page, not an account with nothing listed.
+        await Assertions.Expect(admin.GetByTestId("user-result")).ToContainTextAsync("The request failed (500).");
+    }
+
+    [Fact]
     public async Task An_unknown_users_page_says_so()
     {
         var admin = await browsers.NewPageAsync(await Browsers.SiteAsync(db));
