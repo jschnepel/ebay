@@ -261,3 +261,13 @@ h2.mud-typography { font-size: 1.25rem; }
 .empty p { margin: 0; }
 .empty .mud-button-root { margin-top: 0.75rem; }
 .empty-title { font-family: var(--display); font-stretch: 87.5%; font-size: 1.35rem; font-weight: 600; }
+
+/* The directory: image-led lots on a quiet grid; the edge darkens under the pointer, nothing moves. */
+.searchbar { padding: 1rem; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-lg); align-items: center; }
+.searchbar > .mud-button-root { height: 40px; }
+.lots { gap: 1.5rem; }
+.lot { transition: border-color 120ms ease; }
+.lot:hover { border-color: var(--line-strong); }
+.lot-body { padding: 0.9rem 1.1rem 1.1rem; }
+.lot .price { font-size: 1.9rem; }
+.lot-foot .clock.is-soon { background: var(--brass-tint); color: var(--brass-text); padding: 0.05rem 0.5rem; border-radius: 999px; }

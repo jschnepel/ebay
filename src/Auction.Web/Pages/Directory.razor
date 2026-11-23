@@ -9,8 +9,8 @@
 
 <div class="searchbar" role="search">
     <MudTextField @bind-Value="_query" Label="Search titles" Immediate="true" OnKeyDown="SearchOnEnterAsync"
-                  Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" />
-    <MudSelect T="string" @bind-Value="_status" Label="Show">
+                  Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" Variant="Variant.Outlined" Margin="Margin.Dense" />
+    <MudSelect T="string" @bind-Value="_status" Label="Show" Variant="Variant.Outlined" Margin="Margin.Dense">
         <MudSelectItem T="string" Value="@("active")">Live now</MudSelectItem>
         <MudSelectItem T="string" Value="@("ending_soon")">Ending within the hour</MudSelectItem>
         <MudSelectItem T="string" Value="@("closed")">Closed</MudSelectItem>
