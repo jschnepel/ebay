@@ -1,11 +1,13 @@
+using System.Net.Http.Json;
+using System.Text.RegularExpressions;
 using Auction.IntegrationTests.Database;
 using Microsoft.Playwright;
 
 namespace Auction.IntegrationTests.Browser;
 
-/// <summary>The admin Users screen in a browser: the reason popover beside each user.</summary>
+/// <summary>The admin Users screen in a browser: the reason popover beside each user, filters, paging, and the way to a user's page.</summary>
 [Collection(Auction.IntegrationTests.Browser.BrowserJourneys.Name)]
-public sealed class AdminUsersBrowserTests(MigratedDatabase db, Browsers browsers)
+public sealed partial class AdminUsersBrowserTests(MigratedDatabase db, Browsers browsers)
 {
     [Fact]
     public async Task Disabling_a_user_asks_for_the_reason_beside_their_row()
@@ -63,4 +65,69 @@ public sealed class AdminUsersBrowserTests(MigratedDatabase db, Browsers browser
         await Assertions.Expect(admin.GetByRole(AriaRole.Dialog)).ToHaveCountAsync(0);
         await Assertions.Expect(row).ToContainTextAsync("Enabled");
     }
+
+    [Fact]
+    public async Task The_users_screen_pages_and_filters_by_state()
+    {
+        if (Environment.GetEnvironmentVariable(Browsers.BaseUrlVariable) is { Length: > 0 })
+        {
+            return;
+        }
+
+        var api = await db.ApiAsync();
+        for (var i = 0; i < 26; i++)
+        {
+            await api.SignUpAsync($"Paged user {i}");
+        }
+
+        var disabledName = $"Off {Guid.NewGuid():N}"[..11];
+        var disabled = await api.SignUpAsync(disabledName);
+        var apiAdmin = await api.SignUpAsync("Api admin", role: "admin");
+        using (var disable = await apiAdmin.Http.PostAsJsonAsync($"/api/v1/admin/users/{disabled.Id}/disable", new { reason = "test" }, TestContext.Current.CancellationToken))
+        {
+            Assert.Equal(System.Net.HttpStatusCode.NoContent, disable.StatusCode);
+        }
+
+        // The production page limit, so a page of 25 isn't cut to the test host's small default.
+        var (host, site) = await db.SiteWithAsync(new Dictionary<string, string> { ["Api:MaxPageSize"] = "50" });
+        await using var _ = host;
+        var admin = await browsers.NewPageAsync(site);
+        await admin.SignUpAsync("Paging admin", role: "Admin");
+        await admin.GotoAsync("/admin/users");
+        await Assertions.Expect(admin.GetByTestId("user-row")).ToHaveCountAsync(25);
+
+        await admin.GetByRole(AriaRole.Button, new() { Name = "Next", Exact = true }).ClickAsync();
+        await Assertions.Expect(admin.GetByTestId("users-page")).ToHaveTextAsync("Page 2");
+        await admin.GetByRole(AriaRole.Button, new() { Name = "Previous", Exact = true }).ClickAsync();
+        await Assertions.Expect(admin.GetByTestId("users-page")).ToHaveTextAsync("Page 1");
+
+        await admin.GetByRole(AriaRole.Group, new() { Name = "State" }).GetByRole(AriaRole.Button, new() { Name = "Disabled", Exact = true }).ClickAsync();
+        await Assertions.Expect(admin.GetByTestId("user-row").Filter(new() { HasText = disabledName })).ToHaveCountAsync(1);
+        await Assertions.Expect(admin.GetByTestId("user-row").Filter(new() { HasText = "Enabled" })).ToHaveCountAsync(0);
+    }
+
+    [Fact]
+    public async Task Clicking_a_user_opens_their_page()
+    {
+        if (Environment.GetEnvironmentVariable(Browsers.BaseUrlVariable) is { Length: > 0 })
+        {
+            return;
+        }
+
+        var name = $"Opened {Guid.NewGuid():N}"[..14];
+        var user = await (await db.ApiAsync()).SignUpAsync(name);
+        var admin = await browsers.NewPageAsync(await Browsers.SiteAsync(db));
+        await admin.SignUpAsync("Opening admin", role: "Admin");
+        await admin.GotoAsync("/admin/users");
+        await admin.GetByLabel("Name, email or id").FillAsync(user.Email);
+        await admin.GetByRole(AriaRole.Button, new() { Name = "Search" }).ClickAsync();
+
+        await admin.GetByTestId("user-row").Filter(new() { HasText = name }).GetByRole(AriaRole.Link, new() { Name = name }).ClickAsync();
+
+        await admin.WaitForURLAsync(UserPage());
+        Assert.EndsWith($"/admin/users/{user.Id}", admin.Url, StringComparison.Ordinal);
+    }
+
+    [GeneratedRegex("/admin/users/[0-9a-f-]{36}$")]
+    private static partial Regex UserPage();
 }

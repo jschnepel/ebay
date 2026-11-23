@@ -137,7 +137,9 @@ public sealed record SimulatorView(bool Available, IReadOnlyList<string> Profile
 public sealed record ModeratedAuction(
     Guid Id, string Title, string Status, Guid SellerId, string SellerName, long? CurrentPriceCents, long BidCount, DateTimeOffset EndsAt, long Version);
 
-public sealed record UserSummary(Guid Id, string DisplayName, string Kind, bool Disabled, DateTimeOffset CreatedAt);
+public sealed record UserSummary(
+    Guid Id, string DisplayName, string Email, string Kind, bool Disabled, DateTimeOffset CreatedAt, DateTimeOffset? LastSignInAt,
+    long ListingCount, long BidCount);
 
 public sealed record NotificationView(long Id, Guid? AuctionId, string? AuctionTitle, string Kind, string? Reason, DateTimeOffset CreatedAt, bool Read);
 

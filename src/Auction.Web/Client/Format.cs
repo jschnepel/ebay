@@ -16,6 +16,17 @@ public static class Format
     public static string Time(DateTimeOffset instant) =>
         instant.ToLocalTime().ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
 
+    /// <summary>An account's kind in the words the admin area uses.</summary>
+    public static string Kind(string kind) => kind switch
+    {
+        "self_registered" => "User",
+        "visitor_admin" => "Admin",
+        "seeded" => "Demo account",
+        "simulator" => "Simulator",
+        "admin" => "Built-in admin",
+        _ => kind.Replace('_', ' '),
+    };
+
     /// <summary>A time from today as hours, minutes and seconds; an older one with its date.</summary>
     public static string Recent(DateTimeOffset instant)
     {

@@ -1,10 +1,12 @@
 @page "/admin/users"
 @inject AuctionApi Api
 @inject Session Session
+@inject NavigationManager Navigation
 
 <PageTitle>Users</PageTitle>
 <div class="page-head">
     <MudText Typo="Typo.h4" HtmlTag="h1">Users</MudText>
+    <p class="muted page-sub">Every account. Open one to see what they've listed and bid on; disabling asks for a reason beside the account.</p>
 </div>
 
 @if (_forbidden)
@@ -13,9 +15,24 @@
 }
 else
 {
-    <div class="searchbar is-two" role="search">
+    <div class="searchbar" role="search">
         <MudTextField @bind-Value="_query" Label="Name, email or id" Variant="Variant.Outlined" Margin="Margin.Dense" Immediate="true" OnKeyDown="SearchOnEnterAsync" />
+        <MudSelect T="string" @bind-Value="_kind" Label="Kind" Variant="Variant.Outlined" Margin="Margin.Dense">
+            <MudSelectItem T="string" Value="@("")">Any</MudSelectItem>
+            <MudSelectItem T="string" Value="@("self_registered")">User</MudSelectItem>
+            <MudSelectItem T="string" Value="@("visitor_admin")">Admin</MudSelectItem>
+            <MudSelectItem T="string" Value="@("seeded")">Demo account</MudSelectItem>
+            <MudSelectItem T="string" Value="@("simulator")">Simulator</MudSelectItem>
+            <MudSelectItem T="string" Value="@("admin")">Built-in admin</MudSelectItem>
+        </MudSelect>
         <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SearchAsync">Search</MudButton>
+    </div>
+
+    <div class="segmented" role="group" aria-label="State">
+        @foreach (var (value, label) in States)
+        {
+            <button type="button" class="@(value == _state ? "is-on" : null)" aria-pressed="@(value == _state ? "true" : "false")" @onclick="() => FilterStateAsync(value)">@label</button>
+        }
     </div>
 
     @if (_message is not null)
@@ -29,23 +46,32 @@ else
     }
     else if (_items.Count == 0 && !_loadFailed)
     {
-        <div class="empty"><p class="empty-title">No accounts match</p><p class="muted">Try part of a display name, or a full account id.</p></div>
+        <div class="empty"><p class="empty-title">No accounts match</p><p class="muted">Try part of a name or an email, a full account id, or another kind or state.</p></div>
     }
     else
     {
-        <div class="panel table-panel table-scroll is-wide"><MudSimpleTable Dense="true" Elevation="0">
-            <thead><tr><th>Account</th><th>Kind</th><th>State</th><th><span class="sr-only">Actions</span></th></tr></thead>
+        <div class="panel table-panel table-scroll is-wide"><MudSimpleTable Dense="true" Elevation="0" Hover="true">
+            <thead>
+                <tr>
+                    <th>Account</th><th>Kind</th><th>State</th><th>Joined</th><th>Last sign-in</th>
+                    <th class="num">Listings</th><th class="num">Bids</th><th><span class="sr-only">Actions</span></th>
+                </tr>
+            </thead>
             <tbody>
                 @foreach (var user in _items)
                 {
-                    <tr data-testid="user-row">
+                    <tr data-testid="user-row" class="is-link" @onclick="() => Open(user)">
                         <td>
-                            <div class="cell-title">@user.DisplayName</div>
-                            <div class="id">@user.Id</div>
+                            <a class="cell-title" href="@($"admin/users/{user.Id}")" @onclick:stopPropagation="true">@user.DisplayName</a>
+                            <div class="muted cell-sub">@user.Email</div>
                         </td>
-                        <td>@Kind(user.Kind)</td>
+                        <td>@Format.Kind(user.Kind)</td>
                         <td><span class="@($"tag {(user.Disabled ? "is-off" : "is-live")}")">@(user.Disabled ? "Disabled" : "Enabled")</span></td>
-                        <td class="actions">
+                        <td class="nowrap muted">@Format.Time(user.CreatedAt)</td>
+                        <td class="nowrap muted">@(user.LastSignInAt is { } at ? Format.Recent(at) : "never")</td>
+                        <td class="num">@user.ListingCount.ToString("N0")</td>
+                        <td class="num">@user.BidCount.ToString("N0")</td>
+                        <td class="actions" @onclick:stopPropagation="true">
                             @if (user.Id == Session.Account?.Id)
                             {
                                 <span class="muted">You</span>
@@ -66,15 +92,22 @@ else
                 }
             </tbody>
         </MudSimpleTable></div>
-        @if (_next is not null)
-        {
-            <MudButton Class="mt-3" Variant="Variant.Outlined" OnClick="MoreAsync">Show more</MudButton>
-        }
+        <CursorPager Label="Users pages" Page="_cursors.Count" PageSize="_pageSize" Sizes="PageSizes" HasNext="_next is not null"
+                     PageTestId="users-page" OnPrevious="PreviousAsync" OnNext="NextAsync" OnPageSize="ChangePageSizeAsync" />
     }
 }
 
 @code {
+    private static readonly int[] PageSizes = [10, 25, 50];
+    private static readonly (string Value, string Label)[] States = [("", "Any"), ("enabled", "Enabled"), ("disabled", "Disabled")];
+
     private string _query = "";
+    private string _kind = "";
+    private string _state = "";
+    private int _pageSize = 25;
+
+    // The cursor that opened each page so far; the top is the current page's.
+    private Stack<string?> _cursors = new([null]);
     private List<UserSummary>? _items;
     private string? _next;
     private string? _message;
@@ -92,40 +125,58 @@ else
         }
     }
 
-    private static string Kind(string kind)
-    {
-        var words = kind.Replace('_', ' ');
-        return words.Length == 0 ? words : char.ToUpperInvariant(words[0]) + words[1..];
-    }
-
     private Task SearchOnEnterAsync(KeyboardEventArgs key) => key.Key == "Enter" ? SearchAsync() : Task.CompletedTask;
 
-    private async Task SearchAsync()
+    private Task FilterStateAsync(string state)
     {
-        (_items, _next, _loadFailed) = (null, null, false);
-        await MoreAsync();
+        _state = state;
+        return SearchAsync();
     }
 
-    private async Task MoreAsync()
+    private Task SearchAsync()
     {
-        var page = await Api.AdminUsersAsync(_query, _next);
+        _cursors = new([null]);
+        return LoadAsync();
+    }
+
+    private Task NextAsync()
+    {
+        _cursors.Push(_next);
+        return LoadAsync();
+    }
+
+    private Task PreviousAsync()
+    {
+        _cursors.Pop();
+        return LoadAsync();
+    }
+
+    private Task ChangePageSizeAsync(int size)
+    {
+        _pageSize = size;
+        return SearchAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        var page = await Api.AdminUsersAsync(_query, _kind, _state, _cursors.Peek(), _pageSize);
         if (!page.Succeeded)
         {
-            (_failed, _message) = (true, page.Message);
+            (_failed, _message, _loadFailed) = (true, page.Message, true);
             _items ??= [];
-            _loadFailed = true;
             return;
         }
 
-        (_items ??= []).AddRange(page.Value!.Items);
-        _next = page.Value.NextCursor;
+        (_items, _next, _loadFailed) = ([.. page.Value!.Items], page.Value.NextCursor, false);
     }
+
+    private void Open(UserSummary user) => Navigation.NavigateTo($"admin/users/{user.Id}");
 
     private async Task ToggleAsync(UserSummary user, string reason)
     {
         var result = await Api.SetUserDisabledAsync(user.Id, !user.Disabled, reason);
         var done = user.Disabled ? "Enabled" : "Disabled";
         (_failed, _message) = result.Succeeded ? (false, $"{done} {user.DisplayName}.") : (true, result.Message);
-        await SearchAsync();
+        await LoadAsync();
     }
 }
