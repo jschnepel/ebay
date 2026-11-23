@@ -71,7 +71,7 @@ public sealed class AdminApiTests(MigratedDatabase db)
         }
 
         Assert.Equal("cancelled", (await api.Anonymous().GetJsonAsync($"/api/v1/auctions/{id}")).GetProperty("status").GetString());
-        Assert.NotEmpty((await api.Anonymous().GetJsonAsync($"/api/v1/auctions/{id}/bids")).GetProperty("items").EnumerateArray());
+        Assert.NotEmpty((await admin.GetJsonAsync($"/api/v1/auctions/{id}/bids")).GetProperty("items").EnumerateArray());
         Assert.Equal(
             "suspend:Checking the listing,resume:Listing is fine,cancel:Counterfeit item",
             await db.ScalarAsync<string>(

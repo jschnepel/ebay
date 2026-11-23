@@ -58,7 +58,9 @@ internal sealed class AuctionReader(NpgsqlDataSource dataSource, Caching.Auction
 
     private const string DetailSql = $"""
         SELECT {SummaryColumns}, description, increment_cents, outcome, seller_id, leader_id, published_at, closed_at,
-               ARRAY(SELECT i.blob_id FROM auction.auction_images i WHERE i.auction_id = a.id ORDER BY i.position)
+               ARRAY(SELECT i.blob_id FROM auction.auction_images i WHERE i.auction_id = a.id ORDER BY i.position),
+               EXISTS (SELECT 1 FROM auction.bids b JOIN auction.users u ON u.id = b.bidder_id
+                       WHERE b.auction_id = a.id AND u.kind = 'simulator')
         FROM auction.auctions a
         WHERE a.id = $1 AND (status <> 'draft' OR seller_id = $2::uuid)
         """;
@@ -253,6 +255,7 @@ internal sealed class AuctionReader(NpgsqlDataSource dataSource, Caching.Auction
 
         var images = await reader.GetFieldValueAsync<Guid[]>(20, cancellationToken);
         var row = ReadDetail(reader, images);
+        row = row with { Public = row.Public with { HasSimulatedBids = reader.GetBoolean(21) } };
         if (row.Public.Status != "draft")
         {
             await cache.FillAsync(id, row.Public.Version, row);

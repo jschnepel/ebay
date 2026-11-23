@@ -53,6 +53,12 @@ public sealed record AuctionDetail : AuctionSummary
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public long? ReserveCents { get; init; }
 
+    /// <summary>
+    /// Whether any bid here came from a simulator account. The list of bids is for admins, so this is how a
+    /// visitor is told that not every bidder is a person. Not required: older cached entries don't carry it.
+    /// </summary>
+    public bool HasSimulatedBids { get; init; }
+
     /// <summary>The viewer's own proxy maximum, which the price doesn't show: present only for that bidder.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public long? YourMaximumCents { get; init; }

@@ -95,9 +95,16 @@ internal static class AuctionEndpoints
             : Problems.NotFound();
     }
 
+    // The list of bids is an audit view for admins. Everyone else sees the price, the number of bids and their
+    // own standing on the auction itself; to them this route doesn't exist, like the admin routes.
     private static async Task<IResult> BidsAsync(
         Guid id, int? pageSize, string? cursor, HttpContext http, AuctionReader reader, ApiOptions options)
     {
+        if (!http.User.IsAdmin())
+        {
+            return Problems.NotFound();
+        }
+
         if (PageSize(pageSize, options) is not { } size)
         {
             return Problems.BadRequest("invalid_page_size", "pageSize must be at least 1.");

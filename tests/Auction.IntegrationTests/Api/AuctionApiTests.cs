@@ -32,10 +32,36 @@ public sealed class AuctionApiTests(MigratedDatabase db)
             detail.GetProperty("bidCount").GetInt64(),
             detail.GetProperty("reserveMet").GetBoolean()));
 
-        var history = (await anonymous.GetJsonAsync($"/api/v1/auctions/{id}/bids")).GetProperty("items");
+        Assert.False(detail.GetProperty("hasSimulatedBids").GetBoolean());
+
+        // The list of bids is an audit view: an admin reads it, with bidders as labels; nobody else can.
+        var admin = await api.SignUpAsync("History admin", role: "admin");
+        var history = (await admin.Http.GetJsonAsync($"/api/v1/auctions/{id}/bids")).GetProperty("items");
         Assert.Equal("Bidder 1", Assert.Single(history.EnumerateArray()).GetProperty("bidder").GetString());
-        var own = (await buyer.Http.GetJsonAsync($"/api/v1/auctions/{id}/bids")).GetProperty("items");
-        Assert.Equal("You", own[0].GetProperty("bidder").GetString());
+        foreach (var other in new[] { anonymous, buyer.Http, seller.Http })
+        {
+            using var refused = await other.GetAsync(new Uri($"/api/v1/auctions/{id}/bids", UriKind.Relative), TestContext.Current.CancellationToken);
+            await refused.AssertProblemAsync(HttpStatusCode.NotFound, "not_found");
+        }
+    }
+
+    [Fact]
+    public async Task An_auction_says_when_a_simulated_bidder_has_bid_on_it()
+    {
+        var api = await db.ApiAsync();
+        var seller = await api.SignUpAsync();
+        var id = await seller.PublishedAsync(ApiCalls.Terms(bidEntry: "fixed_increment", floorType: "minimum_bid", reserveCents: null));
+        var email = await db.InsertPasswordAccountAsync("simulator", "a simulator password");
+        var (simulator, signedIn) = await api.SignInAsync(email, "a simulator password");
+        Assert.Equal(HttpStatusCode.OK, signedIn.StatusCode);
+
+        using (var bid = await simulator.BidAsync(id, 1000))
+        {
+            Assert.Equal(HttpStatusCode.Created, bid.StatusCode);
+        }
+
+        // With the bid list closed to the public, this is where a visitor learns that not every bidder is a person.
+        Assert.True((await api.Anonymous().GetJsonAsync($"/api/v1/auctions/{id}")).GetProperty("hasSimulatedBids").GetBoolean());
     }
 
     [Fact]

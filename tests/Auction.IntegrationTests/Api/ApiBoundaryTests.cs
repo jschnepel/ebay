@@ -125,8 +125,12 @@ public sealed partial class ApiBoundaryTests(MigratedDatabase db)
         Assert.Equal(1, await QueriesAsync(anonymous, "/api/v1/auctions?pageSize=1"));
         Assert.Equal(1, await QueriesAsync(anonymous, $"/api/v1/auctions?pageSize={ApiHost.MaxPageSize}"));
         Assert.Equal(1, await QueriesAsync(anonymous, $"/api/v1/auctions/{id}"));
-        Assert.Equal(2, await QueriesAsync(anonymous, $"/api/v1/auctions/{id}/bids?pageSize=1", emptyPool: true));
-        Assert.Equal(2, await QueriesAsync(anonymous, $"/api/v1/auctions/{id}/bids?pageSize={ApiHost.MaxPageSize}"));
+
+        // The bid list is for admins. One request first, so the session check is answered from its cache after that.
+        var admin = (await api.SignUpAsync(role: "admin")).Http;
+        await admin.GetJsonAsync("/api/v1/account/me");
+        Assert.Equal(2, await QueriesAsync(admin, $"/api/v1/auctions/{id}/bids?pageSize=1", emptyPool: true));
+        Assert.Equal(2, await QueriesAsync(admin, $"/api/v1/auctions/{id}/bids?pageSize={ApiHost.MaxPageSize}"));
     }
 
     [Fact]
