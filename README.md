@@ -33,7 +33,7 @@ Then open **<http://localhost:8080>**. The first run takes a few minutes: it bui
 1. **Look around.** The auctions page is already busy. Open one that's ending soon and watch its bid history grow.
 2. **Bid.** Choose **Sign in → Create account → User**, then bid. Open a private window, create a second user and outbid yourself: both windows follow the price without a reload.
 3. **Sell.** Under **Sell**, list something with a photo. Simulated bidders will find it.
-4. **Run the site.** Sign out and create an account as **Admin**. **Activity** shows live bids, system health and response times, and the simulator panel can pause the live marketplace or start a load run. **Auctions** lets you suspend or cancel a listing with a reason, and **Audit log** records it.
+4. **Run the site.** Sign out and create an account as **Admin**. **Overview** shows live bids and response times, the sidebar shows system health, and the simulator panel can pause the live marketplace or start a load run. **Auctions** lets you suspend or cancel a listing with a reason, and **Audit log** records it.
 5. **Start over.** **Reset demo now** on the Activity page returns everything to its starting state, as happens every day at 09:00 UTC.
 
 ## System design
