@@ -252,6 +252,17 @@ public sealed class AuctionApiTests(MigratedDatabase db)
     }
 
     [Fact]
+    public async Task The_directory_search_has_a_length_limit()
+    {
+        var anonymous = (await db.ApiAsync()).Anonymous();
+
+        using var tooLong = await anonymous.GetAsync(new Uri($"/api/v1/auctions?q={new string('a', 101)}", UriKind.Relative), TestContext.Current.CancellationToken);
+
+        await tooLong.AssertProblemAsync(HttpStatusCode.BadRequest, "invalid_search");
+        Assert.Equal(HttpStatusCode.OK, await anonymous.StatusOfGetAsync($"/api/v1/auctions?q={new string('a', 100)}"));
+    }
+
+    [Fact]
     public async Task The_detail_tells_a_bidder_who_was_outbid_that_they_have_bid()
     {
         var api = await db.ApiAsync();

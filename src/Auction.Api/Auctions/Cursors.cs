@@ -32,7 +32,8 @@ internal static class Cursors
         if (bar < 1
             || !long.TryParse(text![..bar], NumberStyles.None, CultureInfo.InvariantCulture, out var utcTicks)
             || utcTicks > DateTimeOffset.MaxValue.UtcTicks
-            || bar == text.Length - 1)
+            || bar == text.Length - 1
+            || text.Any(char.IsControl))
         {
             return false;
         }

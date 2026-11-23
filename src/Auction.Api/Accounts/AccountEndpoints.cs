@@ -172,9 +172,18 @@ internal static partial class AccountEndpoints
         _ => "wrong_password",
     };
 
-    // The email as typed, trimmed and cut to the longest an address can be.
-    private static string? TypedEmail(string? email) =>
-        email?.Trim() is { Length: > 0 } trimmed ? trimmed[..Math.Min(trimmed.Length, EmailMaxLength)] : null;
+    // The email as typed, trimmed and cut to the longest an address can be. Text with a control character or half
+    // of a surrogate pair isn't an address and can't be sent to the database, so it counts as nothing typed.
+    private static string? TypedEmail(string? email)
+    {
+        if (email?.Trim() is not { Length: > 0 } trimmed)
+        {
+            return null;
+        }
+
+        var cut = trimmed[..Math.Min(trimmed.Length, EmailMaxLength)];
+        return cut.Any(char.IsControl) || char.IsHighSurrogate(cut[^1]) ? null : cut;
+    }
 
     // What the event log keeps of the typed text: an account's own address, or else only text shaped like a
     // plain address (name@host.tld, no quotes or spaces). Anything else may be a password typed in the wrong

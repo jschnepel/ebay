@@ -281,6 +281,10 @@ public sealed class EventLogApiTests(MigratedDatabase db)
             }
         }
 
+        // A time with an offset is the same instant as its UTC form.
+        var offset = Uri.EscapeDataString(now.ToOffset(TimeSpan.FromHours(2)).ToString("O", CultureInfo.InvariantCulture));
+        Assert.Equal(HttpStatusCode.OK, await admin.Http.StatusOfGetAsync($"/api/v1/admin/events?to={offset}"));
+
         using (var longSearch = await admin.Http.GetAsync($"/api/v1/admin/events?q={new string('a', 101)}", TestContext.Current.CancellationToken))
         {
             await longSearch.AssertProblemAsync(HttpStatusCode.BadRequest, "invalid_search");

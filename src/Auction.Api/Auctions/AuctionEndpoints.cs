@@ -13,6 +13,8 @@ internal static class AuctionEndpoints
 {
     public sealed record BidRequest(long? AmountCents);
 
+    private const int MaxSearchLength = 100;
+
     public static RouteGroupBuilder MapAuctions(this RouteGroupBuilder api)
     {
         var auctions = api.MapGroup("/auctions").WithTags("Auctions");
@@ -52,6 +54,11 @@ internal static class AuctionEndpoints
         if (status is not null && !DirectoryFilter.Statuses.Contains(status))
         {
             return Problems.BadRequest("invalid_status", "status must be active, ending_soon or closed.");
+        }
+
+        if (query.Q?.Trim() is { Length: > MaxSearchLength })
+        {
+            return Problems.BadRequest("invalid_search", $"q can be at most {MaxSearchLength} characters.");
         }
 
         var filter = new DirectoryFilter(string.IsNullOrWhiteSpace(query.Q) ? null : query.Q.Trim(), status, options.EndingSoonWindow);

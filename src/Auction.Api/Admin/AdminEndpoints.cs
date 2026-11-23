@@ -243,8 +243,9 @@ internal static class AdminEndpoints
             return false;
         }
 
-        var end = request.To ?? now;
-        var start = request.From ?? end.AddHours(-1);
+        // The same instant whatever offset it was written with; the database takes UTC.
+        var end = request.To?.ToUniversalTime() ?? now;
+        var start = request.From?.ToUniversalTime() ?? end.AddHours(-1);
         var categories = (request.Category ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Distinct().ToArray();
         query = new EventQuery(start, end, categories, search, request.User);
         if (start >= end || end - start > MaxEventRange)

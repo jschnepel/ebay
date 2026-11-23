@@ -43,6 +43,16 @@ public sealed class AccountEventTests(MigratedDatabase db)
         Assert.Equal(("email_sign_in_off", (Guid?)user.Id), (failed.Detail, failed.UserId));
     }
 
+    [Theory]
+    [InlineData("nul\u0000byte@example.test")]
+    [InlineData("tab\tbyte@example.test")]
+    public async Task An_email_with_a_control_character_is_refused_like_any_unknown_one(string email)
+    {
+        (_, var response) = await (await db.ApiAsync()).SignInAsync(email);
+
+        await response.AssertProblemAsync(HttpStatusCode.Unauthorized, "sign_in_failed");
+    }
+
     [Fact]
     public async Task Padding_the_email_does_not_get_around_the_lockout()
     {
