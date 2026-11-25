@@ -16,7 +16,7 @@ RUN dotnet publish src/Auction.Api/Auction.Api.csproj --no-restore -c Release -o
 RUN mkdir /keys
 
 # Chiseled ASP.NET runtime: no shell or package manager, runs as a non-root user, listens on 8080.
-FROM mcr.microsoft.com/dotnet/aspnet:10.0.15-noble-chiseled@sha256:7c625e44e5d588b4d7b2a913e94ca4bd5098ce47442da404829e4c7936a764e1
+FROM mcr.microsoft.com/dotnet/aspnet:10.0.15-noble-chiseled@sha256:bcdfe6b8e923ad3d05f01dfa805ab97c99d742823ce030856002a6db38122712
 WORKDIR /app
 COPY --from=build /app ./
 # Owned by the non-root user, so a volume mounted here starts writable (see Api__KeysDirectory in compose.yaml).
